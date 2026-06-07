@@ -1,0 +1,555 @@
+"""
+PnL Monitor — Short Put VRP Strategy
+======================================
+Suit en temps réel (ou sur snapshot) la position short put :
+
+  - PnL option MtM (mark-to-market en BTC et USD)
+  - PnL hedge perp (delta hedge short)
+  - Funding cost du perp
+  - Theta théorique encaissé vs PnL réel (VRP capture check)
+  - Historique des snapshots pour graphiques
+
+Usage :
+    python pnl_monitor.py                # snapshot unique + affichage
+    python pnl_monitor.py --watch 5      # refresh toutes les 5 minutes
+    python pnl_monitor.py --plot         # affiche les graphiques de PnL
+    python pnl_monitor.py --report       # résumé complet en CSV
+"""
+
+import argparse
+import json
+import time
+import warnings
+from datetime import datetime, timezone
+from pathlib import Path
+
+from gist_sync import push_positions
+
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import numpy as np
+import pandas as pd
+import requests
+from scipy.stats import norm
+from urllib3.exceptions import InsecureRequestWarning
+
+warnings.filterwarnings("ignore", category=InsecureRequestWarning)
+
+BASE_URL       = "https://www.deribit.com/api/v2/public"
+POSITIONS_FILE = Path(__file__).parent / "positions.json"
+OUTPUT_DIR     = Path(__file__).parent / "output"
+SNAPSHOTS_FILE = OUTPUT_DIR / "pnl_snapshots.csv"
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+FUNDING_APPROX_DAILY = 0.0001   # ~0.01%/jour si funding indisponible (fallback)
+
+
+# ── API ───────────────────────────────────────────────────────────────────────
+
+def get(method: str, params: dict) -> dict:
+    r = requests.get(f"{BASE_URL}/{method}", params=params,
+                     timeout=15, verify=False)
+    r.raise_for_status()
+    d = r.json()
+    if "error" in d:
+        raise RuntimeError(f"API: {d['error']}")
+    return d["result"]
+
+
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def now_str() -> str:
+    return now_utc().strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+# ── Market data ───────────────────────────────────────────────────────────────
+
+def fetch_spot(currency: str = "BTC") -> float:
+    return get("get_index_price", {"index_name": f"{currency.lower()}_usd"})["index_price"]
+
+
+def fetch_option_ticker(instrument_name: str) -> dict:
+    return get("ticker", {"instrument_name": instrument_name})
+
+
+def fetch_perp_funding(currency: str = "BTC") -> float:
+    """Retourne le funding rate actuel du perp (en fraction, par 8h)."""
+    try:
+        data = get("get_funding_rate_value", {
+            "instrument_name": f"{currency}-PERPETUAL",
+            "start_timestamp": int((now_utc().timestamp() - 28800) * 1000),
+            "end_timestamp":   int(now_utc().timestamp() * 1000),
+        })
+        return float(data) if data else FUNDING_APPROX_DAILY / 3
+    except Exception:
+        return FUNDING_APPROX_DAILY / 3   # 3 périodes/jour
+
+
+def fetch_perp_mark(currency: str = "BTC") -> float:
+    try:
+        t = get("ticker", {"instrument_name": f"{currency}-PERPETUAL"})
+        return t.get("mark_price", fetch_spot(currency))
+    except Exception:
+        return fetch_spot(currency)
+
+
+# ── BS helpers ────────────────────────────────────────────────────────────────
+
+def bs_put_price(S, K, T, sigma, r=0.05) -> float:
+    if T <= 0:
+        return max(K - S, 0) / S  # intrinsic, en fraction
+    d1 = (np.log(S/K) + (r + 0.5*sigma**2)*T) / (sigma*np.sqrt(T))
+    d2 = d1 - sigma*np.sqrt(T)
+    from scipy.stats import norm
+    price_usd = K*np.exp(-r*T)*norm.cdf(-d2) - S*norm.cdf(-d1)
+    return price_usd / S   # en fraction de BTC (comme Deribit)
+
+
+def bs_theta_btc(S, K, T, sigma, r=0.05) -> float:
+    """Theta journalier en fraction de BTC."""
+    if T <= 1e-6:
+        return 0.0
+    d1 = (np.log(S/K) + (r + 0.5*sigma**2)*T) / (sigma*np.sqrt(T))
+    d2 = d1 - sigma*np.sqrt(T)
+    phi = norm.pdf(d1)
+    theta_usd = (-(S * phi * sigma) / (2*np.sqrt(T))
+                 + r*K*np.exp(-r*T)*norm.cdf(-d2)) / 365
+    return theta_usd / S
+
+
+# ── PnL calculator ────────────────────────────────────────────────────────────
+
+def compute_snapshot(position: dict) -> dict:
+    """Calcule tous les composants du PnL pour la position courante."""
+    instr   = position["instrument_name"]
+    strike  = position["strike"]
+    entry_p = position["entry_price"]       # en BTC
+    entry_s = position["entry_spot"]        # spot USD à l'entrée
+    contracts = position["contracts"]
+    hedge_qty = position.get("hedge_qty", 0.0)   # BTC shortés sur perp (négatif)
+    # hedge_avg_entry = VWAP du hedge après rebalancements successifs
+    # Fallback sur hedge_entry_spot (1er hedge) puis entry_spot
+    hedge_entry_spot = position.get("hedge_avg_entry",
+                       position.get("hedge_entry_spot", entry_s))
+
+    # Data live
+    ticker    = fetch_option_ticker(instr)
+    spot      = ticker.get("underlying_price") or fetch_spot()
+    # Coût de rachat = ask price (ce qu'on paie pour fermer ou roller)
+    # Fallback sur mark si ask absent
+    curr_p    = ticker.get("best_ask_price") or ticker.get("mark_price", entry_p)
+    curr_iv   = ticker.get("mark_iv", position["iv_at_entry"])
+    greeks    = ticker.get("greeks") or {}
+    curr_delta= greeks.get("delta", position["delta_at_entry"])
+    curr_theta= greeks.get("theta", 0)   # USD/jour (Deribit convention)
+
+    # TTE en jours
+    expiry_dt = pd.to_datetime(position["expiry_dt"], utc=True)
+    tte_days  = (expiry_dt - pd.Timestamp(now_utc())).total_seconds() / 86400
+    tte_years = max(tte_days / 365, 1e-6)
+
+    # ── PnL option (short put) ────────────────────────────────────────────────
+    # On a vendu à entry_p, valeur actuelle est curr_p
+    pnl_opt_btc = (entry_p - curr_p) * contracts
+    pnl_opt_usd = pnl_opt_btc * spot
+
+    # ── PnL hedge perp (short perp = hedge_qty négatif) ──────────────────────
+    # hedge_qty < 0 = on a shorté |hedge_qty| BTC de perp
+    # PnL short perp = -hedge_qty * (spot_now - spot_entry)
+    # Short perp : hedge_qty est négatif (ex: -0.188 = 0.188 BTC shortés)
+    # PnL short = qty × (entry - spot) = hedge_qty × (spot - entry) car qty < 0
+    # Si spot baisse → (spot - entry) < 0 → négatif × négatif = positif ✅
+    pnl_hedge_usd = hedge_qty * (spot - hedge_entry_spot)
+
+    # ── Funding cost du perp ──────────────────────────────────────────────────
+    # On est short perp -> si funding > 0 on REÇOIT le funding
+    funding_8h     = fetch_perp_funding()
+    funding_daily  = funding_8h * 3              # 3 périodes de 8h par jour
+    # Durée de la position en jours
+    entry_dt       = pd.to_datetime(position["entry_ts"].replace(" UTC",""),
+                                    format="%Y-%m-%d %H:%M:%S",
+                                    utc=True)
+    days_held      = (pd.Timestamp(now_utc()) - entry_dt).total_seconds() / 86400
+    # Valeur notionnelle du hedge
+    perp_mark      = fetch_perp_mark()
+    hedge_notional = abs(hedge_qty) * perp_mark
+    funding_pnl_usd= funding_daily * days_held * hedge_notional
+    # Short perp : si funding_rate > 0, les longs paient les shorts -> on reçoit
+    # Convention Deribit : funding_rate > 0 = longs paient courts -> short reçoit
+
+    # ── Theta théorique encaissé ──────────────────────────────────────────────
+    # theta_at_entry en BTC/jour * days_held * spot_moyen ≈ spot_entry
+    theta_entry_btc = abs(position.get("theta_at_entry", 0))  # BTC/jour (pos)
+    theta_theory_usd= theta_entry_btc * days_held * entry_s   # USD encaissé théorique
+
+    # Deribit donne theta en USD/an (convention BS brute) -> on divise par 365
+    theta_deribit_usd = abs(curr_theta) / 365 if curr_theta else 0.0
+
+    # ── PnL total ─────────────────────────────────────────────────────────────
+    total_pnl_usd = pnl_opt_usd + pnl_hedge_usd + funding_pnl_usd
+
+    # ── VRP capture ratio ─────────────────────────────────────────────────────
+    # Ratio PnL réel / theta théorique - significatif seulement si on a tenu ≥ 6h
+    # Avant ça, le ratio est bruité (petit dénominateur)
+    if theta_theory_usd > 0.5 and days_held > 0.25:
+        vrp_capture_pct = pnl_opt_usd / theta_theory_usd * 100
+    else:
+        vrp_capture_pct = float("nan")  # trop tôt pour mesurer
+
+    return {
+        "timestamp":          now_str(),
+        "tte_days":           round(tte_days, 4),
+        "days_held":          round(days_held, 4),
+        "spot":               round(spot, 2),
+        "entry_spot":         entry_s,
+        "spot_move_pct":      round((spot / entry_s - 1) * 100, 3),
+        # Option
+        "entry_price_btc":    entry_p,
+        "current_price_btc":  round(curr_p, 6),
+        "current_iv_pct":     curr_iv,
+        "entry_iv_pct":       position["iv_at_entry"],
+        "iv_change":          round(curr_iv - position["iv_at_entry"], 2),
+        "current_delta":      curr_delta,
+        # PnL components
+        "pnl_option_btc":     round(pnl_opt_btc, 6),
+        "pnl_option_usd":     round(pnl_opt_usd, 2),
+        "pnl_hedge_usd":      round(pnl_hedge_usd, 2),
+        "funding_pnl_usd":    round(funding_pnl_usd, 4),
+        "total_pnl_usd":      round(total_pnl_usd, 2),
+        "pnl_pct_of_premium": round(pnl_opt_usd / (entry_p * entry_s) * 100, 2),
+        # Theta analysis
+        "theta_theory_usd":   round(theta_theory_usd, 2),
+        "theta_daily_now_usd":round(theta_deribit_usd, 2),
+        "vrp_capture_pct":    round(vrp_capture_pct, 1),
+        # Greeks live
+        "live_delta":         round(curr_delta, 5),
+        "hedge_qty":          hedge_qty,
+        "hedge_delta_drift":  round(-curr_delta - abs(hedge_qty), 5),
+    }
+
+
+# ── Display ───────────────────────────────────────────────────────────────────
+
+SEP = "=" * 62
+
+def color_sign(val: float, fmt: str = ".2f") -> str:
+    """Préfixe + si positif, affiche 0.00 si nul."""
+    s = f"{val:{fmt}}"
+    return f"+{s}" if val > 0 else s
+
+
+def display_snapshot(snap: dict, position: dict):
+    print(f"\n{SEP}")
+    print(f"  PnL Monitor — {snap['timestamp']}")
+    print(SEP)
+
+    print(f"\n  Position  : SHORT {position['instrument_name']}")
+    print(f"  Strike    : {position['strike']:,.0f}  |  "
+          f"Expiry: {position['expiry_dt'][:10]}")
+    print(f"  TTE       : {snap['tte_days']:.3f} jours")
+    print(f"  Tenu depuis : {snap['days_held']*24:.1f}h ({snap['days_held']:.3f}j)")
+
+    # Prix
+    print(f"\n  {'':─<58}")
+    print(f"  {'PRIX':}")
+    print(f"  Spot          : ${snap['spot']:>12,.2f}  "
+          f"(entrée: ${snap['entry_spot']:,.2f}  "
+          f"{color_sign(snap['spot_move_pct'], '.2f')}%)")
+    print(f"  Option entry  : {snap['entry_price_btc']:.5f} BTC  "
+          f"(${snap['entry_price_btc']*snap['entry_spot']:,.2f})")
+    print(f"  Option actuel : {snap['current_price_btc']:.5f} BTC  "
+          f"(${snap['current_price_btc']*snap['spot']:,.2f})")
+    print(f"  IV entry      : {snap['entry_iv_pct']:.1f}%  ->  "
+          f"actuelle: {snap['current_iv_pct']:.1f}%  "
+          f"({color_sign(snap['iv_change'], '.1f')} pts)")
+
+    # PnL
+    print(f"\n  {'':─<58}")
+    print(f"  {'PnL COMPOSANTS':}")
+    w = 20
+    print(f"  {'Option (MtM)':<{w}} : {color_sign(snap['pnl_option_usd']):>10} USD  "
+          f"  ({color_sign(snap['pnl_pct_of_premium'])}% de la prime)")
+    print(f"  {'Hedge perp':<{w}} : {color_sign(snap['pnl_hedge_usd']):>10} USD")
+    print(f"  {'Funding perp':<{w}} : {color_sign(snap['funding_pnl_usd']):>10} USD")
+    print(f"  {'─'*40}")
+    total_sign = "+" if snap['total_pnl_usd'] >= 0 else ""
+    print(f"  {'TOTAL':<{w}} : {total_sign}{snap['total_pnl_usd']:>10.2f} USD")
+
+    # Theta
+    print(f"\n  {'':─<58}")
+    print(f"  {'THETA / VRP':}")
+    print(f"  Theta theorie (cum.) : ${snap['theta_theory_usd']:>8.2f} USD  "
+          f"({snap['days_held']*24:.1f}h de decay)")
+    print(f"  Theta actuel (daily) : ${snap['theta_daily_now_usd']:>8.2f} USD/jour")
+    cap = snap['vrp_capture_pct']
+    import math as _math
+    if _math.isnan(cap):
+        print(f"  VRP capture          : (trop tot — attendre ≥6h de holding)")
+    else:
+        bar_len = min(int(abs(cap) / 5), 20)
+        bar = "#" * bar_len + "." * (20 - bar_len)
+        print(f"  VRP capture          : {color_sign(cap, '.1f')}%  [{bar}]")
+        if cap < 50:
+            print(f"  >> IV en hausse ou mouvement du spot absorbe le theta")
+        elif cap > 150:
+            print(f"  >> Excellent: theta encaisse + compression IV")
+
+    # Greeks live + hedge
+    print(f"\n  {'':─<58}")
+    print(f"  {'DELTA / HEDGE':}")
+    print(f"  Delta live   : {snap['live_delta']:+.5f}  "
+          f"(entrée: {position['delta_at_entry']:+.4f})")
+    print(f"  Hedge actuel : {snap['hedge_qty']:+.5f} BTC short perp")
+    drift = snap['hedge_delta_drift']
+    drift_flag = "  *** REBALANCER ***" if abs(drift) > 0.03 else "  OK"
+    print(f"  Drift delta  : {drift:+.5f}{drift_flag}")
+
+    # Alertes
+    alerts = []
+    if snap['tte_days'] < 1.0:
+        alerts.append(f"  [ROLL NOW] TTE={snap['tte_days']:.2f}j < 1j -> fermer et roller")
+    elif snap['tte_days'] < 1.5:
+        alerts.append(f"  [ROLL SOON] TTE={snap['tte_days']:.2f}j -> preparer le roll")
+    if abs(snap['spot_move_pct']) > 3:
+        alerts.append(f"  [MOUVEMENT] Spot {color_sign(snap['spot_move_pct'])}% depuis l'entree")
+    if snap['iv_change'] > 10:
+        alerts.append(f"  [IV SPIKE] IV +{snap['iv_change']:.1f} pts -> vega loss")
+    if snap['pnl_option_usd'] < -(snap['entry_price_btc'] * snap['entry_spot']):
+        alerts.append(f"  [STOP LOSS] PnL > -100% de la prime -> envisager de couper")
+
+    if alerts:
+        print(f"\n  {'':─<58}")
+        print(f"  ALERTES:")
+        for a in alerts:
+            print(a)
+
+    print(f"\n{SEP}\n")
+
+
+# ── Snapshots persistence ─────────────────────────────────────────────────────
+
+def save_snapshot(snap: dict):
+    """Append le snapshot au CSV historique."""
+    df_new = pd.DataFrame([snap])
+    if SNAPSHOTS_FILE.exists():
+        df_old = pd.read_csv(SNAPSHOTS_FILE)
+        df = pd.concat([df_old, df_new], ignore_index=True)
+    else:
+        df = df_new
+    df.to_csv(SNAPSHOTS_FILE, index=False)
+
+
+def load_snapshots() -> pd.DataFrame:
+    if SNAPSHOTS_FILE.exists():
+        df = pd.read_csv(SNAPSHOTS_FILE)
+        df["timestamp"] = pd.to_datetime(df["timestamp"].str.replace(" UTC",""),
+                                          format="%Y-%m-%d %H:%M:%S", utc=True)
+        return df
+    return pd.DataFrame()
+
+
+# ── Plots ─────────────────────────────────────────────────────────────────────
+
+def plot_pnl(snapshots: pd.DataFrame, position: dict):
+    if snapshots.empty or len(snapshots) < 2:
+        print("  Pas assez de snapshots pour tracer (minimum 2 requis).")
+        return
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 9))
+    fig.suptitle(
+        f"PnL Monitor — {position['instrument_name']}\n"
+        f"Short {position['contracts']}x {position['strike']:,.0f} Put  |  "
+        f"Entry: {position['entry_price']:.5f} BTC @ ${position['entry_spot']:,.0f}",
+        fontsize=12
+    )
+    ts = snapshots["timestamp"]
+
+    # ── 1. PnL total + composants ─────────────────────────────────────────────
+    ax = axes[0, 0]
+    ax.fill_between(ts, snapshots["total_pnl_usd"], 0,
+                    where=(snapshots["total_pnl_usd"] >= 0),
+                    alpha=0.3, color="#4CAF50", label="_nolegend_")
+    ax.fill_between(ts, snapshots["total_pnl_usd"], 0,
+                    where=(snapshots["total_pnl_usd"] < 0),
+                    alpha=0.3, color="#F44336", label="_nolegend_")
+    ax.plot(ts, snapshots["total_pnl_usd"], color="#212121",
+            linewidth=2, label="PnL Total")
+    ax.plot(ts, snapshots["pnl_option_usd"], "--",
+            color="#2196F3", linewidth=1.5, label="Option MtM")
+    ax.plot(ts, snapshots["pnl_hedge_usd"], "--",
+            color="#FF9800", linewidth=1.5, label="Hedge Perp")
+    ax.axhline(0, color="black", linewidth=0.7)
+    max_loss = -(position["entry_price"] * position["entry_spot"])
+    ax.axhline(max_loss, color="#F44336", linestyle=":", linewidth=1,
+               label=f"Max loss ({max_loss:.0f}$)")
+    ax.set_title("PnL Composants (USD)")
+    ax.set_ylabel("USD")
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, fontsize=7)
+
+    # ── 2. Theta théorique vs PnL réel ───────────────────────────────────────
+    ax = axes[0, 1]
+    ax.plot(ts, snapshots["theta_theory_usd"], color="#9C27B0",
+            linewidth=2, linestyle="--", label="Theta cumulatif (theorie)")
+    ax.plot(ts, snapshots["pnl_option_usd"], color="#2196F3",
+            linewidth=2, label="PnL Option reel")
+    ax.fill_between(ts,
+                    snapshots["theta_theory_usd"],
+                    snapshots["pnl_option_usd"],
+                    alpha=0.15, color="#FF5722",
+                    label="Ecart (VRP non capture)")
+    ax.axhline(0, color="black", linewidth=0.7)
+    ax.set_title("Theta Theorique vs PnL Reel")
+    ax.set_ylabel("USD")
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, fontsize=7)
+
+    # ── 3. Spot + IV ──────────────────────────────────────────────────────────
+    ax  = axes[1, 0]
+    ax2 = ax.twinx()
+    ax.plot(ts, snapshots["spot"], color="#1565C0", linewidth=2, label="Spot BTC")
+    ax.axhline(position["strike"], color="#F44336", linestyle=":",
+               linewidth=1.5, label=f"Strike {position['strike']:,.0f}")
+    ax.axhline(position["entry_spot"], color="#4CAF50", linestyle="--",
+               linewidth=1, label=f"Entry spot {position['entry_spot']:,.0f}")
+    ax2.plot(ts, snapshots["current_iv_pct"], color="#FF6F00",
+             linewidth=1.5, linestyle="--", label="IV (%)")
+    ax2.axhline(position["iv_at_entry"], color="#FF6F00", linestyle=":",
+                linewidth=1, alpha=0.5)
+    ax.set_title("Spot BTC & Implied Vol")
+    ax.set_ylabel("Spot (USD)", color="#1565C0")
+    ax2.set_ylabel("IV (%)", color="#FF6F00")
+    lines1, labels1 = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax.legend(lines1 + lines2, labels1 + labels2, fontsize=8)
+    ax.grid(alpha=0.3)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, fontsize=7)
+
+    # ── 4. Delta drift + VRP capture ─────────────────────────────────────────
+    ax = axes[1, 1]
+    ax.bar(ts, snapshots["vrp_capture_pct"], color=[
+        "#4CAF50" if v >= 0 else "#F44336"
+        for v in snapshots["vrp_capture_pct"]
+    ], alpha=0.6, width=0.01, label="VRP capture %")
+    ax.axhline(100, color="#9C27B0", linestyle="--",
+               linewidth=1.5, label="100% (parfait)")
+    ax.axhline(0, color="black", linewidth=0.7)
+
+    ax2 = ax.twinx()
+    ax2.plot(ts, snapshots["live_delta"], color="#FF9800",
+             linewidth=1.5, label="Delta live")
+    ax2.axhline(position["delta_at_entry"], color="#FF9800",
+                linestyle=":", linewidth=1, alpha=0.5)
+    ax2.set_ylabel("Delta", color="#FF9800")
+
+    ax.set_title("VRP Capture % & Delta")
+    ax.set_ylabel("VRP capture (%)")
+    lines1, labels1 = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax.legend(lines1 + lines2, labels1 + labels2, fontsize=8)
+    ax.grid(alpha=0.3)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, fontsize=7)
+
+    fig.tight_layout()
+    path = OUTPUT_DIR / "pnl_dashboard.png"
+    fig.savefig(path, dpi=150)
+    print(f"  [plot] {path}")
+    plt.close(fig)
+
+
+# ── Report CSV ────────────────────────────────────────────────────────────────
+
+def print_report(snapshots: pd.DataFrame, position: dict):
+    if snapshots.empty:
+        print("  Aucun snapshot enregistre.")
+        return
+    last = snapshots.iloc[-1]
+    first = snapshots.iloc[0]
+    print(f"\n{'='*62}")
+    print(f"  RAPPORT COMPLET — {position['instrument_name']}")
+    print(f"{'='*62}")
+    print(f"  Snapshots enregistres : {len(snapshots)}")
+    print(f"  Periode               : {first['timestamp']} -> {last['timestamp']}")
+    print(f"\n  PnL Max      : ${snapshots['total_pnl_usd'].max():>10.2f}")
+    print(f"  PnL Min      : ${snapshots['total_pnl_usd'].min():>10.2f}")
+    print(f"  PnL actuel   : ${last['total_pnl_usd']:>10.2f}")
+    print(f"\n  IV range     : {snapshots['current_iv_pct'].min():.1f}% - "
+          f"{snapshots['current_iv_pct'].max():.1f}%")
+    print(f"  Spot range   : ${snapshots['spot'].min():,.0f} - "
+          f"${snapshots['spot'].max():,.0f}")
+    print(f"\n  Theta theorie cum. : ${last['theta_theory_usd']:.2f}")
+    print(f"  VRP capture moyen  : {snapshots['vrp_capture_pct'].mean():.1f}%")
+    print(f"{'='*62}")
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def load_position() -> dict | None:
+    if not POSITIONS_FILE.exists():
+        return None
+    state = json.loads(POSITIONS_FILE.read_text())
+    return state.get("open")
+
+
+def run_once(plot: bool = False, report: bool = False):
+    position = load_position()
+    if position is None:
+        print("Aucune position ouverte dans positions.json")
+        print("Lance d'abord : python greeks_hedge.py --run")
+        return
+
+    print(f"Calcul snapshot pour {position['instrument_name']}...")
+    snap = compute_snapshot(position)
+    display_snapshot(snap, position)
+    save_snapshot(snap)
+
+    snapshots = load_snapshots()
+
+    if plot:
+        print("Generation des graphiques...")
+        plot_pnl(snapshots, position)
+
+    if report:
+        print_report(snapshots, position)
+
+    # Export dernier snapshot + sync Gist
+    tag = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    pd.DataFrame([snap]).to_csv(
+        OUTPUT_DIR / f"pnl_snap_{tag}.csv", index=False)
+    push_positions()   # sync positions.json vers GitHub Gist
+
+
+def watch_loop(interval_min: int = 5):
+    print(f"Mode WATCH — refresh toutes les {interval_min} min  (Ctrl+C pour arreter)")
+    iteration = 0
+    while True:
+        iteration += 1
+        print(f"\n[Iteration {iteration}]")
+        try:
+            run_once(plot=(iteration % 6 == 0))   # plot toutes les 30 min
+        except Exception as e:
+            print(f"  [ERREUR] {e}")
+        print(f"  Prochain refresh dans {interval_min} min...")
+        time.sleep(interval_min * 60)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="PnL Monitor — Short Put VRP")
+    parser.add_argument("--watch",  type=int, metavar="MIN", nargs="?", const=5,
+                        help="Mode watch, refresh toutes les N min (default: 5)")
+    parser.add_argument("--plot",   action="store_true", help="Genere les graphiques")
+    parser.add_argument("--report", action="store_true", help="Rapport complet")
+    args = parser.parse_args()
+
+    if args.watch:
+        watch_loop(args.watch)
+    else:
+        run_once(plot=args.plot, report=args.report)

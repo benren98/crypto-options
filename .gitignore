@@ -1,0 +1,17 @@
+# Secrets — ne jamais committer
+.env
+
+# Outputs locaux
+output/
+positions.json
+pnl_snapshots.csv
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db

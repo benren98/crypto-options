@@ -1,0 +1,122 @@
+name: PnL Monitor — Short Put VRP
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # toutes les heures
+  workflow_dispatch:        # déclenchement manuel depuis GitHub
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests pandas scipy numpy matplotlib
+
+      - name: Créer positions.json depuis le Gist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: |
+          python - <<'EOF'
+          import requests, json, os, warnings
+          from urllib3.exceptions import InsecureRequestWarning
+          warnings.filterwarnings("ignore", category=InsecureRequestWarning)
+
+          token   = os.environ["GITHUB_TOKEN"]
+          gist_id = os.environ["GIST_ID"]
+
+          r = requests.get(
+              f"https://api.github.com/gists/{gist_id}",
+              headers={"Authorization": f"token {token}"},
+              timeout=10
+          )
+          content = r.json()["files"]["positions.json"]["content"]
+          with open("positions.json", "w") as f:
+              f.write(content)
+          print("positions.json chargé depuis le Gist")
+          print(json.loads(content).get("open", {}).get("instrument_name", "aucune position"))
+          EOF
+
+      - name: Créer .env pour gist_sync
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: |
+          echo "GITHUB_TOKEN=$GITHUB_TOKEN" > .env
+          echo "GIST_ID=$GIST_ID" >> .env
+          mkdir -p output
+
+      - name: Run PnL monitor
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: python pnl_monitor.py
+
+      - name: Run Greeks & Hedge check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: python greeks_hedge.py --run
+
+      - name: Push pnl_summary.json vers le Gist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: |
+          python - <<'EOF'
+          import requests, json, os, glob
+          from pathlib import Path
+          from datetime import datetime, timezone
+
+          token   = os.environ["GITHUB_TOKEN"]
+          gist_id = os.environ["GIST_ID"]
+
+          # Lire le dernier snapshot CSV généré
+          snapshots = sorted(glob.glob("output/pnl_snap_*.csv"))
+          summary = {"generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}
+
+          if snapshots:
+              import csv
+              with open(snapshots[-1]) as f:
+                  row = list(csv.DictReader(f))[0]
+              summary.update({
+                  "timestamp":          row.get("timestamp"),
+                  "spot":               row.get("spot"),
+                  "tte_days":           row.get("tte_days"),
+                  "pnl_option_usd":     row.get("pnl_option_usd"),
+                  "pnl_hedge_usd":      row.get("pnl_hedge_usd"),
+                  "total_pnl_usd":      row.get("total_pnl_usd"),
+                  "pnl_pct_of_premium": row.get("pnl_pct_of_premium"),
+                  "current_iv_pct":     row.get("current_iv_pct"),
+                  "live_delta":         row.get("live_delta"),
+                  "hedge_qty":          row.get("hedge_qty"),
+                  "hedge_delta_drift":  row.get("hedge_delta_drift"),
+                  "theta_daily_now_usd":row.get("theta_daily_now_usd"),
+                  "spot_move_pct":      row.get("spot_move_pct"),
+              })
+
+          # Lire positions.json mis à jour
+          positions = json.loads(Path("positions.json").read_text())
+
+          # Push les deux fichiers vers le Gist
+          r = requests.patch(
+              f"https://api.github.com/gists/{gist_id}",
+              headers={"Authorization": f"token {token}"},
+              json={"files": {
+                  "positions.json":   {"content": json.dumps(positions, indent=2, default=str)},
+                  "pnl_summary.json": {"content": json.dumps(summary,   indent=2)},
+              }},
+              timeout=10
+          )
+          print(f"Gist push: {r.status_code}")
+          print(json.dumps(summary, indent=2))
+          EOF
