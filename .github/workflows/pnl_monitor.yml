@@ -122,6 +122,7 @@ jobs:
               "pnl_pct_of_premium":  row.get("pnl_pct_of_premium"),
               "tte_days":            row.get("tte_days"),
               "live_delta":          row.get("live_delta"),
+              "live_gamma":          row.get("live_gamma"),
               "live_vega":           row.get("live_vega"),
               "hedge_qty":           row.get("hedge_qty"),
               "hedge_delta_drift":   row.get("hedge_delta_drift"),
@@ -177,6 +178,7 @@ jobs:
                   # Greeks live
                   "tte_days":            row.get("tte_days"),
                   "live_delta":          row.get("live_delta"),
+                  "live_gamma":          row.get("live_gamma"),
                   "live_vega":           row.get("live_vega"),
                   "hedge_qty":           row.get("hedge_qty"),
                   "hedge_delta_drift":   row.get("hedge_delta_drift"),

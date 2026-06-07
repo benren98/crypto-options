@@ -145,6 +145,7 @@ def compute_snapshot(position: dict) -> dict:
     curr_iv    = ticker.get("mark_iv", position["iv_at_entry"])
     greeks     = ticker.get("greeks") or {}
     curr_delta = greeks.get("delta", position["delta_at_entry"])
+    curr_gamma = greeks.get("gamma", position.get("gamma_at_entry", 7e-5))
     curr_vega  = greeks.get("vega", position.get("vega_at_entry", 13.0))
     curr_theta = greeks.get("theta", 0)   # USD/jour (Deribit convention — déjà normalisé)
 
@@ -229,6 +230,7 @@ def compute_snapshot(position: dict) -> dict:
         "vrp_capture_pct":    round(vrp_capture_pct, 1),
         # Greeks live
         "live_delta":         round(curr_delta, 5),
+        "live_gamma":         round(curr_gamma, 7),
         "hedge_qty":          hedge_qty,
         "hedge_delta_drift":  round(-curr_delta - abs(hedge_qty), 5),
         # Données pour attribution

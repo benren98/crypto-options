@@ -46,7 +46,9 @@ if pos and summ_raw.get("spot"):
     entry_price  = float(pos.get("entry_price", 0))
     entry_mark   = float(pos.get("entry_mark_price", 0))
     entry_iv     = float(pos.get("iv_at_entry", 0))
-    gamma_entry  = float(pos.get("gamma_at_entry", 7e-5))
+    # Gamma : préférer live_gamma (pnl_summary.json) → recalculé à chaque run Actions
+    # Fallback sur gamma_at_entry uniquement si le champ live n'est pas encore présent
+    gamma_entry  = float(s.get("live_gamma") or pos.get("gamma_at_entry", 7e-5))
     hedge_avg    = float(pos.get("hedge_avg_entry", entry_spot))
     hedge_qty    = float(s.get("hedge_qty", pos.get("hedge_qty", 0)))
     curr_mark    = float(s.get("current_price_btc", 0))
