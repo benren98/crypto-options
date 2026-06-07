@@ -199,6 +199,13 @@ else:
     {row("Expo delta-ajustée", f'${f(attr.get("delta_pct",0)/100 * attr.get("spot",0), 0)}')}
     {row("Prime encaissée", f'{pos.get("entry_price")} BTC = <b>${f(float(pos.get("entry_price",0)) * float(pos.get("entry_spot",0)), 0)}</b>')}
     {row("Rachat (ask)", f'{s.get("current_ask_btc")} BTC = ${f(float(s.get("current_ask_btc",0))*float(s.get("spot",0)),0)}')}
+    <tr><td colspan="2" style="padding-top:10px; color:#8b949e; font-size:0.78rem;">ENTRÉE</td></tr>
+    {row("Date d'entrée", str(pos.get("entry_ts","—")))}
+    {row("Spot à l'entrée", f'${f(pos.get("entry_spot"),0)}')}
+    {row("Prix vendu (bid)", f'{pos.get("entry_price")} BTC  ({f(float(pos.get("entry_price",0))*100/float(pos.get("entry_mark_price",1)),1)}% vs mark)')}
+    {row("Mark à l'entrée", f'{pos.get("entry_mark_price")} BTC')}
+    {row("IV à l'entrée", f'{pos.get("iv_at_entry")}%')}
+    {row("Delta à l'entrée", f'{pos.get("delta_at_entry")}')}
   </table>
 </div>
 
@@ -308,6 +315,45 @@ else:
       <td class="{co}">{f(po,0,True)}${capped}</td>
       <td class="{ch}">{f(ph,0,True)}$</td>
       <td class="{cn}"><b>{f(pn,0,True)}$</b></td>
+    </tr>
+"""
+    html += "  </table>\n</div>\n"
+
+    # ── Historique rebalancements hedge ──────────────────────────────────────
+    hedge_hist = pos.get("hedge_history", [])
+    html += f"""
+<!-- HEDGE HISTORY -->
+<div class="card" style="grid-column: 1 / -1">
+  <h2>🔄 Historique Hedge — {len(hedge_hist)} exécution(s)  <span style="font-weight:400;color:#484f58">VWAP actuel ${f(pos.get("hedge_avg_entry",0),2)} · Qty {pos.get("hedge_qty",0)} BTC</span></h2>
+  <table class="matrix">
+    <tr>
+      <th style="text-align:left">Date / Heure</th>
+      <th>Côté</th>
+      <th>Qty ordre</th>
+      <th>Spot</th>
+      <th>Qty avant</th>
+      <th>Qty après</th>
+      <th>VWAP avant</th>
+      <th>VWAP après</th>
+      <th>Drift</th>
+      <th style="text-align:left">Note</th>
+    </tr>
+"""
+    for h in hedge_hist:
+        side    = h.get("side", "?")
+        side_cl = "neg" if side == "SELL" else "pos"
+        qty_ord = h.get("qty", 0)
+        html += f"""    <tr>
+      <td style="text-align:left;color:#8b949e;font-size:0.8rem">{str(h.get("ts",""))}</td>
+      <td class="{side_cl}"><b>{side}</b></td>
+      <td class="{side_cl}">{f(qty_ord,5,True)} BTC</td>
+      <td>${f(h.get("spot",0),0)}</td>
+      <td style="color:#8b949e">{f(h.get("qty_before",0),5)} BTC</td>
+      <td><b>{f(h.get("qty_after",0),5)} BTC</b></td>
+      <td style="color:#8b949e">${f(h.get("vwap_before",0),2)}</td>
+      <td><b>${f(h.get("vwap_after",0),2)}</b></td>
+      <td style="color:#8b949e">{f(h.get("drift",0),4,True)}</td>
+      <td style="text-align:left;color:#484f58;font-size:0.78rem">{h.get("note","")}</td>
     </tr>
 """
     html += "  </table>\n</div>\n"

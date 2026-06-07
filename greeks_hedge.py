@@ -264,18 +264,39 @@ def save_positions(state: dict):
 
 def open_position(instrument: dict, entry_price: float,
                   contracts: int, spot: float) -> dict:
+    hedge_qty_init = round(-abs(instrument["delta"]) * contracts, 5)
     return {
-        "instrument_name": instrument["instrument_name"],
-        "strike":          instrument["strike"],
-        "expiry_dt":       str(instrument["expiry_dt"]),
-        "tte_at_entry":    instrument["tte_days"],
-        "delta_at_entry":  instrument["delta"],
-        "iv_at_entry":     instrument["mark_iv"],
-        "entry_price":     entry_price,       # en BTC — bid price (prix reçu à la vente)
-        "entry_spot":      spot,
-        "contracts":       contracts,
-        "entry_ts":        now_dt(),
-        "hedge_qty":       0.0,               # qty de perp shortée (en BTC)
+        "instrument_name":  instrument["instrument_name"],
+        "strike":           instrument["strike"],
+        "expiry_dt":        str(instrument["expiry_dt"]),
+        "tte_at_entry":     instrument["tte_days"],
+        "delta_at_entry":   instrument["delta"],
+        "gamma_at_entry":   instrument.get("gamma", 7e-5),
+        "vega_at_entry":    instrument.get("vega", 0),
+        "theta_at_entry":   instrument.get("theta", 0),
+        "iv_at_entry":      instrument["mark_iv"],
+        "entry_price":      entry_price,
+        "entry_mark_price": instrument.get("mark_price", entry_price),
+        "entry_price_usd":  round(entry_price * spot, 2),
+        "entry_spot":       spot,
+        "contracts":        contracts,
+        "entry_ts":         now_dt(),
+        "hedge_qty":        hedge_qty_init,
+        "hedge_entry_spot": spot,
+        "hedge_avg_entry":  spot,
+        "hedge_rebalances": 1,
+        "hedge_history": [{
+            "ts":           now_dt(),
+            "side":         "SELL",
+            "qty":          hedge_qty_init,
+            "spot":         round(spot, 2),
+            "qty_before":   0.0,
+            "qty_after":    hedge_qty_init,
+            "vwap_before":  spot,
+            "vwap_after":   spot,
+            "drift":        round(abs(instrument["delta"]), 5),
+            "note":         "hedge initial à l'entrée",
+        }],
     }
 
 
@@ -590,6 +611,22 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         state["open"]["hedge_qty"]        = round(new_qty, 5)
         state["open"]["hedge_avg_entry"]  = round(new_avg, 2)
         state["open"]["hedge_rebalances"] = pos.get("hedge_rebalances", 0) + 1
+
+        # Enregistrer le rebalancement dans l'historique
+        rebal_entry = {
+            "ts":        now_dt(),
+            "side":      "SELL" if order_qty < 0 else "BUY",
+            "qty":       round(order_qty, 5),
+            "spot":      round(spot, 2),
+            "qty_before": round(old_qty, 5),
+            "qty_after":  round(new_qty, 5),
+            "vwap_before": round(old_avg, 2),
+            "vwap_after":  round(new_avg, 2),
+            "drift":       round(hedge["delta_drift"], 5),
+        }
+        if "hedge_history" not in state["open"]:
+            state["open"]["hedge_history"] = []
+        state["open"]["hedge_history"].append(rebal_entry)
 
         print(f"\n  [AUTO-REBALANCE]")
         print(f"  Ordre      : {'SELL' if order_qty < 0 else 'BUY'} "
