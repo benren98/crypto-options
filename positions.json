@@ -30,7 +30,7 @@
         "vwap_before": 61608.03,
         "vwap_after": 61608.03,
         "drift": 0.1892,
-        "note": "hedge initial à l'entrée"
+        "note": "hedge initial \u00e0 l'entr\u00e9e"
       },
       {
         "ts": "2026-06-07 05:06:44 UTC",
@@ -49,5 +49,5 @@
   },
   "history": [],
   "snapshots": [],
-  "last_updated": "2026-06-07 13:18:19 UTC"
+  "last_updated": "2026-06-07 14:18:51 UTC"
 }
