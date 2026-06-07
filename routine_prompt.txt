@@ -57,11 +57,39 @@ PnL ATTRIBUTION (calcule ces valeurs) :
 • Spread actuel : {curr_ask - curr_bid} BTC = ${(curr_ask - curr_bid) × spot}
 
 📐 GREEKS (position short — signés)
-• Delta  : +{abs(delta_live)}    Γ : -{gamma_entry}
+Calcule :
+- delta_pct      = abs(delta_live) × 100                          [% du contrat]
+- gamma_pts_per1 = gamma_entry × (spot × 0.01) × 100             [pts de delta perdus par 1% move]
+
+• Delta  : +{delta_pct}%  ({abs(delta_live)} BTC)
+• Gamma  : -{gamma_pts_per1} pts de delta par 1% de move  (symétrique hausse/baisse)
 • Vega   : -{vega_live}  ($-{vega_live} par +1pt IV)
 • Theta  : +${theta_daily}/jour
 • Hedge  : {hedge_qty} BTC short perp  |  VWAP : ${hedge_avg}  |  {hedge_n} rebalancement(s)
 • Drift  : {hedge_delta_drift}  [⚠️ REBALANCER si > 0.03]
+
+📊 MATRICE SENSIBILITÉ ±5%  (delta+gamma uniquement, PnL depuis entrée)
+Calcule pour chaque move m ∈ [-5%,-3%,-2%,-1%,0%,+1%,+2%,+3%,+5%] :
+- new_spot      = spot × (1 + m/100)
+- delta_spot_m  = new_spot - spot
+- new_delta_pct = max(0, delta_pct - gamma_pts_per1 × abs(m))     [borné à 0%]
+- pnl_opt_m     = abs(delta_live) × delta_spot_m - 0.5 × gamma_entry × delta_spot_m²
+  cap : si m > 0, pnl_opt_m = min(pnl_opt_m, entry_price × entry_spot)  [prime max]
+- pnl_hedge_m   = -(abs(hedge_qty)) × (new_spot - hedge_avg)      [short perp depuis VWAP]
+- pnl_net_m     = pnl_opt_m + pnl_hedge_m
+
+Affiche le tableau :
+| Move  | Spot      | Delta  | PnL Option | PnL Hedge | PnL NET |
+|-------|-----------|--------|-----------|-----------|---------|
+| -5%   | $...      | ...%   | $...      | $...      | $...    |
+| -3%   | ...       | ...    | ...       | ...       | ...     |
+| -2%   | ...       | ...    | ...       | ...       | ...     |
+| -1%   | ...       | ...    | ...       | ...       | ...     |
+|  0%   | ...       | ...    | ...       | ...       | ...     |
+| +1%   | ...       | ...    | ...       | ...       | ...     |
+| +2%   | ...       | ...    | ...       | ...       | ...     |
+| +3%   | ...       | ...    | ...       | ...       | ...     |
+| +5%   | ...       | ...    | ...       | ...       | ...     |
 
 📊 PnL COMPOSANTS
 • Option MtM  : ${pnl_option_usd}  ({pnl_pct_of_premium}% de la prime)
