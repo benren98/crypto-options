@@ -23,13 +23,13 @@
       {
         "ts": "2026-06-07 03:32:05 UTC",
         "side": "SELL",
-        "qty": -0.1892,
+        "qty": -0.19532,
         "spot": 61608.03,
         "qty_before": 0.0,
-        "qty_after": -0.1892,
+        "qty_after": -0.19532,
         "vwap_before": 61608.03,
         "vwap_after": 61608.03,
-        "drift": 0.1892,
+        "drift": 0.19532,
         "note": "hedge initial \u00e0 l'entr\u00e9e"
       },
       {
