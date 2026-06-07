@@ -101,19 +101,34 @@ jobs:
               with open(snapshots[-1]) as f:
                   row = list(csv.DictReader(f))[0]
               summary.update({
-                  "timestamp":          row.get("timestamp"),
-                  "spot":               row.get("spot"),
-                  "tte_days":           row.get("tte_days"),
-                  "pnl_option_usd":     row.get("pnl_option_usd"),
-                  "pnl_hedge_usd":      row.get("pnl_hedge_usd"),
-                  "total_pnl_usd":      row.get("total_pnl_usd"),
-                  "pnl_pct_of_premium": row.get("pnl_pct_of_premium"),
-                  "current_iv_pct":     row.get("current_iv_pct"),
-                  "live_delta":         row.get("live_delta"),
-                  "hedge_qty":          row.get("hedge_qty"),
-                  "hedge_delta_drift":  row.get("hedge_delta_drift"),
-                  "theta_daily_now_usd":row.get("theta_daily_now_usd"),
-                  "spot_move_pct":      row.get("spot_move_pct"),
+                  "timestamp":           row.get("timestamp"),
+                  "days_held":           row.get("days_held"),
+                  # Spot
+                  "spot":                row.get("spot"),
+                  "entry_spot":          row.get("entry_spot"),
+                  "spot_move_pct":       row.get("spot_move_pct"),
+                  # Option prix
+                  "entry_price_btc":     row.get("entry_price_btc"),
+                  "current_price_btc":   row.get("current_price_btc"),   # mark
+                  "current_ask_btc":     row.get("current_ask_btc"),
+                  "current_bid_btc":     row.get("current_bid_btc"),
+                  # IV
+                  "entry_iv_pct":        row.get("entry_iv_pct"),
+                  "current_iv_pct":      row.get("current_iv_pct"),
+                  # PnL composants
+                  "pnl_option_usd":      row.get("pnl_option_usd"),
+                  "pnl_hedge_usd":       row.get("pnl_hedge_usd"),
+                  "total_pnl_usd":       row.get("total_pnl_usd"),
+                  "pnl_pct_of_premium":  row.get("pnl_pct_of_premium"),
+                  # Greeks live
+                  "tte_days":            row.get("tte_days"),
+                  "live_delta":          row.get("live_delta"),
+                  "live_vega":           row.get("live_vega"),
+                  "hedge_qty":           row.get("hedge_qty"),
+                  "hedge_delta_drift":   row.get("hedge_delta_drift"),
+                  "theta_daily_now_usd": row.get("theta_daily_now_usd"),
+                  "theta_theory_usd":    row.get("theta_theory_usd"),
+                  "vrp_capture_pct":     row.get("vrp_capture_pct"),
               })
 
           # Lire positions.json mis à jour
