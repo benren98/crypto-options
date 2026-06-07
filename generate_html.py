@@ -430,12 +430,12 @@ if pnl_history:
 
 <div class="card" style="grid-column: 1 / -1">
   <h2>📈 Greeks dans le temps — {n_pts} snapshots</h2>
-  <canvas id="chartGreeks" height="90"></canvas>
+  <canvas id="chartGreeks" style="height:340px;max-height:340px"></canvas>
 </div>
 
 <div class="card" style="grid-column: 1 / -1">
   <h2>💰 PnL dans le temps  <span style="font-weight:400;color:#484f58">Option · Hedge · Total</span></h2>
-  <canvas id="chartPnl" height="90"></canvas>
+  <canvas id="chartPnl" style="height:340px;max-height:340px"></canvas>
 </div>
 
 </div>
@@ -487,6 +487,7 @@ new Chart(ctxG, {{
   }},
   options: {{
     responsive: true,
+    maintainAspectRatio: false,
     interaction: {{ mode: "index", intersect: false }},
     plugins: {{
       legend: {{ labels: {{ color: "#8b949e", font: {{ size: 11 }} }} }},
@@ -560,6 +561,7 @@ new Chart(ctxP, {{
   }},
   options: {{
     responsive: true,
+    maintainAspectRatio: false,
     interaction: {{ mode: "index", intersect: false }},
     plugins: {{
       legend: {{ labels: {{ color: "#8b949e", font: {{ size: 11 }} }} }},
