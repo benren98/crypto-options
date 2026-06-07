@@ -135,7 +135,7 @@ jobs:
           Path("pnl_summary.json").write_text(json.dumps(summary, indent=2))
           print("pnl_summary.json ecrit.")
           EOF
-          git add pnl_summary.json positions.json docs/index.html 2>/dev/null || git add pnl_summary.json docs/index.html
+          git add pnl_summary.json positions.json pnl_history.json docs/index.html 2>/dev/null || git add pnl_summary.json pnl_history.json docs/index.html
           git diff --cached --quiet || git commit -m "chore: pnl snapshot $(date -u '+%Y-%m-%d %H:%M UTC')"
           git push
 

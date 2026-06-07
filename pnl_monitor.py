@@ -646,10 +646,41 @@ def run_once(plot: bool = False, report: bool = False):
     if report:
         print_report(snapshots, position)
 
-    # Export dernier snapshot + sync Gist
+    # Export dernier snapshot CSV
     tag = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     pd.DataFrame([snap]).to_csv(
         OUTPUT_DIR / f"pnl_snap_{tag}.csv", index=False)
+
+    # ── Accumuler dans pnl_history.json (graphiques dashboard) ───────────────
+    history_file = Path(__file__).parent / "pnl_history.json"
+    history: list = []
+    if history_file.exists():
+        try:
+            history = json.loads(history_file.read_text())
+        except Exception:
+            history = []
+
+    # Point de données pour les graphiques
+    gamma_pts = float(snap.get("live_gamma", 0)) * float(snap.get("spot", 0)) * 0.01 * 100
+    hist_point = {
+        "ts":          snap["timestamp"],
+        "spot":        snap["spot"],
+        "tte_days":    snap["tte_days"],
+        "delta_pct":   round(abs(float(snap.get("live_delta", 0))) * 100, 3),
+        "gamma_pts":   round(gamma_pts, 4),
+        "iv_pct":      snap.get("current_iv_pct"),
+        "pnl_option":  snap.get("pnl_option_usd"),
+        "pnl_hedge":   snap.get("pnl_hedge_usd"),
+        "pnl_total":   snap.get("total_pnl_usd"),
+        "theta_daily": snap.get("theta_daily_now_usd"),
+        "instrument":  position["instrument_name"],
+    }
+    history.append(hist_point)
+    # Garder max 500 points (≈ 20 jours de runs horaires)
+    history = history[-500:]
+    history_file.write_text(json.dumps(history, indent=2))
+    print(f"  pnl_history.json : {len(history)} points")
+
     push_positions()   # sync positions.json vers GitHub Gist
 
 

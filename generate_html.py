@@ -13,6 +13,10 @@ summ_raw = json.loads(Path("pnl_summary.json").read_text())
 pos   = pos_raw.get("open")
 hist  = pos_raw.get("history", [])
 
+# Historique pour graphiques
+history_file = Path("pnl_history.json")
+pnl_history  = json.loads(history_file.read_text()) if history_file.exists() else []
+
 no_position = pos is None and not hist
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -131,6 +135,7 @@ html = f"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="300">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <title>VRP Monitor — {pos["instrument_name"] if pos else "Aucune position"}</title>
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
@@ -396,6 +401,189 @@ else:
     for (cl, label, detail) in alerts:
         html += f'<tr><td class="val {cl}" style="width:30%">{label}</td><td style="color:#8b949e">{detail}</td></tr>'
     html += "</table></div>\n"
+
+# ── Graphiques historiques ────────────────────────────────────────────────────
+if pnl_history:
+    import json as _json
+
+    labels     = [p["ts"][:16].replace("T"," ") for p in pnl_history]
+    delta_data = [p.get("delta_pct", 0)  for p in pnl_history]
+    gamma_data = [p.get("gamma_pts", 0)  for p in pnl_history]
+    iv_data    = [p.get("iv_pct", 0)     for p in pnl_history]
+    pnl_opt    = [p.get("pnl_option", 0) for p in pnl_history]
+    pnl_hdg    = [p.get("pnl_hedge", 0)  for p in pnl_history]
+    pnl_tot    = [p.get("pnl_total", 0)  for p in pnl_history]
+
+    labels_js     = _json.dumps(labels)
+    delta_js      = _json.dumps(delta_data)
+    gamma_js      = _json.dumps(gamma_data)
+    iv_js         = _json.dumps(iv_data)
+    pnl_opt_js    = _json.dumps(pnl_opt)
+    pnl_hdg_js    = _json.dumps(pnl_hdg)
+    pnl_tot_js    = _json.dumps(pnl_tot)
+
+    n_pts = len(pnl_history)
+
+    html += f"""
+<!-- GRAPHIQUES -->
+<div class="grid" style="margin-top:16px">
+
+<div class="card" style="grid-column: 1 / -1">
+  <h2>📈 Greeks dans le temps — {n_pts} snapshots</h2>
+  <canvas id="chartGreeks" height="90"></canvas>
+</div>
+
+<div class="card" style="grid-column: 1 / -1">
+  <h2>💰 PnL dans le temps  <span style="font-weight:400;color:#484f58">Option · Hedge · Total</span></h2>
+  <canvas id="chartPnl" height="90"></canvas>
+</div>
+
+</div>
+
+<script>
+const LABELS = {labels_js};
+
+// ── Chart 1 : Delta + Gamma + IV ──────────────────────────────────────────
+const ctxG = document.getElementById("chartGreeks").getContext("2d");
+new Chart(ctxG, {{
+  type: "line",
+  data: {{
+    labels: LABELS,
+    datasets: [
+      {{
+        label: "Delta position (%)",
+        data: {delta_js},
+        borderColor: "#58a6ff",
+        backgroundColor: "rgba(88,166,255,0.08)",
+        yAxisID: "yDelta",
+        tension: 0.3,
+        pointRadius: LABELS.length > 50 ? 0 : 3,
+        borderWidth: 2,
+        fill: true,
+      }},
+      {{
+        label: "Gamma (pts Δ / 1%)",
+        data: {gamma_js},
+        borderColor: "#f85149",
+        backgroundColor: "transparent",
+        yAxisID: "yGamma",
+        tension: 0.3,
+        pointRadius: LABELS.length > 50 ? 0 : 3,
+        borderWidth: 2,
+        borderDash: [5,3],
+      }},
+      {{
+        label: "IV (%)",
+        data: {iv_js},
+        borderColor: "#d29922",
+        backgroundColor: "transparent",
+        yAxisID: "yIV",
+        tension: 0.3,
+        pointRadius: 0,
+        borderWidth: 1.5,
+        borderDash: [2,4],
+      }},
+    ]
+  }},
+  options: {{
+    responsive: true,
+    interaction: {{ mode: "index", intersect: false }},
+    plugins: {{
+      legend: {{ labels: {{ color: "#8b949e", font: {{ size: 11 }} }} }},
+      tooltip: {{ backgroundColor: "#161b22", borderColor: "#30363d", borderWidth: 1,
+                  titleColor: "#e6edf3", bodyColor: "#8b949e" }},
+    }},
+    scales: {{
+      x: {{ ticks: {{ color: "#484f58", maxTicksLimit: 12, maxRotation: 30, font: {{ size: 10 }} }},
+             grid: {{ color: "#21262d" }} }},
+      yDelta: {{
+        type: "linear", position: "left",
+        title: {{ display: true, text: "Delta (%)", color: "#58a6ff", font: {{ size: 10 }} }},
+        ticks: {{ color: "#58a6ff", font: {{ size: 10 }} }},
+        grid: {{ color: "#21262d" }},
+      }},
+      yGamma: {{
+        type: "linear", position: "right",
+        title: {{ display: true, text: "Gamma (pts/1%)", color: "#f85149", font: {{ size: 10 }} }},
+        ticks: {{ color: "#f85149", font: {{ size: 10 }} }},
+        grid: {{ drawOnChartArea: false }},
+      }},
+      yIV: {{
+        type: "linear", position: "right",
+        title: {{ display: true, text: "IV (%)", color: "#d29922", font: {{ size: 10 }} }},
+        ticks: {{ color: "#d29922", font: {{ size: 10 }} }},
+        grid: {{ drawOnChartArea: false }},
+        offset: true,
+      }},
+    }}
+  }}
+}});
+
+// ── Chart 2 : PnL Option / Hedge / Total ─────────────────────────────────
+const ctxP = document.getElementById("chartPnl").getContext("2d");
+new Chart(ctxP, {{
+  type: "line",
+  data: {{
+    labels: LABELS,
+    datasets: [
+      {{
+        label: "PnL Option ($)",
+        data: {pnl_opt_js},
+        borderColor: "#3fb950",
+        backgroundColor: "rgba(63,185,80,0.07)",
+        tension: 0.3,
+        pointRadius: LABELS.length > 50 ? 0 : 3,
+        borderWidth: 2,
+        fill: true,
+      }},
+      {{
+        label: "PnL Hedge ($)",
+        data: {pnl_hdg_js},
+        borderColor: "#ff9800",
+        backgroundColor: "transparent",
+        tension: 0.3,
+        pointRadius: LABELS.length > 50 ? 0 : 3,
+        borderWidth: 2,
+        borderDash: [5,3],
+      }},
+      {{
+        label: "PnL Total ($)",
+        data: {pnl_tot_js},
+        borderColor: "#e6edf3",
+        backgroundColor: "rgba(230,237,243,0.05)",
+        tension: 0.3,
+        pointRadius: LABELS.length > 50 ? 0 : 3,
+        borderWidth: 2.5,
+        fill: true,
+      }},
+    ]
+  }},
+  options: {{
+    responsive: true,
+    interaction: {{ mode: "index", intersect: false }},
+    plugins: {{
+      legend: {{ labels: {{ color: "#8b949e", font: {{ size: 11 }} }} }},
+      tooltip: {{ backgroundColor: "#161b22", borderColor: "#30363d", borderWidth: 1,
+                  titleColor: "#e6edf3", bodyColor: "#8b949e",
+                  callbacks: {{
+                    label: ctx => " " + ctx.dataset.label + ": " + (ctx.parsed.y >= 0 ? "+" : "") + ctx.parsed.y.toFixed(0) + "$"
+                  }} }},
+      annotation: {{}} /* ligne zéro gérée par scales */
+    }},
+    scales: {{
+      x: {{ ticks: {{ color: "#484f58", maxTicksLimit: 12, maxRotation: 30, font: {{ size: 10 }} }},
+             grid: {{ color: "#21262d" }} }},
+      y: {{
+        ticks: {{ color: "#8b949e", font: {{ size: 10 }},
+                  callback: v => (v >= 0 ? "+" : "") + v.toFixed(0) + "$" }},
+        grid: {{ color: "#21262d" }},
+        border: {{ dash: [3,3] }},
+      }}
+    }}
+  }}
+}});
+</script>
+"""
 
 html += f"""
 </div>
