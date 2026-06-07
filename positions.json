@@ -15,10 +15,10 @@
     "entry_spot": 61608.03,
     "contracts": 1,
     "entry_ts": "2026-06-07 03:32:05 UTC",
-    "hedge_qty": -0.18085,
+    "hedge_qty": -0.11912,
     "hedge_entry_spot": 61608.03,
     "hedge_avg_entry": 61598.56,
-    "hedge_rebalances": 2,
+    "hedge_rebalances": 3,
     "hedge_history": [
       {
         "ts": "2026-06-07 03:32:05 UTC",
@@ -44,6 +44,17 @@
         "vwap_after": 61598.56,
         "drift": 0.01566,
         "note": "rebalancement automatique (drift > 0.03)"
+      },
+      {
+        "ts": "2026-06-07 22:54:46 UTC",
+        "side": "BUY",
+        "qty": 0.06173,
+        "spot": 63052.37,
+        "qty_before": -0.18085,
+        "qty_after": -0.11912,
+        "vwap_before": 61598.56,
+        "vwap_after": 61598.56,
+        "drift": 0.06173
       }
     ],
     "note": "Position fictive ouverte manuellement le 2026-06-07"
