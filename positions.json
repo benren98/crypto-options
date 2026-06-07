@@ -15,9 +15,9 @@
     "entry_spot": 61608.03,
     "contracts": 1,
     "entry_ts": "2026-06-07 03:32:05 UTC",
-    "hedge_qty": -0.15189,
+    "hedge_qty": -0.18085,
     "hedge_entry_spot": 61608.03,
-    "hedge_avg_entry": 97027.67,
+    "hedge_avg_entry": 61598.56,
     "hedge_rebalances": 2,
     "note": "Position fictive ouverte manuellement le 2026-06-07"
   },

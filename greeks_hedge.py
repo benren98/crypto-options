@@ -578,10 +578,14 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         abs_old  = abs(old_qty)
         abs_ord  = abs(order_qty)
         abs_new  = abs(new_qty)
-        if abs_new > 1e-8:
+        if abs_new < 1e-8:
+            new_avg = spot                           # position fermée entièrement
+        elif abs_new > abs_old:
+            # On augmente le short -> VWAP des deux exécutions
             new_avg = (abs_old * old_avg + abs_ord * spot) / abs_new
         else:
-            new_avg = spot
+            # On réduit le short (rachat partiel) -> prix entrée du reste inchangé
+            new_avg = old_avg
 
         state["open"]["hedge_qty"]        = round(new_qty, 5)
         state["open"]["hedge_avg_entry"]  = round(new_avg, 2)
