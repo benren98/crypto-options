@@ -44,9 +44,9 @@ DELTA_TOL       = 0.06           # tolérance autour du delta cible
 MIN_TTE_ENTRY   = 2.0            # jours minimum pour entrer
 MAX_TTE_ENTRY   = 7.0            # jours maximum pour entrer
 ROLL_TRIGGER         = 1.0   # jours restants -> fenêtre d'observation pour le roll
-GAMMA_ROLL_THRESHOLD = 6.0   # pts de delta / 1% move en-dessous duquel on rolle
-                              # (roll seulement si TTE <= ROLL_TRIGGER ET gamma < seuil)
-                              # Pour une OTM, gamma chute sous 6pts ~12-14h avant expiry
+GAMMA_ROLL_THRESHOLD = 6.0   # pts de delta / 1% move AU-DESSUS duquel on rolle
+                              # (roll si TTE <= ROLL_TRIGGER ET gamma > seuil)
+                              # Gamma > 6pts = option se rapproche d'ATM = danger
 HEDGE_THRESHOLD = 0.03       # rebalancer le hedge si delta_net dépasse ce seuil
 RISK_FREE_RATE  = 0.05           # taux sans risque annualisé (approx)
 CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur Deribit)
@@ -343,13 +343,13 @@ def should_roll(position: dict, spot: float) -> tuple[bool, float, float, str]:
         gamma   = abs(greeks.get("gamma", position.get("gamma_at_entry", 7e-5)))
         gamma_pts = gamma * spot * 0.01 * 100   # pts de delta (%) perdus par 1% move
 
-        if gamma_pts < GAMMA_ROLL_THRESHOLD:
+        if gamma_pts > GAMMA_ROLL_THRESHOLD:
             reason = (f"TTE {tte:.2f}j ≤ {ROLL_TRIGGER}j "
-                      f"ET gamma {gamma_pts:.2f}pts < seuil {GAMMA_ROLL_THRESHOLD}pts")
+                      f"ET gamma {gamma_pts:.2f}pts > seuil {GAMMA_ROLL_THRESHOLD}pts — ATM danger")
             return True, tte, gamma_pts, reason
         else:
             reason = (f"TTE {tte:.2f}j ≤ {ROLL_TRIGGER}j "
-                      f"mais gamma {gamma_pts:.2f}pts ≥ seuil {GAMMA_ROLL_THRESHOLD}pts — attente")
+                      f"mais gamma {gamma_pts:.2f}pts ≤ seuil {GAMMA_ROLL_THRESHOLD}pts — OTM OK, HOLD")
             return False, tte, gamma_pts, reason
 
     except Exception as e:
@@ -689,12 +689,12 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                       f"-> sensibilite au mouvement accrue")
     if pos_greeks["tte_days"] < ROLL_TRIGGER:
         gamma_pts_alert = abs(pos_greeks.get("pos_gamma", 7e-5)) * spot * 0.01 * 100
-        if gamma_pts_alert < GAMMA_ROLL_THRESHOLD:
+        if gamma_pts_alert > GAMMA_ROLL_THRESHOLD:
             alerts.append(f"  [!!] ROLL IMMINENT: TTE {pos_greeks['tte_days']:.2f}j "
-                          f"ET gamma {gamma_pts_alert:.2f}pts < seuil {GAMMA_ROLL_THRESHOLD}pts")
+                          f"ET gamma {gamma_pts_alert:.2f}pts > seuil {GAMMA_ROLL_THRESHOLD}pts — ATM danger")
         else:
             alerts.append(f"  [~] TTE {pos_greeks['tte_days']:.2f}j dans fenetre roll "
-                          f"mais gamma {gamma_pts_alert:.2f}pts OK — HOLD")
+                          f"mais gamma {gamma_pts_alert:.2f}pts ≤ seuil — OTM OK, HOLD")
     if abs(pos_greeks["pos_vega"]) > 0.05 * CONTRACTS:
         alerts.append(f"  [!] Vega eleve: {pos_greeks['pos_vega']:.4f}  "
                       f"-> exposition IV significative")
