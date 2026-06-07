@@ -430,8 +430,9 @@ else:
     for (cl, label, detail) in alerts:
         html += f'<tr><td class="val {cl}" style="width:30%">{label}</td><td style="color:#8b949e">{detail}</td></tr>'
     html += "</table></div>\n"
+    html += "</div>\n"   # ← ferme la grille principale ici
 
-# ── Graphiques historiques ────────────────────────────────────────────────────
+# ── Graphiques historiques (hors grille, pleine largeur) ─────────────────────
 if pnl_history:
     import json as _json
 
@@ -629,7 +630,6 @@ new Chart(document.getElementById("chartPnl"), {{
 """
 
 html += f"""
-</div>
 <footer>VRP Monitor · Généré le {generated} · GitHub Actions · Auto-refresh 5 min</footer>
 </body></html>
 """
