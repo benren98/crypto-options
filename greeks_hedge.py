@@ -44,9 +44,9 @@ DELTA_TOL       = 0.06           # tolérance autour du delta cible
 MIN_TTE_ENTRY   = 2.0            # jours minimum pour entrer
 MAX_TTE_ENTRY   = 7.0            # jours maximum pour entrer
 ROLL_TRIGGER         = 1.0   # jours restants -> fenêtre d'observation pour le roll
-GAMMA_ROLL_THRESHOLD = 2.0   # pts de delta / 1% move en-dessous duquel on rolle
+GAMMA_ROLL_THRESHOLD = 6.0   # pts de delta / 1% move en-dessous duquel on rolle
                               # (roll seulement si TTE <= ROLL_TRIGGER ET gamma < seuil)
-                              # Pour une OTM, gamma chute sous 2pts ~6h avant expiry
+                              # Pour une OTM, gamma chute sous 6pts ~12-14h avant expiry
 HEDGE_THRESHOLD = 0.03       # rebalancer le hedge si delta_net dépasse ce seuil
 RISK_FREE_RATE  = 0.05           # taux sans risque annualisé (approx)
 CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur Deribit)
