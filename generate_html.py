@@ -4,7 +4,60 @@ Appelé par GitHub Actions après chaque snapshot.
 """
 import json, math
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+# ── Timezone NY ────────────────────────────────────────────────────────────────
+try:
+    from zoneinfo import ZoneInfo
+    _TZ_NY = ZoneInfo("America/New_York")
+except Exception:
+    _TZ_NY = None  # fallback manuel ci-dessous
+
+def to_ny(ts_str) -> str:
+    """Convertit un timestamp UTC en heure NY (EDT/EST).
+    Accepte : datetime object, 'YYYY-MM-DD HH:MM:SS UTC',
+              'YYYY-MM-DD HH:MM UTC', 'YYYY-MM-DDTHH:MM:SS+00:00'.
+    Retourne : 'YYYY-MM-DD HH:MM EDT' (ou EST en hiver).
+    """
+    if not ts_str or ts_str == "—":
+        return str(ts_str)
+    # --- parsing ---
+    if isinstance(ts_str, datetime):
+        dt = ts_str if ts_str.tzinfo else ts_str.replace(tzinfo=timezone.utc)
+    else:
+        s = str(ts_str).strip()
+        dt = None
+        # Formats à essayer dans l'ordre (sans manipuler la chaîne globalement)
+        candidates = [
+            ("%Y-%m-%d %H:%M:%S UTC", s),
+            ("%Y-%m-%d %H:%M UTC",    s),
+            ("%Y-%m-%dT%H:%M:%S+00:00", s),
+            ("%Y-%m-%d %H:%M:%S",     s.replace(" UTC", "")),
+            ("%Y-%m-%d %H:%M",        s.replace(" UTC", "")),
+        ]
+        for fmt, val in candidates:
+            try:
+                dt = datetime.strptime(val, fmt).replace(tzinfo=timezone.utc)
+                break
+            except ValueError:
+                continue
+        if dt is None:
+            return s  # impossible à parser → retour brut
+    # --- conversion NY ---
+    if _TZ_NY:
+        dt_ny = dt.astimezone(_TZ_NY)
+        label = dt_ny.strftime("%Z")   # "EDT" ou "EST"
+    else:
+        # Calcul manuel DST : 2ème dim mars 02h → 1er dim nov 02h
+        year = dt.year
+        mar8  = datetime(year, 3,  8, tzinfo=timezone.utc)
+        nov1  = datetime(year, 11, 1, tzinfo=timezone.utc)
+        dst_start = mar8 + timedelta(days=(6 - mar8.weekday()) % 7, hours=2)
+        dst_end   = nov1 + timedelta(days=(6 - nov1.weekday()) % 7, hours=2)
+        in_dst  = dst_start <= dt < dst_end
+        dt_ny   = dt + timedelta(hours=-4 if in_dst else -5)
+        label   = "EDT" if in_dst else "EST"
+    return dt_ny.strftime(f"%Y-%m-%d %H:%M {label}")
 
 # ── Lecture des données ────────────────────────────────────────────────────────
 pos_raw  = json.loads(Path("positions.json").read_text())
@@ -138,8 +191,8 @@ pnl_open       = float(summ_raw.get("total_pnl_usd", 0)) if pos else 0.0
 pnl_cumul      = pnl_hist_total + pnl_open
 
 # ── Timestamp ─────────────────────────────────────────────────────────────────
-ts = summ_raw.get("timestamp", "—")
-generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+ts = to_ny(summ_raw.get("timestamp", "—"))
+generated = to_ny(datetime.now(timezone.utc))
 
 # ── Deltas depuis le dernier snapshot (pour l'en-tête) ────────────────────────
 _prev_spot    = float(pnl_history[-2].get("spot",      0)) if len(pnl_history) >= 2 else None
@@ -292,7 +345,7 @@ else:
     {row("Prime encaissée", f'{pos.get("entry_price")} BTC = <b>${f(float(pos.get("entry_price",0)) * float(pos.get("entry_spot",0)), 0)}</b>')}
     {row("Rachat (ask)", f'{s.get("current_ask_btc")} BTC = ${f(float(s.get("current_ask_btc",0))*float(s.get("spot",0)),0)}')}
     <tr><td colspan="2" style="padding-top:10px; color:#8b949e; font-size:0.78rem;">ENTRÉE</td></tr>
-    {row("Date d'entrée", str(pos.get("entry_ts","—")))}
+    {row("Date d'entrée", to_ny(pos.get("entry_ts","—")))}
     {row("Spot à l'entrée", f'${f(pos.get("entry_spot"),0)}')}
     {row("Prix vendu (bid)", f'{pos.get("entry_price")} BTC  ({f(float(pos.get("entry_price",0))*100/float(pos.get("entry_mark_price",1)),1)}% vs mark)')}
     {row("Mark à l'entrée", f'{pos.get("entry_mark_price")} BTC')}
@@ -456,7 +509,7 @@ else:
         side_cl = "neg" if side == "SELL" else "pos"
         qty_ord = h.get("qty", 0)
         html += f"""    <tr>
-      <td style="text-align:left;color:#8b949e;font-size:0.8rem">{str(h.get("ts",""))}</td>
+      <td style="text-align:left;color:#8b949e;font-size:0.8rem">{to_ny(h.get("ts",""))}</td>
       <td class="{side_cl}"><b>{side}</b></td>
       <td class="{side_cl}">{f(qty_ord,5,True)} BTC</td>
       <td>${f(h.get("spot",0),0)}</td>
@@ -498,7 +551,7 @@ else:
 if pnl_history:
     import json as _json
 
-    labels     = [p["ts"][:16].replace("T"," ") for p in pnl_history]
+    labels     = [to_ny(p["ts"])[:16] for p in pnl_history]
     delta_data    = [p.get("delta_pct", 0)     for p in pnl_history]
     net_delta_data= [p.get("net_delta_pct", 0) for p in pnl_history]
     gamma_data    = [p.get("gamma_pts", 0)     for p in pnl_history]
