@@ -146,7 +146,7 @@ def compute_snapshot(position: dict) -> dict:
     greeks     = ticker.get("greeks") or {}
     curr_delta = greeks.get("delta", position["delta_at_entry"])
     curr_vega  = greeks.get("vega", position.get("vega_at_entry", 13.0))
-    curr_theta = greeks.get("theta", 0)   # USD/an (Deribit convention)
+    curr_theta = greeks.get("theta", 0)   # USD/jour (Deribit convention — déjà normalisé)
 
     # TTE en jours
     expiry_dt = pd.to_datetime(position["expiry_dt"], utc=True)
@@ -183,12 +183,13 @@ def compute_snapshot(position: dict) -> dict:
     # Convention Deribit : funding_rate > 0 = longs paient courts -> short reçoit
 
     # ── Theta théorique encaissé ──────────────────────────────────────────────
-    # theta_at_entry en BTC/jour * days_held * spot_moyen ≈ spot_entry
-    theta_entry_btc = abs(position.get("theta_at_entry", 0))  # BTC/jour (pos)
-    theta_theory_usd= theta_entry_btc * days_held * entry_s   # USD encaissé théorique
+    # theta_at_entry en BTC/jour -> convertir en USD/jour puis multiplier par days_held
+    theta_entry_btc  = abs(position.get("theta_at_entry", 0))   # BTC/jour (BS brut)
+    theta_entry_usd  = theta_entry_btc * entry_s                 # USD/jour à l'entrée
+    theta_theory_usd = theta_entry_usd * days_held               # USD encaissé théorique
 
-    # Deribit donne theta en USD/an (convention BS brute) -> on divise par 365
-    theta_deribit_usd = abs(curr_theta) / 365 if curr_theta else 0.0
+    # Deribit donne theta en USD/jour directement (déjà normalisé)
+    theta_deribit_usd = abs(curr_theta) if curr_theta else 0.0
 
     # ── PnL total ─────────────────────────────────────────────────────────────
     total_pnl_usd = pnl_opt_usd + pnl_hedge_usd + funding_pnl_usd
