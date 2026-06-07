@@ -5,6 +5,7 @@
 output/
 positions.json
 pnl_snapshots.csv
+# pnl_summary.json est versionné dans le repo (lu par Claude Routine)
 
 # Python
 __pycache__/
