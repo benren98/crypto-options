@@ -140,9 +140,10 @@ def compute_snapshot(position: dict) -> dict:
     spot       = ticker.get("underlying_price") or fetch_spot()
     curr_mark  = ticker.get("mark_price", entry_p)
     curr_bid   = ticker.get("best_bid_price") or curr_mark
-    # Coût de rachat = ask price (ce qu'on paie pour fermer ou roller)
     curr_ask   = ticker.get("best_ask_price") or curr_mark
-    curr_p     = curr_ask   # MtM au prix de sortie réaliste
+    # MtM au mark price (référence neutre) — le ask est affiché séparément
+    # comme "coût de sortie" mais ne doit pas driver le PnL live
+    curr_p     = curr_mark
     curr_iv    = ticker.get("mark_iv", position["iv_at_entry"])
     greeks     = ticker.get("greeks") or {}
     curr_delta = greeks.get("delta", position["delta_at_entry"])
