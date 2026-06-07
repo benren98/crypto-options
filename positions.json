@@ -1,0 +1,26 @@
+{
+  "open": {
+    "instrument_name": "BTC-9JUN26-58500-P",
+    "strike": 58500.0,
+    "expiry_dt": "2026-06-09 08:00:00+00:00",
+    "tte_at_entry": 2.186,
+    "delta_at_entry": -0.1892,
+    "gamma_at_entry": 7e-05,
+    "vega_at_entry": 12.84,
+    "theta_at_entry": -0.00373,
+    "iv_at_entry": 78.65,
+    "entry_price": 0.0065,
+    "entry_mark_price": 0.007,
+    "entry_price_usd": 400.46,
+    "entry_spot": 61608.03,
+    "contracts": 1,
+    "entry_ts": "2026-06-07 03:32:05 UTC",
+    "hedge_qty": -0.19532,
+    "hedge_entry_spot": 61608.03,
+    "hedge_avg_entry": 61598.56,
+    "hedge_rebalances": 1,
+    "note": "Position fictive ouverte manuellement le 2026-06-07"
+  },
+  "history": [],
+  "snapshots": []
+}

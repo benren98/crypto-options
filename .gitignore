@@ -3,7 +3,7 @@
 
 # Outputs locaux
 output/
-positions.json
+# positions.json et pnl_summary.json sont versionnés (lus par Claude Routine)
 pnl_snapshots.csv
 # pnl_summary.json est versionné dans le repo (lu par Claude Routine)
 
