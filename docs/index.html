@@ -44,13 +44,19 @@
   .progress-bg { background: #21262d; border-radius: 4px; height: 6px; margin-top: 6px; }
   .progress-fill { background: #3fb950; border-radius: 4px; height: 6px; }
 
+  /* Graphiques pleine largeur */
+  .chart-section { margin-top: 16px; display: flex; flex-direction: column; gap: 16px; }
+  .chart-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; }
+  .chart-card h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: .1em; color: #8b949e; border-bottom: 1px solid #21262d; padding-bottom: 10px; margin-bottom: 14px; }
+  .chart-wrap { position: relative; height: 360px; }
+
   footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28px; }
 </style>
 </head>
 <body>
 
 <h1>📊 BTC-9JUN26-58500-P</h1>
-<div class="subtitle">Données : 2026-06-07 14:50:05 UTC · Généré : 2026-06-07 14:57 UTC · ↻ auto-refresh 5min</div>
+<div class="subtitle">Données : 2026-06-07 14:50:05 UTC · Généré : 2026-06-07 15:03 UTC · ↻ auto-refresh 5min</div>
 
 <div class="grid">
 
@@ -273,93 +279,94 @@
 <div class="card alert-card" style="grid-column: 1 / -1"><h2>🚨 Alertes</h2><table><tr><td class="val ok" style="width:30%">✅ Roll OK</td><td style="color:#8b949e">TTE = 1.72j</td></tr><tr><td class="val ok" style="width:30%">✅ Hedge OK</td><td style="color:#8b949e">Drift = 0.13% < seuil 5.7% (IV-adj)</td></tr><tr><td class="val neg" style="width:30%">🚨 IV SPIKE</td><td style="color:#8b949e">ΔIV = +11.8pts</td></tr><tr><td class="val ok" style="width:30%">✅ Stop OK</td><td style="color:#8b949e">Perte -30$ / prime 400$</td></tr></table></div>
 
 <!-- GRAPHIQUES -->
-<div class="grid" style="margin-top:16px">
+<div class="chart-section">
 
-<div class="card" style="grid-column: 1 / -1">
-  <h2>📈 Greeks dans le temps — 30 snapshots</h2>
-  <canvas id="chartGreeks" style="height:340px;max-height:340px"></canvas>
+<div class="chart-card">
+  <h2>📈 Greeks &amp; Spot — 31 snapshots  <span style="font-weight:400;color:#484f58">Delta · Gamma · Spot BTC</span></h2>
+  <div class="chart-wrap"><canvas id="chartGreeks"></canvas></div>
 </div>
 
-<div class="card" style="grid-column: 1 / -1">
-  <h2>💰 PnL dans le temps  <span style="font-weight:400;color:#484f58">Option · Hedge · Total</span></h2>
-  <canvas id="chartPnl" style="height:340px;max-height:340px"></canvas>
+<div class="chart-card">
+  <h2>💰 PnL &amp; Spot — dans le temps  <span style="font-weight:400;color:#484f58">Option · Hedge · Total · Spot BTC</span></h2>
+  <div class="chart-wrap"><canvas id="chartPnl"></canvas></div>
 </div>
 
 </div>
 
 <script>
-const LABELS = ["2026-06-07 03:37", "2026-06-07 03:38", "2026-06-07 03:40", "2026-06-07 03:40", "2026-06-07 03:43", "2026-06-07 03:49", "2026-06-07 03:49", "2026-06-07 03:51", "2026-06-07 04:00", "2026-06-07 04:01", "2026-06-07 04:16", "2026-06-07 04:31", "2026-06-07 04:36", "2026-06-07 04:44", "2026-06-07 04:46", "2026-06-07 05:00", "2026-06-07 05:01", "2026-06-07 05:05", "2026-06-07 05:06", "2026-06-07 13:12", "2026-06-07 13:18", "2026-06-07 13:31", "2026-06-07 13:47", "2026-06-07 14:05", "2026-06-07 14:18", "2026-06-07 14:32", "2026-06-07 14:35", "2026-06-07 14:46", "2026-06-07 14:50", "2026-06-07 14:55"];
+const LABELS = ["2026-06-07 03:37", "2026-06-07 03:38", "2026-06-07 03:40", "2026-06-07 03:40", "2026-06-07 03:43", "2026-06-07 03:49", "2026-06-07 03:49", "2026-06-07 03:51", "2026-06-07 04:00", "2026-06-07 04:01", "2026-06-07 04:16", "2026-06-07 04:31", "2026-06-07 04:36", "2026-06-07 04:44", "2026-06-07 04:46", "2026-06-07 05:00", "2026-06-07 05:01", "2026-06-07 05:05", "2026-06-07 05:06", "2026-06-07 13:12", "2026-06-07 13:18", "2026-06-07 13:31", "2026-06-07 13:47", "2026-06-07 14:05", "2026-06-07 14:18", "2026-06-07 14:32", "2026-06-07 14:35", "2026-06-07 14:46", "2026-06-07 14:50", "2026-06-07 14:55", "2026-06-07 15:01"];
+const PT_R   = LABELS.length > 50 ? 0 : 3;
+const TOOLTIP_DEFAULTS = {
+  backgroundColor: "#161b22", borderColor: "#30363d", borderWidth: 1,
+  titleColor: "#e6edf3", bodyColor: "#8b949e",
+};
 
-// ── Chart 1 : Delta + Gamma + IV ──────────────────────────────────────────
-const ctxG = document.getElementById("chartGreeks").getContext("2d");
-new Chart(ctxG, {
+// ── Chart 1 : Delta + Gamma + Spot ────────────────────────────────────────
+new Chart(document.getElementById("chartGreeks"), {
   type: "line",
   data: {
     labels: LABELS,
     datasets: [
       {
-        label: "Delta position (%)",
-        data: [19.517, 19.478, 19.475, 19.501, 19.26, 19.338, 19.324, 19.287, 19.046, 19.642, 19.562, 19.748, 19.397, 18.944, 18.983, 17.978, 18.183, 18.3, 17.879, 18.085, 18.285, 17.733, 18.386, 18.788, 17.659, 15.167, 15.619, 17.538, 18.212, 17.381],
+        label: "Delta pos (%)",
+        data: [19.517, 19.478, 19.475, 19.501, 19.26, 19.338, 19.324, 19.287, 19.046, 19.642, 19.562, 19.748, 19.397, 18.944, 18.983, 17.978, 18.183, 18.3, 17.879, 18.085, 18.285, 17.733, 18.386, 18.788, 17.659, 15.167, 15.619, 17.538, 18.212, 17.381, 17.758],
         borderColor: "#58a6ff",
-        backgroundColor: "rgba(88,166,255,0.08)",
+        backgroundColor: "rgba(88,166,255,0.07)",
         yAxisID: "yDelta",
-        tension: 0.3,
-        pointRadius: LABELS.length > 50 ? 0 : 3,
-        borderWidth: 2,
-        fill: true,
+        tension: 0.3, pointRadius: PT_R, borderWidth: 2, fill: true,
       },
       {
-        label: "Gamma (pts Δ / 1%)",
-        data: [4.3085, 4.3089, 4.3092, 4.309, 4.3115, 4.3118, 4.312, 4.3126, 4.3165, 4.3107, 4.3095, 4.3096, 4.315, 4.321, 4.3205, 4.3285, 4.3264, 4.3249, 4.3292, 4.3195, 4.3186, 4.3274, 4.3212, 4.3212, 4.3337, 3.7372, 3.7334, 4.3316, 4.3236, 4.3313],
+        label: "Gamma (pts/1%)",
+        data: [4.3085, 4.3089, 4.3092, 4.309, 4.3115, 4.3118, 4.312, 4.3126, 4.3165, 4.3107, 4.3095, 4.3096, 4.315, 4.321, 4.3205, 4.3285, 4.3264, 4.3249, 4.3292, 4.3195, 4.3186, 4.3274, 4.3212, 4.3212, 4.3337, 3.7372, 3.7334, 4.3316, 4.3236, 4.3313, 4.3268],
         borderColor: "#f85149",
         backgroundColor: "transparent",
         yAxisID: "yGamma",
-        tension: 0.3,
-        pointRadius: LABELS.length > 50 ? 0 : 3,
-        borderWidth: 2,
-        borderDash: [5,3],
+        tension: 0.3, pointRadius: PT_R, borderWidth: 2, borderDash: [5,3],
       },
       {
-        label: "IV (%)",
-        data: ["79.35", "79.37", "79.5", "79.51", "79.62", "80.07", "80.09", "80.23", "80.93", "80.94", "80.39", "81.3", "82.14", "82.78", "82.76", "82.15", "82.16", "82.12", "82.11", "86.58", "87.09", "88.6", "89.06", "91.0", "91.56", "91.34", "91.67", "90.79", "90.43", "90.2"],
-        borderColor: "#d29922",
+        label: "Spot BTC ($)",
+        data: ["61549.65", "61555.65", "61560.31", "61557.18", "61592.43", "61596.57", "61599.42", "61608.29", "61664.63", "61580.94", "61564.03", "61565.2", "61643.18", "61728.4", "61720.74", "61835.8", "61805.43", "61784.61", "61845.42", "61706.8", "61693.58", "61819.61", "61732.12", "61732.01", "61909.35", "62285.92", "62222.63", "61880.69", "61765.81", "61876.07", 61811.78],
+        borderColor: "rgba(210,153,34,0.7)",
         backgroundColor: "transparent",
-        yAxisID: "yIV",
-        tension: 0.3,
-        pointRadius: 0,
-        borderWidth: 1.5,
-        borderDash: [2,4],
+        yAxisID: "ySpot",
+        tension: 0.3, pointRadius: 0, borderWidth: 1.5, borderDash: [2,4],
       },
     ]
   },
   options: {
-    responsive: true,
-    maintainAspectRatio: false,
+    responsive: true, maintainAspectRatio: false,
     interaction: { mode: "index", intersect: false },
     plugins: {
       legend: { labels: { color: "#8b949e", font: { size: 11 } } },
-      tooltip: { backgroundColor: "#161b22", borderColor: "#30363d", borderWidth: 1,
-                  titleColor: "#e6edf3", bodyColor: "#8b949e" },
+      tooltip: { ...TOOLTIP_DEFAULTS,
+        callbacks: {
+          label: ctx => {
+            const v = ctx.parsed.y;
+            if (ctx.dataset.yAxisID === "ySpot") return ` Spot: $` + v.toLocaleString("en-US", {maximumFractionDigits:0});
+            if (ctx.dataset.yAxisID === "yDelta") return ` Delta: ` + v.toFixed(2) + `%`;
+            return ` Gamma: ` + v.toFixed(3) + ` pts`;
+          }
+        }
+      },
     },
     scales: {
-      x: { ticks: { color: "#484f58", maxTicksLimit: 12, maxRotation: 30, font: { size: 10 } },
-             grid: { color: "#21262d" } },
+      x: { ticks: { color: "#484f58", maxTicksLimit: 14, maxRotation: 30, font: { size: 10 } }, grid: { color: "#21262d" } },
       yDelta: {
         type: "linear", position: "left",
         title: { display: true, text: "Delta (%)", color: "#58a6ff", font: { size: 10 } },
-        ticks: { color: "#58a6ff", font: { size: 10 } },
+        ticks: { color: "#58a6ff", font: { size: 10 }, callback: v => v.toFixed(1)+"%" },
         grid: { color: "#21262d" },
       },
       yGamma: {
         type: "linear", position: "right",
-        title: { display: true, text: "Gamma (pts/1%)", color: "#f85149", font: { size: 10 } },
-        ticks: { color: "#f85149", font: { size: 10 } },
+        title: { display: true, text: "Gamma (pts)", color: "#f85149", font: { size: 10 } },
+        ticks: { color: "#f85149", font: { size: 10 }, callback: v => v.toFixed(2) },
         grid: { drawOnChartArea: false },
       },
-      yIV: {
+      ySpot: {
         type: "linear", position: "right",
-        title: { display: true, text: "IV (%)", color: "#d29922", font: { size: 10 } },
-        ticks: { color: "#d29922", font: { size: 10 } },
+        title: { display: true, text: "Spot ($)", color: "#d29922", font: { size: 10 } },
+        ticks: { color: "#d29922", font: { size: 10 }, callback: v => "$"+Math.round(v/1000)+"k" },
         grid: { drawOnChartArea: false },
         offset: true,
       },
@@ -367,72 +374,81 @@ new Chart(ctxG, {
   }
 });
 
-// ── Chart 2 : PnL Option / Hedge / Total ─────────────────────────────────
-const ctxP = document.getElementById("chartPnl").getContext("2d");
-new Chart(ctxP, {
+// ── Chart 2 : PnL + Spot ─────────────────────────────────────────────────
+new Chart(document.getElementById("chartPnl"), {
   type: "line",
   data: {
     labels: LABELS,
     datasets: [
       {
         label: "PnL Option ($)",
-        data: ["6.15", "6.16", "6.16", "6.16", "12.32", "-61.6", "-61.6", "-61.61", "-30.83", "-61.58", "-61.56", "-61.57", "-61.64", "-30.86", "-30.86", "0.0", "-30.9", "-30.89", "0.0", "0.0", "-30.85", "0.0", "-30.87", "-30.87", "0.0", "62.29", "31.11", "0.0", "0.0", "0.0"],
+        data: ["6.15", "6.16", "6.16", "6.16", "12.32", "-61.6", "-61.6", "-61.61", "-30.83", "-61.58", "-61.56", "-61.57", "-61.64", "-30.86", "-30.86", "0.0", "-30.9", "-30.89", "0.0", "0.0", "-30.85", "0.0", "-30.87", "-30.87", "0.0", "62.29", "31.11", "0.0", "0.0", "0.0", 0.0],
         borderColor: "#3fb950",
         backgroundColor: "rgba(63,185,80,0.07)",
-        tension: 0.3,
-        pointRadius: LABELS.length > 50 ? 0 : 3,
-        borderWidth: 2,
-        fill: true,
+        yAxisID: "yPnl",
+        tension: 0.3, pointRadius: PT_R, borderWidth: 2, fill: true,
       },
       {
         label: "PnL Hedge ($)",
-        data: ["-10.97", "-9.84", "-8.97", "-9.55", "-2.93", "-2.15", "-1.62", "-0.05", "-10.63", "5.09", "6.74", "6.52", "-8.72", "-25.36", "-23.86", "-46.34", "-40.41", "-36.34", "-48.22", "-21.14", "-17.18", "-39.98", "-24.15", "-24.13", "-56.21", "-124.31", "-112.86", "-51.02", "-30.25", "-50.19"],
+        data: ["-10.97", "-9.84", "-8.97", "-9.55", "-2.93", "-2.15", "-1.62", "-0.05", "-10.63", "5.09", "6.74", "6.52", "-8.72", "-25.36", "-23.86", "-46.34", "-40.41", "-36.34", "-48.22", "-21.14", "-17.18", "-39.98", "-24.15", "-24.13", "-56.21", "-124.31", "-112.86", "-51.02", "-30.25", "-50.19", -38.56],
         borderColor: "#ff9800",
         backgroundColor: "transparent",
-        tension: 0.3,
-        pointRadius: LABELS.length > 50 ? 0 : 3,
-        borderWidth: 2,
-        borderDash: [5,3],
+        yAxisID: "yPnl",
+        tension: 0.3, pointRadius: PT_R, borderWidth: 2, borderDash: [5,3],
       },
       {
         label: "PnL Total ($)",
-        data: ["-4.81", "-3.68", "-2.8", "-3.39", "9.4", "-63.74", "-63.2", "-61.64", "-41.44", "-56.47", "-54.78", "-55.0", "-70.3", "-56.16", "-54.72", "-46.34", "-71.31", "-67.23", "-48.22", "-21.14", "-48.03", "-39.98", "-55.02", "-55.0", "-56.21", "-62.03", "-81.75", "-51.03", "-30.25", "-50.19"],
+        data: ["-4.81", "-3.68", "-2.8", "-3.39", "9.4", "-63.74", "-63.2", "-61.64", "-41.44", "-56.47", "-54.78", "-55.0", "-70.3", "-56.16", "-54.72", "-46.34", "-71.31", "-67.23", "-48.22", "-21.14", "-48.03", "-39.98", "-55.02", "-55.0", "-56.21", "-62.03", "-81.75", "-51.03", "-30.25", "-50.19", -38.56],
         borderColor: "#e6edf3",
-        backgroundColor: "rgba(230,237,243,0.05)",
-        tension: 0.3,
-        pointRadius: LABELS.length > 50 ? 0 : 3,
-        borderWidth: 2.5,
-        fill: true,
+        backgroundColor: "rgba(230,237,243,0.04)",
+        yAxisID: "yPnl",
+        tension: 0.3, pointRadius: PT_R, borderWidth: 2.5, fill: true,
+      },
+      {
+        label: "Spot BTC ($)",
+        data: ["61549.65", "61555.65", "61560.31", "61557.18", "61592.43", "61596.57", "61599.42", "61608.29", "61664.63", "61580.94", "61564.03", "61565.2", "61643.18", "61728.4", "61720.74", "61835.8", "61805.43", "61784.61", "61845.42", "61706.8", "61693.58", "61819.61", "61732.12", "61732.01", "61909.35", "62285.92", "62222.63", "61880.69", "61765.81", "61876.07", 61811.78],
+        borderColor: "rgba(210,153,34,0.7)",
+        backgroundColor: "transparent",
+        yAxisID: "ySpot2",
+        tension: 0.3, pointRadius: 0, borderWidth: 1.5, borderDash: [2,4],
       },
     ]
   },
   options: {
-    responsive: true,
-    maintainAspectRatio: false,
+    responsive: true, maintainAspectRatio: false,
     interaction: { mode: "index", intersect: false },
     plugins: {
       legend: { labels: { color: "#8b949e", font: { size: 11 } } },
-      tooltip: { backgroundColor: "#161b22", borderColor: "#30363d", borderWidth: 1,
-                  titleColor: "#e6edf3", bodyColor: "#8b949e",
-                  callbacks: {
-                    label: ctx => " " + ctx.dataset.label + ": " + (ctx.parsed.y >= 0 ? "+" : "") + ctx.parsed.y.toFixed(0) + "$"
-                  } },
-      annotation: {} /* ligne zéro gérée par scales */
+      tooltip: { ...TOOLTIP_DEFAULTS,
+        callbacks: {
+          label: ctx => {
+            const v = ctx.parsed.y;
+            if (ctx.dataset.yAxisID === "ySpot2") return ` Spot: $` + v.toLocaleString("en-US", {maximumFractionDigits:0});
+            return ` ` + ctx.dataset.label + `: ` + (v >= 0 ? "+" : "") + v.toFixed(0) + `$`;
+          }
+        }
+      },
     },
     scales: {
-      x: { ticks: { color: "#484f58", maxTicksLimit: 12, maxRotation: 30, font: { size: 10 } },
-             grid: { color: "#21262d" } },
-      y: {
-        ticks: { color: "#8b949e", font: { size: 10 },
-                  callback: v => (v >= 0 ? "+" : "") + v.toFixed(0) + "$" },
+      x: { ticks: { color: "#484f58", maxTicksLimit: 14, maxRotation: 30, font: { size: 10 } }, grid: { color: "#21262d" } },
+      yPnl: {
+        type: "linear", position: "left",
+        title: { display: true, text: "PnL ($)", color: "#8b949e", font: { size: 10 } },
+        ticks: { color: "#8b949e", font: { size: 10 }, callback: v => (v>=0?"+":"")+v.toFixed(0)+"$" },
         grid: { color: "#21262d" },
-        border: { dash: [3,3] },
-      }
+      },
+      ySpot2: {
+        type: "linear", position: "right",
+        title: { display: true, text: "Spot ($)", color: "#d29922", font: { size: 10 } },
+        ticks: { color: "#d29922", font: { size: 10 }, callback: v => "$"+Math.round(v/1000)+"k" },
+        grid: { drawOnChartArea: false },
+        offset: true,
+      },
     }
   }
 });
 </script>
 
 </div>
-<footer>VRP Monitor · Généré le 2026-06-07 14:57 UTC · GitHub Actions · Auto-refresh 5 min</footer>
+<footer>VRP Monitor · Généré le 2026-06-07 15:03 UTC · GitHub Actions · Auto-refresh 5 min</footer>
 </body></html>

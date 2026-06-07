@@ -175,6 +175,12 @@ html = f"""<!DOCTYPE html>
   .progress-bg {{ background: #21262d; border-radius: 4px; height: 6px; margin-top: 6px; }}
   .progress-fill {{ background: #3fb950; border-radius: 4px; height: 6px; }}
 
+  /* Graphiques pleine largeur */
+  .chart-section {{ margin-top: 16px; display: flex; flex-direction: column; gap: 16px; }}
+  .chart-card {{ background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; }}
+  .chart-card h2 {{ font-size: 0.78rem; text-transform: uppercase; letter-spacing: .1em; color: #8b949e; border-bottom: 1px solid #21262d; padding-bottom: 10px; margin-bottom: 14px; }}
+  .chart-wrap {{ position: relative; height: 360px; }}
+
   footer {{ text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28px; }}
 </style>
 </head>
@@ -424,95 +430,98 @@ if pnl_history:
 
     n_pts = len(pnl_history)
 
+    spot_js = _json.dumps([p.get("spot", 0) for p in pnl_history])
+
     html += f"""
 <!-- GRAPHIQUES -->
-<div class="grid" style="margin-top:16px">
+<div class="chart-section">
 
-<div class="card" style="grid-column: 1 / -1">
-  <h2>📈 Greeks dans le temps — {n_pts} snapshots</h2>
-  <canvas id="chartGreeks" style="height:340px;max-height:340px"></canvas>
+<div class="chart-card">
+  <h2>📈 Greeks &amp; Spot — {n_pts} snapshots  <span style="font-weight:400;color:#484f58">Delta · Gamma · Spot BTC</span></h2>
+  <div class="chart-wrap"><canvas id="chartGreeks"></canvas></div>
 </div>
 
-<div class="card" style="grid-column: 1 / -1">
-  <h2>💰 PnL dans le temps  <span style="font-weight:400;color:#484f58">Option · Hedge · Total</span></h2>
-  <canvas id="chartPnl" style="height:340px;max-height:340px"></canvas>
+<div class="chart-card">
+  <h2>💰 PnL &amp; Spot — dans le temps  <span style="font-weight:400;color:#484f58">Option · Hedge · Total · Spot BTC</span></h2>
+  <div class="chart-wrap"><canvas id="chartPnl"></canvas></div>
 </div>
 
 </div>
 
 <script>
 const LABELS = {labels_js};
+const PT_R   = LABELS.length > 50 ? 0 : 3;
+const TOOLTIP_DEFAULTS = {{
+  backgroundColor: "#161b22", borderColor: "#30363d", borderWidth: 1,
+  titleColor: "#e6edf3", bodyColor: "#8b949e",
+}};
 
-// ── Chart 1 : Delta + Gamma + IV ──────────────────────────────────────────
-const ctxG = document.getElementById("chartGreeks").getContext("2d");
-new Chart(ctxG, {{
+// ── Chart 1 : Delta + Gamma + Spot ────────────────────────────────────────
+new Chart(document.getElementById("chartGreeks"), {{
   type: "line",
   data: {{
     labels: LABELS,
     datasets: [
       {{
-        label: "Delta position (%)",
+        label: "Delta pos (%)",
         data: {delta_js},
         borderColor: "#58a6ff",
-        backgroundColor: "rgba(88,166,255,0.08)",
+        backgroundColor: "rgba(88,166,255,0.07)",
         yAxisID: "yDelta",
-        tension: 0.3,
-        pointRadius: LABELS.length > 50 ? 0 : 3,
-        borderWidth: 2,
-        fill: true,
+        tension: 0.3, pointRadius: PT_R, borderWidth: 2, fill: true,
       }},
       {{
-        label: "Gamma (pts Δ / 1%)",
+        label: "Gamma (pts/1%)",
         data: {gamma_js},
         borderColor: "#f85149",
         backgroundColor: "transparent",
         yAxisID: "yGamma",
-        tension: 0.3,
-        pointRadius: LABELS.length > 50 ? 0 : 3,
-        borderWidth: 2,
-        borderDash: [5,3],
+        tension: 0.3, pointRadius: PT_R, borderWidth: 2, borderDash: [5,3],
       }},
       {{
-        label: "IV (%)",
-        data: {iv_js},
-        borderColor: "#d29922",
+        label: "Spot BTC ($)",
+        data: {spot_js},
+        borderColor: "rgba(210,153,34,0.7)",
         backgroundColor: "transparent",
-        yAxisID: "yIV",
-        tension: 0.3,
-        pointRadius: 0,
-        borderWidth: 1.5,
-        borderDash: [2,4],
+        yAxisID: "ySpot",
+        tension: 0.3, pointRadius: 0, borderWidth: 1.5, borderDash: [2,4],
       }},
     ]
   }},
   options: {{
-    responsive: true,
-    maintainAspectRatio: false,
+    responsive: true, maintainAspectRatio: false,
     interaction: {{ mode: "index", intersect: false }},
     plugins: {{
       legend: {{ labels: {{ color: "#8b949e", font: {{ size: 11 }} }} }},
-      tooltip: {{ backgroundColor: "#161b22", borderColor: "#30363d", borderWidth: 1,
-                  titleColor: "#e6edf3", bodyColor: "#8b949e" }},
+      tooltip: {{ ...TOOLTIP_DEFAULTS,
+        callbacks: {{
+          label: ctx => {{
+            const v = ctx.parsed.y;
+            if (ctx.dataset.yAxisID === "ySpot") return ` Spot: $` + v.toLocaleString("en-US", {{maximumFractionDigits:0}});
+            if (ctx.dataset.yAxisID === "yDelta") return ` Delta: ` + v.toFixed(2) + `%`;
+            return ` Gamma: ` + v.toFixed(3) + ` pts`;
+          }}
+        }}
+      }},
     }},
     scales: {{
-      x: {{ ticks: {{ color: "#484f58", maxTicksLimit: 12, maxRotation: 30, font: {{ size: 10 }} }},
-             grid: {{ color: "#21262d" }} }},
+      x: {{ ticks: {{ color: "#484f58", maxTicksLimit: 14, maxRotation: 30, font: {{ size: 10 }} }}, grid: {{ color: "#21262d" }} }},
       yDelta: {{
         type: "linear", position: "left",
         title: {{ display: true, text: "Delta (%)", color: "#58a6ff", font: {{ size: 10 }} }},
-        ticks: {{ color: "#58a6ff", font: {{ size: 10 }} }},
+        ticks: {{ color: "#58a6ff", font: {{ size: 10 }}, callback: v => v.toFixed(1)+"%" }},
         grid: {{ color: "#21262d" }},
       }},
       yGamma: {{
         type: "linear", position: "right",
-        title: {{ display: true, text: "Gamma (pts/1%)", color: "#f85149", font: {{ size: 10 }} }},
-        ticks: {{ color: "#f85149", font: {{ size: 10 }} }},
+        title: {{ display: true, text: "Gamma (pts)", color: "#f85149", font: {{ size: 10 }} }},
+        ticks: {{ color: "#f85149", font: {{ size: 10 }}, callback: v => v.toFixed(2) }},
         grid: {{ drawOnChartArea: false }},
       }},
-      yIV: {{
+      ySpot: {{
         type: "linear", position: "right",
-        title: {{ display: true, text: "IV (%)", color: "#d29922", font: {{ size: 10 }} }},
-        ticks: {{ color: "#d29922", font: {{ size: 10 }} }},
+        title: {{ display: true, text: "Spot ($)", color: "#d29922", font: {{ size: 10 }} }},
+        ticks: {{ color: "#d29922", font: {{ size: 10 }}, callback: v => "$"+Math.round(v/1000)+"k" }},
         grid: {{ drawOnChartArea: false }},
         offset: true,
       }},
@@ -520,9 +529,8 @@ new Chart(ctxG, {{
   }}
 }});
 
-// ── Chart 2 : PnL Option / Hedge / Total ─────────────────────────────────
-const ctxP = document.getElementById("chartPnl").getContext("2d");
-new Chart(ctxP, {{
+// ── Chart 2 : PnL + Spot ─────────────────────────────────────────────────
+new Chart(document.getElementById("chartPnl"), {{
   type: "line",
   data: {{
     labels: LABELS,
@@ -532,55 +540,65 @@ new Chart(ctxP, {{
         data: {pnl_opt_js},
         borderColor: "#3fb950",
         backgroundColor: "rgba(63,185,80,0.07)",
-        tension: 0.3,
-        pointRadius: LABELS.length > 50 ? 0 : 3,
-        borderWidth: 2,
-        fill: true,
+        yAxisID: "yPnl",
+        tension: 0.3, pointRadius: PT_R, borderWidth: 2, fill: true,
       }},
       {{
         label: "PnL Hedge ($)",
         data: {pnl_hdg_js},
         borderColor: "#ff9800",
         backgroundColor: "transparent",
-        tension: 0.3,
-        pointRadius: LABELS.length > 50 ? 0 : 3,
-        borderWidth: 2,
-        borderDash: [5,3],
+        yAxisID: "yPnl",
+        tension: 0.3, pointRadius: PT_R, borderWidth: 2, borderDash: [5,3],
       }},
       {{
         label: "PnL Total ($)",
         data: {pnl_tot_js},
         borderColor: "#e6edf3",
-        backgroundColor: "rgba(230,237,243,0.05)",
-        tension: 0.3,
-        pointRadius: LABELS.length > 50 ? 0 : 3,
-        borderWidth: 2.5,
-        fill: true,
+        backgroundColor: "rgba(230,237,243,0.04)",
+        yAxisID: "yPnl",
+        tension: 0.3, pointRadius: PT_R, borderWidth: 2.5, fill: true,
+      }},
+      {{
+        label: "Spot BTC ($)",
+        data: {spot_js},
+        borderColor: "rgba(210,153,34,0.7)",
+        backgroundColor: "transparent",
+        yAxisID: "ySpot2",
+        tension: 0.3, pointRadius: 0, borderWidth: 1.5, borderDash: [2,4],
       }},
     ]
   }},
   options: {{
-    responsive: true,
-    maintainAspectRatio: false,
+    responsive: true, maintainAspectRatio: false,
     interaction: {{ mode: "index", intersect: false }},
     plugins: {{
       legend: {{ labels: {{ color: "#8b949e", font: {{ size: 11 }} }} }},
-      tooltip: {{ backgroundColor: "#161b22", borderColor: "#30363d", borderWidth: 1,
-                  titleColor: "#e6edf3", bodyColor: "#8b949e",
-                  callbacks: {{
-                    label: ctx => " " + ctx.dataset.label + ": " + (ctx.parsed.y >= 0 ? "+" : "") + ctx.parsed.y.toFixed(0) + "$"
-                  }} }},
-      annotation: {{}} /* ligne zéro gérée par scales */
+      tooltip: {{ ...TOOLTIP_DEFAULTS,
+        callbacks: {{
+          label: ctx => {{
+            const v = ctx.parsed.y;
+            if (ctx.dataset.yAxisID === "ySpot2") return ` Spot: $` + v.toLocaleString("en-US", {{maximumFractionDigits:0}});
+            return ` ` + ctx.dataset.label + `: ` + (v >= 0 ? "+" : "") + v.toFixed(0) + `$`;
+          }}
+        }}
+      }},
     }},
     scales: {{
-      x: {{ ticks: {{ color: "#484f58", maxTicksLimit: 12, maxRotation: 30, font: {{ size: 10 }} }},
-             grid: {{ color: "#21262d" }} }},
-      y: {{
-        ticks: {{ color: "#8b949e", font: {{ size: 10 }},
-                  callback: v => (v >= 0 ? "+" : "") + v.toFixed(0) + "$" }},
+      x: {{ ticks: {{ color: "#484f58", maxTicksLimit: 14, maxRotation: 30, font: {{ size: 10 }} }}, grid: {{ color: "#21262d" }} }},
+      yPnl: {{
+        type: "linear", position: "left",
+        title: {{ display: true, text: "PnL ($)", color: "#8b949e", font: {{ size: 10 }} }},
+        ticks: {{ color: "#8b949e", font: {{ size: 10 }}, callback: v => (v>=0?"+":"")+v.toFixed(0)+"$" }},
         grid: {{ color: "#21262d" }},
-        border: {{ dash: [3,3] }},
-      }}
+      }},
+      ySpot2: {{
+        type: "linear", position: "right",
+        title: {{ display: true, text: "Spot ($)", color: "#d29922", font: {{ size: 10 }} }},
+        ticks: {{ color: "#d29922", font: {{ size: 10 }}, callback: v => "$"+Math.round(v/1000)+"k" }},
+        grid: {{ drawOnChartArea: false }},
+        offset: true,
+      }},
     }}
   }}
 }});
