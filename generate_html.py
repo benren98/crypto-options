@@ -141,6 +141,15 @@ pnl_cumul      = pnl_hist_total + pnl_open
 ts = summ_raw.get("timestamp", "—")
 generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
+# ── Deltas depuis le dernier snapshot (pour l'en-tête) ────────────────────────
+_prev_spot    = float(pnl_history[-2].get("spot",      0)) if len(pnl_history) >= 2 else None
+_prev_pnl     = float(pnl_history[-2].get("pnl_total", 0)) if len(pnl_history) >= 2 else None
+_curr_spot    = float(summ_raw.get("spot", 0))
+_curr_pnl     = float(summ_raw.get("total_pnl_usd", 0))
+_delta_spot   = (_curr_spot - _prev_spot)           if _prev_spot is not None else None
+_delta_spot_pct = (_delta_spot / _prev_spot * 100)  if _prev_spot else None
+_delta_pnl    = (_curr_pnl  - _prev_pnl)            if _prev_pnl  is not None else None
+
 # ── HTML ───────────────────────────────────────────────────────────────────────
 def row(label, value, cls="", unit=""):
     return f'<tr><td class="label">{label}</td><td class="{cls}">{value}{unit}</td></tr>'
@@ -162,8 +171,14 @@ html = f"""<!DOCTYPE html>
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{ font-family: 'SF Mono', 'Fira Code', monospace; background: #0d1117; color: #e6edf3; min-height: 100vh; padding: 24px; }}
-  h1 {{ font-size: 1.4rem; color: #58a6ff; margin-bottom: 4px; }}
-  .subtitle {{ color: #8b949e; font-size: 0.82rem; margin-bottom: 24px; }}
+  h1 {{ font-size: 1.4rem; color: #58a6ff; margin-bottom: 10px; }}
+  .subtitle {{ color: #8b949e; font-size: 0.82rem; margin-bottom: 6px; }}
+  /* En-tête chips */
+  .header-bar {{ display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; align-items: center; }}
+  .chip {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.82rem; display: flex; flex-direction: column; gap: 2px; min-width: 140px; }}
+  .chip-label {{ color: #8b949e; font-size: 0.70rem; text-transform: uppercase; letter-spacing: .06em; }}
+  .chip-value {{ font-weight: 700; font-size: 1.05rem; color: #e6edf3; }}
+  .chip-delta {{ font-size: 0.75rem; margin-top: 1px; }}
   .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }}
   .card {{ background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; }}
   .card h2 {{ font-size: 0.78rem; text-transform: uppercase; letter-spacing: .1em; color: #8b949e; border-bottom: 1px solid #21262d; padding-bottom: 10px; margin-bottom: 14px; }}
@@ -217,9 +232,49 @@ else:
     expiry     = pos.get("expiry_dt", "—")[:10] if pos else "—"
     spot_move  = f(float(s.get("spot_move_pct", 0)), 2, sign=True)
 
+    # ── Chips de l'en-tête ────────────────────────────────────────────────────
+    _spot_cl  = "pos" if (_delta_spot or 0) >= 0 else "neg"
+    _pnl_cl   = "pos" if _curr_pnl >= 0 else "neg"
+    _dpnl_cl  = ("pos" if (_delta_pnl or 0) >= 0 else "neg") if _delta_pnl is not None else "neu"
+    _tte_cl   = "warn" if float(s.get("tte_days", 99)) <= 1 else "neu"
+
+    _spot_delta_html = (
+        f'<span class="chip-delta {_spot_cl}">'
+        f'{"+" if (_delta_spot or 0) >= 0 else ""}{f(_delta_spot, 0, True)}$'
+        f' ({f(_delta_spot_pct, 2, True)}%) vs snapshot préc.</span>'
+    ) if _delta_spot is not None else '<span class="chip-delta neu">— premier snapshot</span>'
+
+    _pnl_delta_html = (
+        f'<span class="chip-delta {_dpnl_cl}">'
+        f'{"+" if (_delta_pnl or 0) >= 0 else ""}{f(_delta_pnl, 0, True)}$ vs snapshot préc.</span>'
+    ) if _delta_pnl is not None else '<span class="chip-delta neu">— premier snapshot</span>'
+
     html += f"""
 <h1>📊 {instrument}</h1>
 <div class="subtitle">Données : {ts} · Généré : {generated} · ↻ auto-refresh 5min</div>
+
+<div class="header-bar">
+  <div class="chip">
+    <span class="chip-label">Spot BTC</span>
+    <span class="chip-value">${f(_curr_spot, 0)}</span>
+    {_spot_delta_html}
+  </div>
+  <div class="chip">
+    <span class="chip-label">PnL total</span>
+    <span class="chip-value {_pnl_cl}">{f(_curr_pnl, 0, True)}$</span>
+    {_pnl_delta_html}
+  </div>
+  <div class="chip">
+    <span class="chip-label">TTE restant</span>
+    <span class="chip-value {_tte_cl}">{f(s.get("tte_days"), 2)}j</span>
+    <span class="chip-delta neu">Expiry {expiry}</span>
+  </div>
+  <div class="chip">
+    <span class="chip-label">IV actuelle</span>
+    <span class="chip-value {"neg" if float(s.get("current_iv_pct",0)) > float(pos.get("iv_at_entry",0)) else "pos"}">{f(s.get("current_iv_pct"), 1)}%</span>
+    <span class="chip-delta {"neg" if float(s.get("current_iv_pct",0)) > float(pos.get("iv_at_entry",0)) else "pos"}">{f(float(s.get("current_iv_pct",0)) - float(pos.get("iv_at_entry",0)), 1, True)} pts vs entrée</span>
+  </div>
+</div>
 
 <div class="grid">
 
@@ -288,7 +343,14 @@ else:
     {row("% de la prime", f'<span class="{color(s.get("pnl_pct_of_premium"))}">{f(s.get("pnl_pct_of_premium"),1,True)}%</span>')}
     <tr><td colspan="2" style="padding-top:10px; color:#8b949e; font-size:0.78rem;">THETA</td></tr>
     {row("Cumulé théorique", f'<span class="pos">+${f(s.get("theta_theory_usd"),0)}</span>  sur {f(attr.get("hours_held",0),1)}h')}
-    {row("VRP capture", f'{s.get("vrp_capture_pct") or "(< 6h)"}%')}
+    {(lambda cap=float(s.get("vrp_capture_pct") or 0), th=float(s.get("theta_theory_usd") or 0):
+      row("Theta capturé",
+          f'<span class="{"pos" if cap >= 80 else ("warn" if cap >= 0 else "neg")}">'
+          f'{f(cap, 0)}%</span>'
+          f'<span style="color:#484f58;font-size:0.78rem"> = PnL option / Theta théo.</span>'
+          f'<br><span style="color:#484f58;font-size:0.72rem">'
+          f'100% = tout le theta capturé · &gt;100% = IV compression bonus · &lt;0% = IV/Δ mangent tout</span>'
+      ))()}
   </table>
   <div class="progress-bg" title="Theta cumulé / Prime">
     <div class="progress-fill" style="width:{min(100, abs(float(s.get('theta_theory_usd',0))/float(pos.get('entry_price_usd',400))*100)):.0f}%"></div>
