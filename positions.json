@@ -25,12 +25,13 @@
         "side": "SELL",
         "qty": -0.19532,
         "spot": 61608.03,
+        "perp_price": 61598.56,
         "qty_before": 0.0,
         "qty_after": -0.19532,
-        "vwap_before": 61608.03,
-        "vwap_after": 61608.03,
+        "vwap_before": 0.0,
+        "vwap_after": 61598.56,
         "drift": 0.19532,
-        "note": "hedge initial \u00e0 l'entr\u00e9e"
+        "note": "hedge initial \u00e0 l'entr\u00e9e (perp mark $61598.56 vs index $61608.03)"
       },
       {
         "ts": "2026-06-07 05:06:44 UTC",
@@ -49,5 +50,5 @@
   },
   "history": [],
   "snapshots": [],
-  "last_updated": "2026-06-07 15:16:51 UTC"
+  "last_updated": "2026-06-07 17:02:01 UTC"
 }
