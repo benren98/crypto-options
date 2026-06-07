@@ -696,6 +696,14 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         state["open"]["hedge_rebalances"] = pos.get("hedge_rebalances", 0) + 1
 
         # Enregistrer le rebalancement dans l'historique
+        _vwap_note = (
+            "rachat partiel — VWAP entrée inchangé"   if order_qty > 0 and abs_new < abs_old
+            else "short augmenté — VWAP recalculé"     if order_qty < 0 and abs_new > abs_old
+            else "position fermée"                     if abs_new < 1e-8
+            else ""
+        )
+        # Delta net estimé APRÈS rebalancement (pour affichage dashboard)
+        _delta_after_pct = round((hedge["delta_drift"] - order_qty) * 100, 3)
         rebal_entry = {
             "ts":        now_dt(),
             "side":      "SELL" if order_qty < 0 else "BUY",
@@ -706,6 +714,8 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             "vwap_before": round(old_avg, 2),
             "vwap_after":  round(new_avg, 2),
             "drift":       round(hedge["delta_drift"], 5),
+            "delta_net_after_pct": _delta_after_pct,
+            "note":        _vwap_note,
         }
         if "hedge_history" not in state["open"]:
             state["open"]["hedge_history"] = []

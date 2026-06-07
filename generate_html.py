@@ -294,13 +294,13 @@ else:
 
     _spot_delta_html = (
         f'<span class="chip-delta {_spot_cl}">'
-        f'{"+" if (_delta_spot or 0) >= 0 else ""}{f(_delta_spot, 0, True)}$'
+        f'{f(_delta_spot, 0, True)}$'
         f' ({f(_delta_spot_pct, 2, True)}%) vs snapshot préc.</span>'
     ) if _delta_spot is not None else '<span class="chip-delta neu">— premier snapshot</span>'
 
     _pnl_delta_html = (
         f'<span class="chip-delta {_dpnl_cl}">'
-        f'{"+" if (_delta_pnl or 0) >= 0 else ""}{f(_delta_pnl, 0, True)}$ vs snapshot préc.</span>'
+        f'{f(_delta_pnl, 0, True)}$ vs snapshot préc.</span>'
     ) if _delta_pnl is not None else '<span class="chip-delta neu">— premier snapshot</span>'
 
     html += f"""
@@ -381,6 +381,20 @@ else:
           f'  <span class="{"warn" if abs(drift)>hedge_thr_btc else "ok"}" style="font-size:0.8rem">'
           f'{"⚠️ REBALANCER" if abs(drift)>hedge_thr_btc else "✅ OK"}</span>'
       ))()}
+    {(lambda hh=pos.get("hedge_history",[]), ts_snap=summ_raw.get("timestamp",""):
+      row("Dernier rebal. ce cycle",
+          (lambda last=hh[-1] if hh else None:
+            (f'<span class="ok">✅ Exécuté {to_ny(last["ts"])} — '
+             f'{"BUY" if last.get("qty",0)>0 else "SELL"} {f(abs(last.get("qty",0)),5)} BTC @ ${f(last.get("spot",0),0)}'
+             f'<br><span style="font-size:0.78rem;color:#8b949e">'
+             f'Qty: {f(last.get("qty_before",0),5)} → {f(last.get("qty_after",0),5)} BTC'
+             f'  · VWAP: ${f(last.get("vwap_before",0),2)} → ${f(last.get("vwap_after",0),2)}'
+             + (f'  · {last["note"]}' if last.get("note") else "")
+             + f'</span></span>'
+             if last else '<span class="neu">—</span>')
+          )()
+      ) if hh else row("Dernier rebal. ce cycle", '<span class="neu">Aucun rebalancement</span>')
+    )()}
   </table>
   {drift_bar_html}
 </div>
