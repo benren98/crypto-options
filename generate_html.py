@@ -83,6 +83,28 @@ if pos and summ_raw.get("spot"):
     ba_exit      = -(curr_ask - curr_mark) * spot
     total_option = mid_to_mid + ba_entry + ba_exit
 
+    # ── Barre de drift hedge ───────────────────────────────────────────────
+    _drift_abs    = abs(float(s.get("hedge_delta_drift", 0)))
+    _drift_pct    = _drift_abs * 100
+    _fill_pct     = min(100.0, _drift_abs / max(hedge_thr_btc, 1e-9) * 100)
+    _bar_color    = "#f85149" if _drift_abs > hedge_thr_btc else ("#d29922" if _fill_pct > 70 else "#3fb950")
+    _drift_cl     = "warn" if _drift_abs > hedge_thr_btc else ("warn" if _fill_pct > 70 else "ok")
+    _warn_label   = f(hedge_thr_pct * 0.7, 1)
+    drift_bar_html = f"""
+  <div style="margin-top:12px">
+    <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:#8b949e;margin-bottom:4px">
+      <span>Drift actuel&nbsp;: <b class="{_drift_cl}">{f(_drift_pct,2)}%&thinsp;&#916;</b></span>
+      <span>Seuil&nbsp;: {f(hedge_thr_pct,1)}%&thinsp;&#916;</span>
+    </div>
+    <div style="background:#21262d;border-radius:4px;height:8px;position:relative;overflow:hidden">
+      <div style="height:8px;border-radius:4px;width:{_fill_pct:.1f}%;background:{_bar_color}"></div>
+      <div style="position:absolute;top:0;right:0;bottom:0;width:2px;background:#484f58"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#484f58;margin-top:3px">
+      <span>0%</span><span style="color:#8b949e">{_warn_label}% &#9888;</span><span>{f(hedge_thr_pct,1)}% &#128308;</span>
+    </div>
+  </div>"""
+
     attr = dict(
         spot=spot, entry_spot=entry_spot, delta_spot=delta_spot,
         delta_iv=delta_iv, hours_held=hours_held,
@@ -247,10 +269,11 @@ else:
     {(lambda drift=float(s.get("hedge_delta_drift",0)):
       row("Seuil rebal. (IV-adj)",
           f'<span class="neu">{f(hedge_thr_pct,1)}% delta = {f(hedge_thr_btc,4)} BTC</span>'
-          f'  <span class="{"warn" if abs(drift)>hedge_thr_btc else "ok"} " style="font-size:0.8rem">'
+          f'  <span class="{"warn" if abs(drift)>hedge_thr_btc else "ok"}" style="font-size:0.8rem">'
           f'{"⚠️ REBALANCER" if abs(drift)>hedge_thr_btc else "✅ OK"}</span>'
       ))()}
   </table>
+  {drift_bar_html}
 </div>
 
 <!-- PnL OPEN -->
