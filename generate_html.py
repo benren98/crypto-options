@@ -177,7 +177,8 @@ if pos and summ_raw.get("spot"):
     for pct in [-5, -3, -2, -1, 0, 1, 2, 3, 5]:
         ds        = spot * pct / 100
         ns        = spot + ds
-        nd_pct    = max(0.0, delta_pct - gamma_pts * abs(pct))
+        # Put : spot baisse → plus ITM → delta monte ; spot monte → plus OTM → delta baisse
+        nd_pct    = (delta_pct + gamma_pts * abs(pct)) if pct < 0 else max(0.0, delta_pct - gamma_pts * abs(pct))
         pnl_o     = abs(delta_live) * ds - 0.5 * gamma_entry * ds ** 2
         if pct > 0:
             pnl_o = min(pnl_o, premium_usd)
