@@ -437,8 +437,9 @@ if pnl_history:
     import json as _json
 
     labels     = [p["ts"][:16].replace("T"," ") for p in pnl_history]
-    delta_data = [p.get("delta_pct", 0)  for p in pnl_history]
-    gamma_data = [p.get("gamma_pts", 0)  for p in pnl_history]
+    delta_data    = [p.get("delta_pct", 0)     for p in pnl_history]
+    net_delta_data= [p.get("net_delta_pct", 0) for p in pnl_history]
+    gamma_data    = [p.get("gamma_pts", 0)     for p in pnl_history]
     iv_data    = [p.get("iv_pct", 0)     for p in pnl_history]
     pnl_opt    = [p.get("pnl_option", 0) for p in pnl_history]
     pnl_hdg    = [p.get("pnl_hedge", 0)  for p in pnl_history]
@@ -446,6 +447,7 @@ if pnl_history:
 
     labels_js     = _json.dumps(labels)
     delta_js      = _json.dumps(delta_data)
+    net_delta_js  = _json.dumps(net_delta_data)
     gamma_js      = _json.dumps(gamma_data)
     iv_js         = _json.dumps(iv_data)
     pnl_opt_js    = _json.dumps(pnl_opt)
@@ -461,7 +463,7 @@ if pnl_history:
 <div class="chart-section">
 
 <div class="chart-card">
-  <h2>📈 Greeks &amp; Spot — {n_pts} snapshots  <span style="font-weight:400;color:#484f58">Delta · Gamma · Spot BTC</span></h2>
+  <h2>📈 Greeks &amp; Spot — {n_pts} snapshots  <span style="font-weight:400;color:#484f58">Delta pos · Delta net · Gamma · Spot BTC</span></h2>
   <div class="chart-wrap"><canvas id="chartGreeks"></canvas></div>
 </div>
 
@@ -495,6 +497,14 @@ new Chart(document.getElementById("chartGreeks"), {{
         tension: 0.3, pointRadius: PT_R, borderWidth: 2, fill: true,
       }},
       {{
+        label: "Delta net pos+hedge (%)",
+        data: {net_delta_js},
+        borderColor: "#a371f7",
+        backgroundColor: "rgba(163,113,247,0.07)",
+        yAxisID: "yDelta",
+        tension: 0.3, pointRadius: PT_R, borderWidth: 2, borderDash: [4,2], fill: false,
+      }},
+      {{
         label: "Gamma (pts/1%)",
         data: {gamma_js},
         borderColor: "#f85149",
@@ -522,8 +532,9 @@ new Chart(document.getElementById("chartGreeks"), {{
           label: ctx => {{
             const v = ctx.parsed.y;
             if (ctx.dataset.yAxisID === "ySpot") return ` Spot: $` + v.toLocaleString("en-US", {{maximumFractionDigits:0}});
-            if (ctx.dataset.yAxisID === "yDelta") return ` Delta: ` + v.toFixed(2) + `%`;
-            return ` Gamma: ` + v.toFixed(3) + ` pts`;
+            if (ctx.dataset.yAxisID === "yGamma") return ` Gamma: ` + v.toFixed(3) + ` pts`;
+            if (ctx.dataset.label.includes("net")) return ` Delta net: ` + (v>=0?"+":"") + v.toFixed(2) + `%`;
+            return ` Delta pos: ` + v.toFixed(2) + `%`;
           }}
         }}
       }},

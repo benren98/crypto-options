@@ -667,6 +667,7 @@ def run_once(plot: bool = False, report: bool = False):
         "spot":        snap["spot"],
         "tte_days":    snap["tte_days"],
         "delta_pct":   round(abs(float(snap.get("live_delta", 0))) * 100, 3),
+        "net_delta_pct": round(float(snap.get("hedge_delta_drift", 0)) * 100, 3),
         "gamma_pts":   round(gamma_pts, 4),
         "iv_pct":      snap.get("current_iv_pct"),
         "pnl_option":  snap.get("pnl_option_usd"),
