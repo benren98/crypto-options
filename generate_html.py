@@ -50,7 +50,9 @@ if pos and summ_raw.get("spot"):
     # Fallback sur gamma_at_entry uniquement si le champ live n'est pas encore présent
     gamma_entry  = float(s.get("live_gamma") or pos.get("gamma_at_entry", 7e-5))
     hedge_avg    = float(pos.get("hedge_avg_entry", entry_spot))
-    hedge_qty    = float(s.get("hedge_qty", pos.get("hedge_qty", 0)))
+    hedge_qty        = float(s.get("hedge_qty", pos.get("hedge_qty", 0)))
+    hedge_thr_pct    = float(s.get("hedge_threshold_pct") or 5.0)
+    hedge_thr_btc    = float(s.get("hedge_threshold_btc") or hedge_thr_pct / 100)
     curr_mark    = float(s.get("current_price_btc", 0))
     curr_ask     = float(s.get("current_ask_btc", 0))
     curr_bid     = float(s.get("current_bid_btc", 0))
@@ -224,7 +226,8 @@ else:
     {row("Qty short", f'{s.get("hedge_qty")} BTC')}
     {row("VWAP entrée", f'${f(pos.get("hedge_avg_entry"),0)}')}
     {row("Rebalancements", str(pos.get("hedge_rebalances", 0)))}
-    {row("Drift Δ", f'<span class="{"warn" if abs(float(s.get("hedge_delta_drift",0)))>0.03 else "ok"}">{f(s.get("hedge_delta_drift"),4,True)}</span>  {"⚠️ REBALANCER" if abs(float(s.get("hedge_delta_drift",0)))>0.03 else "✅ OK"}')}
+    {row("Seuil rebal. (IV-adj)", f'<span class="neu">{f(hedge_thr_pct,1)}% delta = {f(hedge_thr_btc,4)} BTC</span>')}
+    {row("Drift Δ", f'<span class="{"warn" if abs(float(s.get("hedge_delta_drift",0)))>hedge_thr_btc else "ok"}">{f(s.get("hedge_delta_drift"),4,True)} ({f(abs(float(s.get("hedge_delta_drift",0)))*100,2)}%)</span>  {"⚠️ REBALANCER" if abs(float(s.get("hedge_delta_drift",0)))>hedge_thr_btc else "✅ OK"}')}
   </table>
 </div>
 
@@ -370,8 +373,8 @@ else:
     alerts = []
     if tte <= 1:    alerts.append(('neg', '⚠️ ROLLER MAINTENANT', f'TTE = {f(tte,2)}j'))
     else:           alerts.append(('ok',  '✅ Roll OK',           f'TTE = {f(tte,2)}j'))
-    if drft > 0.03: alerts.append(('neg', '⚠️ REBALANCER',        f'Drift = {f(drft,4)}'))
-    else:           alerts.append(('ok',  '✅ Hedge OK',           f'Drift = {f(drft,4)}'))
+    if drft > hedge_thr_btc: alerts.append(('neg', '⚠️ REBALANCER',  f'Drift = {f(drft*100,2)}% > seuil {f(hedge_thr_pct,1)}% (IV-adj)'))
+    else:                    alerts.append(('ok',  '✅ Hedge OK',    f'Drift = {f(drft*100,2)}% < seuil {f(hedge_thr_pct,1)}% (IV-adj)'))
     if div > 10:    alerts.append(('neg', '🚨 IV SPIKE',           f'ΔIV = {f(div,1,True)}pts'))
     elif div > 5:   alerts.append(('warn','⚠️ IV élevée',          f'ΔIV = {f(div,1,True)}pts'))
     else:           alerts.append(('ok',  '✅ IV OK',              f'ΔIV = {f(div,1,True)}pts'))

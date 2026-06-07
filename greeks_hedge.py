@@ -47,7 +47,10 @@ ROLL_TRIGGER         = 1.0   # jours restants -> fenêtre d'observation pour le 
 GAMMA_ROLL_THRESHOLD = 6.0   # pts de delta / 1% move AU-DESSUS duquel on rolle
                               # (roll si TTE <= ROLL_TRIGGER ET gamma > seuil)
                               # Gamma > 6pts = option se rapproche d'ATM = danger
-HEDGE_THRESHOLD = 0.03       # rebalancer le hedge si delta_net dépasse ce seuil
+HEDGE_THRESHOLD_BASE_PCT = 5.0   # bande de base en % de delta (ex : 5% = rebalance si drift > 5pts Δ)
+HEDGE_IV_REF         = 70.0      # IV de référence BTC "normale" — calibre la bande
+# Formule : threshold_pct = BASE × sqrt(IV_current / IV_REF), clampé [2%, 8%]
+# Plus la vol est élevée → bandes plus larges → moins de rebalancements inutiles
 RISK_FREE_RATE  = 0.05           # taux sans risque annualisé (approx)
 CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur Deribit)
 
@@ -413,6 +416,28 @@ def compute_position_greeks(position: dict, spot: float) -> dict:
     return pos_greeks
 
 
+def compute_hedge_threshold(iv_pct: float, contracts: int = 1) -> tuple[float, float]:
+    """
+    Calcule la bande de rebalancement dynamique en fonction de l'IV.
+
+    Logique :
+      threshold_pct = BASE_PCT × sqrt(IV_current / IV_REF)
+      clampé entre 2 % et 8 %
+
+    Plus l'IV est élevée → moves attendus plus grands → coût d'un rebalancement
+    prématuré > coût du gamma bleed → bandes plus larges.
+
+    Retourne : (threshold_btc, threshold_pct)
+      threshold_btc = fraction de l'underlying à dépasser pour déclencher un ordre
+      threshold_pct = en points de delta (%, lisible)
+    """
+    iv_scale      = math.sqrt(max(iv_pct, 20.0) / HEDGE_IV_REF)
+    threshold_pct = HEDGE_THRESHOLD_BASE_PCT * iv_scale
+    threshold_pct = max(2.0, min(8.0, threshold_pct))   # bornes de sécurité
+    threshold_btc = threshold_pct / 100.0 * contracts
+    return round(threshold_btc, 5), round(threshold_pct, 2)
+
+
 def compute_hedge_order(pos_greeks: dict, current_hedge_qty: float,
                          spot: float) -> dict:
     """
@@ -426,10 +451,11 @@ def compute_hedge_order(pos_greeks: dict, current_hedge_qty: float,
     """
     target_hedge  = -pos_greeks["pos_delta"]   # qty à shorter sur perp
     delta_drift   = target_hedge - current_hedge_qty
-    needs_rebalance = abs(delta_drift) > HEDGE_THRESHOLD
 
-    # PnL estimation du hedge
-    hedge_pnl_est = current_hedge_qty * spot * 0.001  # ~0.1% slippage approx
+    # Seuil dynamique basé sur l'IV courante
+    iv_pct = pos_greeks.get("mark_iv_pct") or HEDGE_IV_REF
+    threshold_btc, threshold_pct = compute_hedge_threshold(iv_pct, contracts=1)
+    needs_rebalance = abs(delta_drift) > threshold_btc
 
     # target_hedge > 0 = on doit shorter du perp
     # order: si target > current -> SELL perp (augmenter le short)
@@ -442,7 +468,8 @@ def compute_hedge_order(pos_greeks: dict, current_hedge_qty: float,
         "order_qty":           round(abs(delta_drift), 5) if needs_rebalance else 0.0,
         "order_side":          "sell" if delta_drift > 0 else "buy",
         "order_value_usd":     round(abs(delta_drift) * spot, 2),
-        "hedge_threshold":     HEDGE_THRESHOLD,
+        "hedge_threshold_btc": threshold_btc,
+        "hedge_threshold_pct": threshold_pct,
     }
 
 
@@ -518,10 +545,14 @@ def display_greeks(g: dict):
 
 
 def display_hedge(h: dict):
-    status = ">> REBALANCEMENT REQUIS <<" if h["needs_rebalance"] else "OK (dans le seuil)"
+    thr_btc = h.get("hedge_threshold_btc", 0.03)
+    thr_pct = h.get("hedge_threshold_pct", 3.0)
+    drift_pct = abs(h["delta_drift"]) * 100
+    status = ">> REBALANCEMENT REQUIS <<" if h["needs_rebalance"] else f"OK (drift {drift_pct:.2f}% < seuil {thr_pct:.1f}%)"
     print(f"  Hedge actuel   : {h['current_hedge_qty']:+.5f} BTC short perp")
     print(f"  Hedge cible    : {h['target_hedge_qty']:+.5f} BTC short perp")
-    print(f"  Drift delta    : {h['delta_drift']:+.5f}  [{status}]")
+    print(f"  Drift delta    : {h['delta_drift']:+.5f} ({drift_pct:.2f}%)  [{status}]")
+    print(f"  Seuil IV-adj   : {thr_pct:.1f}% delta = {thr_btc:.5f} BTC")
     if h["needs_rebalance"]:
         print(f"\n  *** ORDRE HEDGE ***")
         print(f"  Action  : {h['order_side'].upper()} {abs(h['order_qty']):.5f} BTC-PERPETUAL")
@@ -694,13 +725,19 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                           f"ET gamma {gamma_pts_alert:.2f}pts > seuil {GAMMA_ROLL_THRESHOLD}pts — ATM danger")
         else:
             alerts.append(f"  [~] TTE {pos_greeks['tte_days']:.2f}j dans fenetre roll "
-                          f"mais gamma {gamma_pts_alert:.2f}pts ≤ seuil — OTM OK, HOLD")
+                          f"mais gamma {gamma_pts_alert:.2f}pts <= seuil — OTM OK, HOLD")
     if abs(pos_greeks["pos_vega"]) > 0.05 * CONTRACTS:
         alerts.append(f"  [!] Vega eleve: {pos_greeks['pos_vega']:.4f}  "
                       f"-> exposition IV significative")
     if abs(pnl["pnl_pct"]) > 50:
         alerts.append(f"  [!!] PnL > 50% en mouvement: {pnl['pnl_pct']:+.1f}% "
                       f"-> verifier stop-loss")
+    # Hedge drift avec seuil dynamique
+    thr_btc = hedge.get("hedge_threshold_btc", 0.03)
+    thr_pct = hedge.get("hedge_threshold_pct", 3.0)
+    if hedge["needs_rebalance"]:
+        alerts.append(f"  [!!] REBALANCER: drift {abs(hedge['delta_drift'])*100:.2f}% "
+                      f"> seuil IV-adj {thr_pct:.1f}%")
 
     if alerts:
         for a in alerts:

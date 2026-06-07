@@ -18,6 +18,7 @@ Usage :
 
 import argparse
 import json
+import math
 import time
 import warnings
 from datetime import datetime, timezone
@@ -149,6 +150,13 @@ def compute_snapshot(position: dict) -> dict:
     curr_vega  = greeks.get("vega", position.get("vega_at_entry", 13.0))
     curr_theta = greeks.get("theta", 0)   # USD/jour (Deribit convention — déjà normalisé)
 
+    # Seuil de rebalancement dynamique (même formule que greeks_hedge.py)
+    HEDGE_THRESHOLD_BASE_PCT = 5.0
+    HEDGE_IV_REF = 70.0
+    iv_scale         = math.sqrt(max(curr_iv, 20.0) / HEDGE_IV_REF)
+    hedge_thr_pct    = max(2.0, min(8.0, HEDGE_THRESHOLD_BASE_PCT * iv_scale))
+    hedge_thr_btc    = hedge_thr_pct / 100.0
+
     # TTE en jours
     expiry_dt = pd.to_datetime(position["expiry_dt"], utc=True)
     tte_days  = (expiry_dt - pd.Timestamp(now_utc())).total_seconds() / 86400
@@ -233,6 +241,8 @@ def compute_snapshot(position: dict) -> dict:
         "live_gamma":         round(curr_gamma, 7),
         "hedge_qty":          hedge_qty,
         "hedge_delta_drift":  round(-curr_delta - abs(hedge_qty), 5),
+        "hedge_threshold_pct": round(hedge_thr_pct, 2),
+        "hedge_threshold_btc": round(hedge_thr_btc, 5),
         # Données pour attribution
         "current_price_btc":  round(curr_mark, 6),   # mark pour attribution mid-to-mid
         "current_ask_btc":    round(curr_ask,  6),
@@ -414,9 +424,13 @@ def display_snapshot(snap: dict, position: dict):
     print(f"  Delta live   : {snap['live_delta']:+.5f}  "
           f"(entrée: {position['delta_at_entry']:+.4f})")
     print(f"  Hedge actuel : {snap['hedge_qty']:+.5f} BTC short perp")
-    drift = snap['hedge_delta_drift']
-    drift_flag = "  *** REBALANCER ***" if abs(drift) > 0.03 else "  OK"
-    print(f"  Drift delta  : {drift:+.5f}{drift_flag}")
+    drift     = snap['hedge_delta_drift']
+    thr_btc   = snap.get('hedge_threshold_btc', 0.03)
+    thr_pct   = snap.get('hedge_threshold_pct', 3.0)
+    drift_pct = abs(drift) * 100
+    drift_flag = "  *** REBALANCER ***" if abs(drift) > thr_btc else "  OK"
+    print(f"  Drift delta  : {drift:+.5f} ({drift_pct:.2f}%){drift_flag}")
+    print(f"  Seuil IV-adj : {thr_pct:.1f}% delta = {thr_btc:.5f} BTC")
 
     # Alertes
     alerts = []
