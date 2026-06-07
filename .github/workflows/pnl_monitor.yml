@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    concurrency:
+      group: pnl-monitor
+      cancel-in-progress: false   # attend que le run précédent finisse, ne saute pas
 
     steps:
       - name: Checkout code
