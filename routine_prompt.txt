@@ -1,123 +1,140 @@
-Lis ces deux fichiers depuis GitHub Gist et affiche le résumé complet de ma position options.
+Lis ces deux fichiers depuis le repo GitHub et affiche le résumé complet de ma position options.
 
-GET https://gist.githubusercontent.com/baceenay/a0c9a7f7a4b157cfaca0847a4920f8e6/raw/positions.json
-GET https://gist.githubusercontent.com/baceenay/a0c9a7f7a4b157cfaca0847a4920f8e6/raw/pnl_summary.json
+GET https://raw.githubusercontent.com/baceenay/crypto-options/main/positions.json
+GET https://raw.githubusercontent.com/baceenay/crypto-options/main/pnl_summary.json
 
 Si "open" est null dans positions.json : affiche "Aucune position ouverte." et arrête.
 
 ---
 
-## CALCULS À EFFECTUER
+## VARIABLES
 
-Variables issues des deux fichiers :
-- entry_price = positions.open.entry_price (bid à l'entrée)
-- entry_mark  = positions.open.entry_mark_price
-- entry_spot  = positions.open.entry_spot
-- entry_iv    = positions.open.iv_at_entry
-- gamma_entry = positions.open.gamma_at_entry
-- hedge_avg   = positions.open.hedge_avg_entry
-- hedge_n     = positions.open.hedge_rebalances
-- curr_mark   = pnl_summary.current_price_btc
-- curr_ask    = pnl_summary.current_ask_btc
-- curr_bid    = pnl_summary.current_bid_btc
-- spot        = pnl_summary.spot (float)
-- delta_live  = pnl_summary.live_delta (négatif pour put)
-- vega_live   = pnl_summary.live_vega (positif, on inverse car short)
-- theta_daily = pnl_summary.theta_daily_now_usd (positif car short)
-- days_held   = pnl_summary.days_held (float)
-- curr_iv     = pnl_summary.current_iv_pct
+Depuis positions.json (open) :
+- entry_price  = open.entry_price
+- entry_mark   = open.entry_mark_price
+- entry_spot   = open.entry_spot
+- entry_iv     = open.iv_at_entry
+- gamma_entry  = open.gamma_at_entry
+- hedge_avg    = open.hedge_avg_entry
+- hedge_n      = open.hedge_rebalances
+- contracts    = open.contracts
+- strike       = open.strike
 
-PnL ATTRIBUTION (calcule ces valeurs) :
-- delta_spot   = spot - entry_spot
-- delta_iv     = curr_iv - entry_iv
-- pnl_delta    = abs(delta_live) * delta_spot          [long delta car short put]
-- pnl_gamma    = 0.5 * (-gamma_entry) * delta_spot^2
-- pnl_theta    = theta_daily * days_held
-- pnl_vega     = (-vega_live) * delta_iv               [short vega]
-- pnl_residual = mid_to_mid - (pnl_delta + pnl_gamma + pnl_theta + pnl_vega)
-- mid_to_mid   = (entry_mark - curr_mark) * spot
-- ba_entry     = -(entry_mark - entry_price) * entry_spot
-- ba_exit      = -(curr_ask - curr_mark) * spot
-- total_option = mid_to_mid + ba_entry + ba_exit
+Depuis pnl_summary.json :
+- curr_mark    = current_price_btc   (mark)
+- curr_ask     = current_ask_btc
+- curr_bid     = current_bid_btc
+- spot         = spot (float)
+- delta_live   = live_delta (négatif pour put)
+- vega_live    = live_vega (positif, on inverse car short)
+- theta_daily  = theta_daily_now_usd (USD/jour, positif car short)
+- days_held    = days_held (float)
+- curr_iv      = current_iv_pct
+- hedge_qty    = hedge_qty
+- hedge_drift  = hedge_delta_drift
+- tte_days     = tte_days
+- pnl_opt      = pnl_option_usd
+- pnl_hedge    = pnl_hedge_usd
+- pnl_total    = total_pnl_usd
+- pnl_pct      = pnl_pct_of_premium
+- theta_theory = theta_theory_usd
+- vrp_capture  = vrp_capture_pct
+
+## CALCULS
+
+delta_spot   = spot - entry_spot
+delta_iv     = curr_iv - entry_iv
+hours_held   = days_held × 24
+
+# Greeks en %
+delta_pct        = abs(delta_live) × 100
+gamma_pts_per1pct = gamma_entry × (spot × 0.01) × 100
+
+# PnL attribution
+pnl_delta    = abs(delta_live) × delta_spot
+pnl_gamma    = 0.5 × (-gamma_entry) × delta_spot²
+pnl_theta    = theta_daily × days_held
+pnl_vega     = (-vega_live) × delta_iv
+mid_to_mid   = (entry_mark - curr_mark) × spot
+pnl_residual = mid_to_mid - (pnl_delta + pnl_gamma + pnl_theta + pnl_vega)
+ba_entry     = -(entry_mark - entry_price) × entry_spot
+ba_exit      = -(curr_ask - curr_mark) × spot
+total_option = mid_to_mid + ba_entry + ba_exit
+
+# Matrice ±5% (depuis VWAP hedge_avg, PnL total depuis entrée)
+Pour chaque move m ∈ [-5,-3,-2,-1,0,+1,+2,+3,+5] % :
+  new_spot_m      = spot × (1 + m/100)
+  dspot_m         = new_spot_m - spot
+  new_delta_pct_m = max(0, delta_pct - gamma_pts_per1pct × abs(m))
+  pnl_opt_m       = abs(delta_live) × dspot_m - 0.5 × gamma_entry × dspot_m²
+  si m > 0 : pnl_opt_m = min(pnl_opt_m, entry_price × entry_spot)   [cappé à la prime]
+  pnl_hedge_m     = -abs(hedge_qty) × (new_spot_m - hedge_avg)
+  pnl_net_m       = pnl_opt_m + pnl_hedge_m
 
 ---
 
 ## RÉSUMÉ À AFFICHER
 
 📍 POSITION — {instrument_name}
-• Spot   : ${spot}  ({spot_move_pct}% vs entrée ${entry_spot})
-• TTE    : {tte_days} jours  |  Expiry : {expiry_dt}
+• Spot    : ${spot}  ({spot_move_pct}% vs entrée ${entry_spot})
+• TTE     : {tte_days} jours  |  Expiry : {expiry_dt}
 • Données : {timestamp}  (⚠️ STALE si > 2h)
 
 💰 NOMINAL
-• Brut          : ${contracts × strike}
-• Delta-ajusté  : ${abs(delta_live) × spot}
-• Prime (bid)   : {entry_price} BTC = ${entry_price × entry_spot}
-• Rachat (ask)  : {curr_ask} BTC = ${curr_ask × spot}
-• Spread actuel : {curr_ask - curr_bid} BTC = ${(curr_ask - curr_bid) × spot}
+• Brut           : ${contracts × strike}
+• Delta-ajusté   : ${delta_pct}% × ${spot} = ${delta_pct/100 × spot}
+• Prime (bid)    : {entry_price} BTC = ${entry_price × entry_spot}
+• Rachat (ask)   : {curr_ask} BTC = ${curr_ask × spot}
+• Spread actuel  : {curr_ask - curr_bid} BTC = ${(curr_ask - curr_bid) × spot}
 
 📐 GREEKS (position short — signés)
-Calcule :
-- delta_pct      = abs(delta_live) × 100                          [% du contrat]
-- gamma_pts_per1 = gamma_entry × (spot × 0.01) × 100             [pts de delta perdus par 1% move]
-
-• Delta  : +{delta_pct}%  ({abs(delta_live)} BTC)
-• Gamma  : -{gamma_pts_per1} pts de delta par 1% de move  (symétrique hausse/baisse)
-• Vega   : -{vega_live}  ($-{vega_live} par +1pt IV)
+• Delta  : +{delta_pct}%  (+{abs(delta_live)} BTC)
+• Gamma  : -{gamma_pts_per1pct} pts de delta par 1% de move  (symétrique)
+• Vega   : -{vega_live}  (${vega_live} de perte par +1pt IV)
 • Theta  : +${theta_daily}/jour
 • Hedge  : {hedge_qty} BTC short perp  |  VWAP : ${hedge_avg}  |  {hedge_n} rebalancement(s)
-• Drift  : {hedge_delta_drift}  [⚠️ REBALANCER si > 0.03]
-
-📊 MATRICE SENSIBILITÉ ±5%  (delta+gamma uniquement, PnL depuis entrée)
-Calcule pour chaque move m ∈ [-5%,-3%,-2%,-1%,0%,+1%,+2%,+3%,+5%] :
-- new_spot      = spot × (1 + m/100)
-- delta_spot_m  = new_spot - spot
-- new_delta_pct = max(0, delta_pct - gamma_pts_per1 × abs(m))     [borné à 0%]
-- pnl_opt_m     = abs(delta_live) × delta_spot_m - 0.5 × gamma_entry × delta_spot_m²
-  cap : si m > 0, pnl_opt_m = min(pnl_opt_m, entry_price × entry_spot)  [prime max]
-- pnl_hedge_m   = -(abs(hedge_qty)) × (new_spot - hedge_avg)      [short perp depuis VWAP]
-- pnl_net_m     = pnl_opt_m + pnl_hedge_m
-
-Affiche le tableau :
-| Move  | Spot      | Delta  | PnL Option | PnL Hedge | PnL NET |
-|-------|-----------|--------|-----------|-----------|---------|
-| -5%   | $...      | ...%   | $...      | $...      | $...    |
-| -3%   | ...       | ...    | ...       | ...       | ...     |
-| -2%   | ...       | ...    | ...       | ...       | ...     |
-| -1%   | ...       | ...    | ...       | ...       | ...     |
-|  0%   | ...       | ...    | ...       | ...       | ...     |
-| +1%   | ...       | ...    | ...       | ...       | ...     |
-| +2%   | ...       | ...    | ...       | ...       | ...     |
-| +3%   | ...       | ...    | ...       | ...       | ...     |
-| +5%   | ...       | ...    | ...       | ...       | ...     |
+• Drift  : {hedge_drift}  [⚠️ REBALANCER si > 0.03]
 
 📊 PnL COMPOSANTS
-• Option MtM  : ${pnl_option_usd}  ({pnl_pct_of_premium}% de la prime)
-• Hedge perp  : ${pnl_hedge_usd}
-• TOTAL       : ${total_pnl_usd}
+• Option MtM  : ${pnl_opt}  ({pnl_pct}% de la prime)
+• Hedge perp  : ${pnl_hedge}
+• TOTAL       : ${pnl_total}
 
-📐 PnL ATTRIBUTION OPTION  (ΔSpot={delta_spot}$  ΔIV={delta_iv}pts  tenu={days_held×24}h)
-┌─────────────────────────────────────────────────────┐
-│  Delta    :  ${pnl_delta}    (pos +{abs(delta_live)} × ΔSpot {delta_spot}$)
+📐 PnL ATTRIBUTION  (ΔSpot={delta_spot}$  ΔIV={delta_iv}pts  tenu={hours_held}h)
+┌──────────────────────────────────────────────────────┐
+│  Delta    :  ${pnl_delta}    (pos +{delta_pct}% × ΔSpot {delta_spot}$)
 │  Gamma    :  ${pnl_gamma}    (short gamma)
-│  Theta    :  ${pnl_theta}    ({days_held×24}h × ${theta_daily}/j)
+│  Theta    :  ${pnl_theta}    ({hours_held}h × ${theta_daily}/j)
 │  Vega     :  ${pnl_vega}     (ΔIV {delta_iv}pts × -{vega_live})
 │  Résidu   :  ${pnl_residual} (higher-order, smile)
-│  ─────────────────────────────────────────────────
+│  ────────────────────────────────────────────────────
 │  Mid/mid  :  ${mid_to_mid}
 │
 │  Bid-ask entrée : ${ba_entry}  (vendu bid {entry_price} vs mark {entry_mark})
 │  Bid-ask sortie : ${ba_exit}   (rachat ask {curr_ask} vs mark {curr_mark})
-│  ─────────────────────────────────────────────────
+│  ────────────────────────────────────────────────────
 │  TOTAL OPTION   :  ${total_option}
-└─────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────┘
+
+📊 MATRICE SENSIBILITÉ ±5%  (PnL total depuis entrée, hedge depuis VWAP ${hedge_avg})
+| Move | Spot      | Delta  | PnL Option | PnL Hedge | PnL NET  |
+|------|-----------|--------|------------|-----------|----------|
+| -5%  | $...      | ...%   | $...       | $...      | $...     |
+| -3%  | ...       | ...    | ...        | ...       | ...      |
+| -2%  | ...       | ...    | ...        | ...       | ...      |
+| -1%  | ...       | ...    | ...        | ...       | ...      |
+|  0%  | ${spot}   | {delta_pct}% | $0  | ${pnl_hedge} | ${pnl_total} |
+| +1%  | ...       | ...    | ...        | ...       | ...      |
+| +2%  | ...       | ...    | ...        | ...       | ...      |
+| +3%  | ...       | ...    | ...        | ...       | ...      |
+| +5%  | ...       | ...    | ...🔒prime | ...       | ...      |
 
 ⏱️ THETA CUMULÉ
-• Theta théorique encaissé : ${theta_theory_usd}
-• VRP capture : {vrp_capture_pct}%  (significatif après 6h)
+• Theta théorique encaissé : ${theta_theory}
+• VRP capture : {vrp_capture}%  (significatif après 6h)
 
 🚨 ALERTES
 • Roll   : ⚠️ ROLLER MAINTENANT si tte_days ≤ 1  |  ✅ OK
 • Hedge  : ⚠️ REBALANCER si |drift| > 0.03        |  ✅ OK
 • IV     : ⚠️ SPIKE si ΔIV > +10pts               |  ✅ OK
-• Stop   : ⚠️ si total_pnl_usd < -(entry_price × entry_spot)  |  ✅ OK
+• Stop   : ⚠️ si pnl_total < -(entry_price × entry_spot)  |  ✅ OK
