@@ -43,8 +43,11 @@ DELTA_TARGET    = -0.20          # delta cible pour le put vendu
 DELTA_TOL       = 0.06           # tolérance autour du delta cible
 MIN_TTE_ENTRY   = 2.0            # jours minimum pour entrer
 MAX_TTE_ENTRY   = 7.0            # jours maximum pour entrer
-ROLL_TRIGGER    = 1.0            # jours restants -> déclencher le roll
-HEDGE_THRESHOLD = 0.03           # rebalancer le hedge si delta_net dépasse ce seuil
+ROLL_TRIGGER         = 1.0   # jours restants -> fenêtre d'observation pour le roll
+GAMMA_ROLL_THRESHOLD = 2.0   # pts de delta / 1% move en-dessous duquel on rolle
+                              # (roll seulement si TTE <= ROLL_TRIGGER ET gamma < seuil)
+                              # Pour une OTM, gamma chute sous 2pts ~6h avant expiry
+HEDGE_THRESHOLD = 0.03       # rebalancer le hedge si delta_net dépasse ce seuil
 RISK_FREE_RATE  = 0.05           # taux sans risque annualisé (approx)
 CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur Deribit)
 
@@ -300,10 +303,21 @@ def open_position(instrument: dict, entry_price: float,
     }
 
 
-def should_roll(position: dict) -> tuple[bool, float]:
-    """Vérifie si la position doit être rollée (TTE <= ROLL_TRIGGER)."""
+def should_roll(position: dict, spot: float) -> tuple[bool, float, float, str]:
+    """
+    Vérifie si la position doit être rollée.
+
+    Logique :
+    - Si TTE > ROLL_TRIGGER : pas encore dans la fenêtre -> pas de roll
+    - Si TTE <= ROLL_TRIGGER :
+        - Si gamma_pts < GAMMA_ROLL_THRESHOLD -> roll (gamma s'est effondré)
+        - Si l'instrument est expiré (introuvable) -> roll immédiat
+        - Sinon -> attendre (gamma encore élevé, OTM saine)
+
+    Retourne : (roll_now, tte_days, gamma_pts_per_1pct, reason)
+    """
     try:
-        t = fetch_ticker_full(position["instrument_name"])
+        t    = fetch_ticker_full(position["instrument_name"])
         inst = get("get_instruments", {
             "currency": CURRENCY, "kind": "option", "expired": "false"
         })
@@ -313,12 +327,33 @@ def should_roll(position: dict) -> tuple[bool, float]:
             None
         )
         if exp_ms is None:
-            return True, 0.0    # instrument expiré -> roll immédiat
+            return True, 0.0, 0.0, "instrument expiré"
+
         tte = (exp_ms - now_ms()) / 86_400_000
-        mark_price = t.get("mark_price", 0)
-        return tte <= ROLL_TRIGGER, tte
-    except Exception:
-        return True, 0.0
+
+        # Pas encore dans la fenêtre — on calcule quand même gamma pour l'affichage
+        greeks_pre  = t.get("greeks") or {}
+        gamma_pre   = abs(greeks_pre.get("gamma", position.get("gamma_at_entry", 7e-5)))
+        gamma_pts_pre = gamma_pre * spot * 0.01 * 100
+        if tte > ROLL_TRIGGER:
+            return False, tte, gamma_pts_pre, f"TTE {tte:.2f}j > seuil {ROLL_TRIGGER}j"
+
+        # Dans la fenêtre : calculer gamma_pts
+        greeks  = t.get("greeks") or {}
+        gamma   = abs(greeks.get("gamma", position.get("gamma_at_entry", 7e-5)))
+        gamma_pts = gamma * spot * 0.01 * 100   # pts de delta (%) perdus par 1% move
+
+        if gamma_pts < GAMMA_ROLL_THRESHOLD:
+            reason = (f"TTE {tte:.2f}j ≤ {ROLL_TRIGGER}j "
+                      f"ET gamma {gamma_pts:.2f}pts < seuil {GAMMA_ROLL_THRESHOLD}pts")
+            return True, tte, gamma_pts, reason
+        else:
+            reason = (f"TTE {tte:.2f}j ≤ {ROLL_TRIGGER}j "
+                      f"mais gamma {gamma_pts:.2f}pts ≥ seuil {GAMMA_ROLL_THRESHOLD}pts — attente")
+            return False, tte, gamma_pts, reason
+
+    except Exception as e:
+        return True, 0.0, 0.0, f"erreur: {e}"
 
 
 # ── Greeks & Hedge Calculator ─────────────────────────────────────────────────
@@ -518,7 +553,12 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
 
     # ── Vérifier si roll nécessaire ───────────────────────────────────────────
     if state["open"] is not None:
-        roll_needed, tte_current = should_roll(state["open"])
+        roll_needed, tte_current, gamma_pts_now, roll_reason = should_roll(state["open"], spot)
+
+        print_section("ROLL CHECK")
+        print(f"  TTE actuel     : {tte_current:.3f}j  (seuil entrée fenêtre : {ROLL_TRIGGER}j)")
+        print(f"  Gamma actuel   : {gamma_pts_now:.2f} pts Δ/1%  (seuil roll : {GAMMA_ROLL_THRESHOLD} pts)")
+        print(f"  Décision       : {'🔴 ROLL' if roll_needed else '🟢 HOLD'}  — {roll_reason}")
 
         if roll_needed:
             print_section("ROLL TRIGGERED")
@@ -528,12 +568,14 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
 
             # Clôture de la position existante
             closed = {**pos,
-                      "exit_price": exit_p,
-                      "exit_spot":  spot,
-                      "exit_ts":    now_dt(),
-                      "tte_at_exit":round(tte_current, 3),
-                      "pnl_btc":    round((pos["entry_price"] - exit_p) * CONTRACTS, 6),
-                      "pnl_usd":    round((pos["entry_price"] - exit_p) * CONTRACTS * spot, 2)}
+                      "exit_price":   exit_p,
+                      "exit_spot":    spot,
+                      "exit_ts":      now_dt(),
+                      "tte_at_exit":  round(tte_current, 3),
+                      "gamma_at_exit":round(gamma_pts_now, 4),
+                      "roll_reason":  roll_reason,
+                      "pnl_btc":      round((pos["entry_price"] - exit_p) * CONTRACTS, 6),
+                      "pnl_usd":      round((pos["entry_price"] - exit_p) * CONTRACTS * spot, 2)}
             state["history"].append(closed)
             state["open"] = None
             print(f"  Position fermee : {pos['instrument_name']}")
@@ -645,8 +687,14 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     if abs(pos_greeks["pos_gamma"]) > 0.0005 * CONTRACTS:
         alerts.append(f"  [!] Gamma eleve: {pos_greeks['pos_gamma']:.6f}  "
                       f"-> sensibilite au mouvement accrue")
-    if pos_greeks["tte_days"] < 1.5:
-        alerts.append(f"  [!] TTE < 1.5j ({pos_greeks['tte_days']:.2f}j) -> preparer le roll")
+    if pos_greeks["tte_days"] < ROLL_TRIGGER:
+        gamma_pts_alert = abs(pos_greeks.get("pos_gamma", 7e-5)) * spot * 0.01 * 100
+        if gamma_pts_alert < GAMMA_ROLL_THRESHOLD:
+            alerts.append(f"  [!!] ROLL IMMINENT: TTE {pos_greeks['tte_days']:.2f}j "
+                          f"ET gamma {gamma_pts_alert:.2f}pts < seuil {GAMMA_ROLL_THRESHOLD}pts")
+        else:
+            alerts.append(f"  [~] TTE {pos_greeks['tte_days']:.2f}j dans fenetre roll "
+                          f"mais gamma {gamma_pts_alert:.2f}pts OK — HOLD")
     if abs(pos_greeks["pos_vega"]) > 0.05 * CONTRACTS:
         alerts.append(f"  [!] Vega eleve: {pos_greeks['pos_vega']:.4f}  "
                       f"-> exposition IV significative")
