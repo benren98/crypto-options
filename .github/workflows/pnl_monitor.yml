@@ -23,62 +23,74 @@ jobs:
 
       - name: Créer positions.json depuis le Gist
         env:
-          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
           python - <<'EOF'
-          import requests, json, os, warnings
-          from urllib3.exceptions import InsecureRequestWarning
-          warnings.filterwarnings("ignore", category=InsecureRequestWarning)
+          import requests, json, os
 
-          token   = os.environ["GITHUB_TOKEN"]
+          token   = os.environ["GIST_TOKEN"]
           gist_id = os.environ["GIST_ID"]
 
+          print(f"Fetching gist: {gist_id}")
           r = requests.get(
               f"https://api.github.com/gists/{gist_id}",
-              headers={"Authorization": f"token {token}"},
+              headers={
+                  "Authorization": f"token {token}",
+                  "Accept": "application/vnd.github+json",
+              },
               timeout=10
           )
-          content = r.json()["files"]["positions.json"]["content"]
+          print(f"Status: {r.status_code}")
+          data = r.json()
+
+          if "files" not in data:
+              print(f"Erreur API: {data.get('message', data)}")
+              raise SystemExit(1)
+
+          content = data["files"]["positions.json"]["content"]
           with open("positions.json", "w") as f:
               f.write(content)
-          print("positions.json chargé depuis le Gist")
-          print(json.loads(content).get("open", {}).get("instrument_name", "aucune position"))
+          print("positions.json charge depuis le Gist")
+          print("Instrument:", json.loads(content).get("open", {}).get("instrument_name", "aucune position"))
           EOF
 
       - name: Créer .env pour gist_sync
         env:
-          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
-          echo "GITHUB_TOKEN=$GITHUB_TOKEN" > .env
+          echo "GITHUB_TOKEN=$GIST_TOKEN" > .env
           echo "GIST_ID=$GIST_ID" >> .env
           mkdir -p output
 
       - name: Run PnL monitor
         env:
-          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
-        run: python pnl_monitor.py
+        run: |
+          echo "GITHUB_TOKEN=$GIST_TOKEN" > .env
+          echo "GIST_ID=$GIST_ID" >> .env
+          python pnl_monitor.py
 
       - name: Run Greeks & Hedge check
         env:
-          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
-        run: python greeks_hedge.py --run
+        run: |
+          echo "GITHUB_TOKEN=$GIST_TOKEN" > .env
+          echo "GIST_ID=$GIST_ID" >> .env
+          python greeks_hedge.py --run
 
       - name: Push pnl_summary.json vers le Gist
         env:
-          GITHUB_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
           python - <<'EOF'
           import requests, json, os, glob
           from pathlib import Path
           from datetime import datetime, timezone
-
-          token   = os.environ["GITHUB_TOKEN"]
-          gist_id = os.environ["GIST_ID"]
 
           # Lire le dernier snapshot CSV généré
           snapshots = sorted(glob.glob("output/pnl_snap_*.csv"))
@@ -108,9 +120,12 @@ jobs:
           positions = json.loads(Path("positions.json").read_text())
 
           # Push les deux fichiers vers le Gist
+          token   = os.environ["GIST_TOKEN"]
+          gist_id = os.environ["GIST_ID"]
+
           r = requests.patch(
               f"https://api.github.com/gists/{gist_id}",
-              headers={"Authorization": f"token {token}"},
+              headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"},
               json={"files": {
                   "positions.json":   {"content": json.dumps(positions, indent=2, default=str)},
                   "pnl_summary.json": {"content": json.dumps(summary,   indent=2)},
