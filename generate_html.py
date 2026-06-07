@@ -226,8 +226,19 @@ else:
     {row("Qty short", f'{s.get("hedge_qty")} BTC')}
     {row("VWAP entrée", f'${f(pos.get("hedge_avg_entry"),0)}')}
     {row("Rebalancements", str(pos.get("hedge_rebalances", 0)))}
-    {row("Seuil rebal. (IV-adj)", f'<span class="neu">{f(hedge_thr_pct,1)}% delta = {f(hedge_thr_btc,4)} BTC</span>')}
-    {row("Drift Δ", f'<span class="{"warn" if abs(float(s.get("hedge_delta_drift",0)))>hedge_thr_btc else "ok"}">{f(s.get("hedge_delta_drift"),4,True)} ({f(abs(float(s.get("hedge_delta_drift",0)))*100,2)}%)</span>  {"⚠️ REBALANCER" if abs(float(s.get("hedge_delta_drift",0)))>hedge_thr_btc else "✅ OK"}')}
+    {(lambda drift=float(s.get("hedge_delta_drift",0)), net_usd=float(s.get("hedge_delta_drift",0))*float(s.get("spot",0)):
+      row("Delta net (pos+hedge)",
+          f'<b class="{"warn" if abs(drift)>hedge_thr_btc else ("pos" if drift>0 else "neg")}">'
+          f'{f(drift*100,2,True)}%</b>'
+          f'  ({f(drift,4,True)} BTC'
+          f'  ≈ {f(net_usd,0,True)}$)'
+      ))()}
+    {(lambda drift=float(s.get("hedge_delta_drift",0)):
+      row("Seuil rebal. (IV-adj)",
+          f'<span class="neu">{f(hedge_thr_pct,1)}% delta = {f(hedge_thr_btc,4)} BTC</span>'
+          f'  <span class="{"warn" if abs(drift)>hedge_thr_btc else "ok"} " style="font-size:0.8rem">'
+          f'{"⚠️ REBALANCER" if abs(drift)>hedge_thr_btc else "✅ OK"}</span>'
+      ))()}
   </table>
 </div>
 
