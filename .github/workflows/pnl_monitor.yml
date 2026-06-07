@@ -84,6 +84,9 @@ jobs:
           echo "GIST_ID=$GIST_ID" >> .env
           python greeks_hedge.py --run
 
+      - name: Générer la GitHub Page
+        run: python generate_html.py
+
       - name: Commit pnl_summary.json dans le repo
         run: |
           git config user.name "github-actions[bot]"
@@ -129,7 +132,7 @@ jobs:
           Path("pnl_summary.json").write_text(json.dumps(summary, indent=2))
           print("pnl_summary.json ecrit.")
           EOF
-          git add pnl_summary.json positions.json 2>/dev/null || git add pnl_summary.json
+          git add pnl_summary.json positions.json docs/index.html 2>/dev/null || git add pnl_summary.json docs/index.html
           git diff --cached --quiet || git commit -m "chore: pnl snapshot $(date -u '+%Y-%m-%d %H:%M UTC')"
           git push
 
