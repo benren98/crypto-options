@@ -135,15 +135,18 @@ def compute_snapshot(position: dict) -> dict:
                        position.get("hedge_entry_spot", entry_s))
 
     # Data live
-    ticker    = fetch_option_ticker(instr)
-    spot      = ticker.get("underlying_price") or fetch_spot()
+    ticker     = fetch_option_ticker(instr)
+    spot       = ticker.get("underlying_price") or fetch_spot()
+    curr_mark  = ticker.get("mark_price", entry_p)
+    curr_bid   = ticker.get("best_bid_price") or curr_mark
     # Coût de rachat = ask price (ce qu'on paie pour fermer ou roller)
-    # Fallback sur mark si ask absent
-    curr_p    = ticker.get("best_ask_price") or ticker.get("mark_price", entry_p)
-    curr_iv   = ticker.get("mark_iv", position["iv_at_entry"])
-    greeks    = ticker.get("greeks") or {}
-    curr_delta= greeks.get("delta", position["delta_at_entry"])
-    curr_theta= greeks.get("theta", 0)   # USD/jour (Deribit convention)
+    curr_ask   = ticker.get("best_ask_price") or curr_mark
+    curr_p     = curr_ask   # MtM au prix de sortie réaliste
+    curr_iv    = ticker.get("mark_iv", position["iv_at_entry"])
+    greeks     = ticker.get("greeks") or {}
+    curr_delta = greeks.get("delta", position["delta_at_entry"])
+    curr_vega  = greeks.get("vega", position.get("vega_at_entry", 13.0))
+    curr_theta = greeks.get("theta", 0)   # USD/an (Deribit convention)
 
     # TTE en jours
     expiry_dt = pd.to_datetime(position["expiry_dt"], utc=True)
@@ -227,6 +230,86 @@ def compute_snapshot(position: dict) -> dict:
         "live_delta":         round(curr_delta, 5),
         "hedge_qty":          hedge_qty,
         "hedge_delta_drift":  round(-curr_delta - abs(hedge_qty), 5),
+        # Données pour attribution
+        "current_price_btc":  round(curr_mark, 6),   # mark pour attribution mid-to-mid
+        "current_ask_btc":    round(curr_ask,  6),
+        "current_bid_btc":    round(curr_bid,  6),
+        "entry_iv_pct":       position["iv_at_entry"],
+        "live_vega":          round(curr_vega, 4),
+    }
+
+
+# ── PnL Attribution (Greek explain) ──────────────────────────────────────────
+
+def compute_pnl_attribution(snap: dict, position: dict) -> dict:
+    """
+    Décompose le PnL option en contributions par Greek + bid-ask.
+
+    Structure de la décomposition (tout en USD) :
+    ┌─────────────────────────────────────────────────────┐
+    │  PnL_total = PnL_mid + BA_entry + BA_exit           │
+    │  PnL_mid   ≈ Delta + Gamma + Theta + Vega + Résidu  │
+    └─────────────────────────────────────────────────────┘
+    """
+    spot        = snap["spot"]
+    entry_spot  = position["entry_spot"]
+    entry_bid   = position["entry_price"]          # prix vendu (bid à l'entrée)
+    entry_mark  = position.get("entry_mark_price", entry_bid)  # mark à l'entrée
+    curr_mark   = snap["current_price_btc"]        # mark actuel (bid utilisé comme proxy)
+    curr_ask    = snap.get("current_ask_btc", curr_mark + 0.0005)  # ask actuel
+
+    # --- Bid-ask costs -------------------------------------------------------
+    # Coût à l'entrée : on a vendu au bid au lieu du mid
+    ba_entry_usd = -(entry_mark - entry_bid) * entry_spot          # négatif = coût
+    # Coût à la sortie : on rachèterait à l'ask au lieu du mid
+    ba_exit_usd  = -(curr_ask   - curr_mark) * spot                # négatif = coût
+
+    # --- Mid-to-mid PnL -------------------------------------------------------
+    # Variation de valeur au mark price (hors spread)
+    mid_to_mid_usd = (entry_mark - curr_mark) * spot               # short = on veut que curr < entry
+
+    # --- Greek attribution du mid-to-mid -------------------------------------
+    delta_live   = snap["live_delta"]              # delta de l'option (négatif pour put)
+    pos_delta    = -delta_live                     # position short -> inversé
+    delta_spot   = spot - entry_spot               # variation spot
+
+    # Récupère les Greeks depuis positions (entrée) et greeks live du snap
+    gamma_entry  = position.get("gamma_at_entry", 0.00007)
+    # vega_live du snap (négatif car short, en USD par 1pt IV)
+    vega_live    = -abs(snap.get("live_vega", position.get("vega_at_entry", 13.0)))
+    theta_daily  = snap["theta_daily_now_usd"]    # USD/jour (positif pour short put)
+
+    hours_held   = snap["days_held"] * 24
+    delta_t_days = snap["days_held"]
+    delta_iv     = snap["current_iv_pct"] - snap["entry_iv_pct"]   # variation IV en pts
+
+    # Contributions (position short -> on inverse le signe des Greeks option)
+    pnl_delta    = pos_delta * delta_spot                          # USD
+    pnl_gamma    = 0.5 * (-gamma_entry) * (delta_spot ** 2)       # short gamma = négatif si move
+    pnl_theta    = theta_daily * delta_t_days                      # positif (on encaisse)
+    pnl_vega     = vega_live * delta_iv                            # négatif si IV monte
+
+    greek_total  = pnl_delta + pnl_gamma + pnl_theta + pnl_vega
+    residual     = mid_to_mid_usd - greek_total                    # higher order + model error
+
+    # --- Réconciliation totale -----------------------------------------------
+    # MtM avec ask pour sortie = mid_to_mid + ba_entry + ba_exit
+    recon_total  = mid_to_mid_usd + ba_entry_usd + ba_exit_usd
+
+    return {
+        "pnl_delta":      round(pnl_delta,    2),
+        "pnl_gamma":      round(pnl_gamma,    2),
+        "pnl_theta":      round(pnl_theta,    2),
+        "pnl_vega":       round(pnl_vega,     2),
+        "pnl_greek_total":round(greek_total,  2),
+        "pnl_residual":   round(residual,     2),
+        "mid_to_mid_usd": round(mid_to_mid_usd, 2),
+        "ba_entry_usd":   round(ba_entry_usd, 2),
+        "ba_exit_usd":    round(ba_exit_usd,  2),
+        "recon_total":    round(recon_total,  2),
+        "hours_held":     round(hours_held,   2),
+        "delta_spot":     round(delta_spot,   2),
+        "delta_iv":       round(delta_iv,     2),
     }
 
 
@@ -276,6 +359,32 @@ def display_snapshot(snap: dict, position: dict):
     print(f"  {'─'*40}")
     total_sign = "+" if snap['total_pnl_usd'] >= 0 else ""
     print(f"  {'TOTAL':<{w}} : {total_sign}{snap['total_pnl_usd']:>10.2f} USD")
+
+    # PnL Attribution
+    attr = compute_pnl_attribution(snap, position)
+    print(f"\n  {'':─<58}")
+    print(f"  PnL ATTRIBUTION  (ΔSpot={attr['delta_spot']:+.0f}$  ΔIV={attr['delta_iv']:+.1f}pts"
+          f"  tenu={attr['hours_held']:.1f}h)")
+    print(f"  {'─'*56}")
+    print(f"  {'Delta':<18} : {color_sign(attr['pnl_delta']):>9} USD"
+          f"   (pos +{abs(snap['live_delta']):.3f} × ΔSpot {attr['delta_spot']:+.0f}$)")
+    print(f"  {'Gamma':<18} : {color_sign(attr['pnl_gamma']):>9} USD"
+          f"   (short gamma, ΔSpot²)")
+    print(f"  {'Theta':<18} : {color_sign(attr['pnl_theta']):>9} USD"
+          f"   ({attr['hours_held']:.1f}h × ${snap['theta_daily_now_usd']:.2f}/j)")
+    print(f"  {'Vega':<18} : {color_sign(attr['pnl_vega']):>9} USD"
+          f"   (ΔIV {attr['delta_iv']:+.1f}pts × vega {attr.get('pnl_vega')/attr['delta_iv']:.1f})"
+          if attr['delta_iv'] != 0 else f"  {'Vega':<18} : {color_sign(attr['pnl_vega']):>9} USD")
+    print(f"  {'Résidu (HO)':<18} : {color_sign(attr['pnl_residual']):>9} USD")
+    print(f"  {'─'*38}")
+    print(f"  {'Mid-to-mid total':<18} : {color_sign(attr['mid_to_mid_usd']):>9} USD")
+    print(f"  {'':─<56}")
+    print(f"  {'Bid-ask entrée':<18} : {color_sign(attr['ba_entry_usd']):>9} USD"
+          f"   (vendu bid {position['entry_price']:.4f} vs mark {position.get('entry_mark_price',0):.4f})")
+    print(f"  {'Bid-ask sortie':<18} : {color_sign(attr['ba_exit_usd']):>9} USD"
+          f"   (rachat ask {snap['current_ask_btc']:.4f} vs mark {snap['current_price_btc']:.4f})")
+    print(f"  {'─'*38}")
+    print(f"  {'TOTAL OPTION':<18} : {color_sign(attr['recon_total']):>9} USD")
 
     # Theta
     print(f"\n  {'':─<58}")
