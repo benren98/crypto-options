@@ -271,6 +271,15 @@ def save_positions(state: dict):
 def open_position(instrument: dict, entry_price: float,
                   contracts: int, spot: float) -> dict:
     hedge_qty_init = round(-abs(instrument["delta"]) * contracts, 5)
+
+    # Prix d'exécution du perp : on récupère le mark price du perp (≠ index spot)
+    # Le perp peut coter avec une prime ou décote vs l'index → VWAP basé sur perp mark
+    try:
+        perp_tick  = get("ticker", {"instrument_name": f"{CURRENCY}-PERPETUAL"})
+        perp_price = perp_tick.get("mark_price", spot)
+    except Exception:
+        perp_price = spot   # fallback si API indisponible
+
     return {
         "instrument_name":  instrument["instrument_name"],
         "strike":           instrument["strike"],
@@ -289,19 +298,20 @@ def open_position(instrument: dict, entry_price: float,
         "entry_ts":         now_dt(),
         "hedge_qty":        hedge_qty_init,
         "hedge_entry_spot": spot,
-        "hedge_avg_entry":  spot,
+        "hedge_avg_entry":  round(perp_price, 2),   # VWAP basé sur perp mark, pas index
         "hedge_rebalances": 1,
         "hedge_history": [{
-            "ts":           now_dt(),
-            "side":         "SELL",
-            "qty":          hedge_qty_init,
-            "spot":         round(spot, 2),
-            "qty_before":   0.0,
-            "qty_after":    hedge_qty_init,
-            "vwap_before":  spot,
-            "vwap_after":   spot,
-            "drift":        round(abs(instrument["delta"]), 5),
-            "note":         "hedge initial à l'entrée",
+            "ts":          now_dt(),
+            "side":        "SELL",
+            "qty":         hedge_qty_init,
+            "spot":        round(spot, 2),
+            "perp_price":  round(perp_price, 2),
+            "qty_before":  0.0,
+            "qty_after":   hedge_qty_init,
+            "vwap_before": 0.0,
+            "vwap_after":  round(perp_price, 2),
+            "drift":       round(abs(instrument["delta"]), 5),
+            "note":        f"hedge initial (perp mark ${perp_price:.2f} vs index ${spot:.2f})",
         }],
     }
 
