@@ -764,5 +764,19 @@
     "pnl_total": 191.94,
     "theta_daily": 17.54,
     "instrument": "BTC-9JUN26-58500-P"
+  },
+  {
+    "ts": "2026-06-08 17:24:13 UTC",
+    "spot": 63475.76,
+    "tte_days": 0.6082,
+    "delta_pct": 0.908,
+    "net_delta_pct": -2.7,
+    "gamma_pts": 0.6348,
+    "iv_pct": 85.27,
+    "pnl_option": 406.24,
+    "pnl_hedge": -192.68,
+    "pnl_total": 213.54,
+    "theta_daily": 6.9,
+    "instrument": "BTC-9JUN26-58500-P"
   }
 ]
