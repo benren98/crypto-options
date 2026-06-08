@@ -15,10 +15,10 @@
     "entry_spot": 61608.03,
     "contracts": 1,
     "entry_ts": "2026-06-07 03:32:05 UTC",
-    "hedge_qty": -0.1059,
+    "hedge_qty": -0.03608,
     "hedge_entry_spot": 61608.03,
     "hedge_avg_entry": 61598.56,
-    "hedge_rebalances": 3,
+    "hedge_rebalances": 4,
     "hedge_history": [
       {
         "ts": "2026-06-07 03:32:05 UTC",
@@ -55,9 +55,25 @@
         "vwap_before": 61598.56,
         "vwap_after": 61598.56,
         "drift": 0.07495
+      },
+      {
+        "ts": "2026-06-08 09:18:27 UTC",
+        "side": "BUY",
+        "qty": 0.06982,
+        "spot": 63388.13,
+        "qty_before": -0.1059,
+        "qty_after": -0.03608,
+        "vwap_before": 61598.56,
+        "vwap_after": 61598.56,
+        "drift": 0.06982,
+        "realized_pnl_usd": -124.95,
+        "realized_cumul_usd": -124.95,
+        "delta_net_after_pct": 0.0,
+        "note": "rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
       }
     ],
-    "note": "Position fictive ouverte manuellement le 2026-06-07"
+    "note": "Position fictive ouverte manuellement le 2026-06-07",
+    "realized_hedge_pnl_usd": -124.95
   },
   "history": [],
   "snapshots": [],
