@@ -174,7 +174,10 @@ def compute_snapshot(position: dict) -> dict:
     # Short perp : hedge_qty est négatif (ex: -0.188 = 0.188 BTC shortés)
     # PnL short = qty × (entry - spot) = hedge_qty × (spot - entry) car qty < 0
     # Si spot baisse → (spot - entry) < 0 → négatif × négatif = positif ✅
-    pnl_hedge_usd = hedge_qty * (spot - hedge_entry_spot)
+    pnl_hedge_mtm  = hedge_qty * (spot - hedge_entry_spot)
+    # Ajouter le PnL réalisé sur les rachats partiels passés (tracked par greeks_hedge.py)
+    realized_hedge = float(position.get("realized_hedge_pnl_usd", 0.0))
+    pnl_hedge_usd  = pnl_hedge_mtm + realized_hedge
 
     # ── Funding cost du perp ──────────────────────────────────────────────────
     # On est short perp -> si funding > 0 on REÇOIT le funding

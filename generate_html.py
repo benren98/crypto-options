@@ -404,7 +404,13 @@ else:
   <h2>💰 PnL Position Ouverte</h2>
   <table>
     {srow("Option MtM", s.get("pnl_option_usd"), invert=False)}
-    {srow("Hedge perp", s.get("pnl_hedge_usd"), invert=False)}
+    {(lambda rh=float(pos.get("realized_hedge_pnl_usd", 0)), hpnl=float(s.get("pnl_hedge_usd",0)):
+      row("Hedge perp (MtM + réalisé)",
+          f'<span class="{color(hpnl)}">{f(hpnl,0,True)}$</span>'
+          + (f'  <span style="color:#8b949e;font-size:0.78rem">'
+             f'(MtM: {f(hpnl-rh,0,True)}$  · réalisé rachats: {f(rh,0,True)}$)</span>'
+             if abs(rh) > 0.01 else '')
+      ))()}
     <tr><td colspan="2"><hr style="border-color:#30363d;margin:6px 0"></td></tr>
     <tr><td class="label"><b>TOTAL</b></td>
         <td class="val {color(s.get('total_pnl_usd'))} big">{f(s.get("total_pnl_usd"),0,True)}$</td></tr>
@@ -515,6 +521,7 @@ else:
       <th>Qty après</th>
       <th>VWAP avant</th>
       <th>VWAP après</th>
+      <th>PnL réalisé</th>
       <th>Drift</th>
       <th style="text-align:left">Note</th>
     </tr>
@@ -523,6 +530,11 @@ else:
         side    = h.get("side", "?")
         side_cl = "neg" if side == "SELL" else "pos"
         qty_ord = h.get("qty", 0)
+        rpnl    = h.get("realized_pnl_usd")
+        rpnl_html = (
+            f'<span class="{color(rpnl)}">{f(rpnl,0,True)}$</span>'
+            if rpnl is not None else '<span style="color:#484f58">—</span>'
+        )
         html += f"""    <tr>
       <td style="text-align:left;color:#8b949e;font-size:0.8rem">{to_ny(h.get("ts",""))}</td>
       <td class="{side_cl}"><b>{side}</b></td>
@@ -532,6 +544,7 @@ else:
       <td><b>{f(h.get("qty_after",0),5)} BTC</b></td>
       <td style="color:#8b949e">${f(h.get("vwap_before",0),2)}</td>
       <td><b>${f(h.get("vwap_after",0),2)}</b></td>
+      <td>{rpnl_html}</td>
       <td style="color:#8b949e">{f(h.get("drift",0),4,True)}</td>
       <td style="text-align:left;color:#484f58;font-size:0.78rem">{h.get("note","")}</td>
     </tr>

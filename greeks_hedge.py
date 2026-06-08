@@ -691,9 +691,27 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             # On réduit le short (rachat partiel) -> prix entrée du reste inchangé
             new_avg = old_avg
 
-        state["open"]["hedge_qty"]        = round(new_qty, 5)
-        state["open"]["hedge_avg_entry"]  = round(new_avg, 2)
-        state["open"]["hedge_rebalances"] = pos.get("hedge_rebalances", 0) + 1
+        # PnL réalisé sur la portion clôturée (buy-back ou short supplémentaire)
+        # Formule : short vendu à old_avg, racheté/augmenté à spot
+        # Pour un rachat (order_qty > 0) : pnl = -(order_qty) * (spot - old_avg)
+        #   ex: racheté 0.061 BTC @ 63329, avg entrée 61598 → perte = -0.061*(63329-61598) = -$106
+        # Pour un short supplémentaire (order_qty < 0) : aucun PnL réalisé, juste new avg
+        if order_qty > 0 and abs_new < abs_old:
+            # Rachat partiel → réalise le PnL sur la portion fermée
+            realized_this = -order_qty * (spot - old_avg)
+        elif abs_new < 1e-8:
+            # Clôture totale → réalise le PnL sur toute la position
+            realized_this = abs_old * (old_avg - spot)
+        else:
+            realized_this = 0.0  # short augmenté : pas de PnL réalisé
+
+        prev_realized = float(pos.get("realized_hedge_pnl_usd", 0.0))
+        new_realized  = round(prev_realized + realized_this, 2)
+
+        state["open"]["hedge_qty"]               = round(new_qty, 5)
+        state["open"]["hedge_avg_entry"]         = round(new_avg, 2)
+        state["open"]["hedge_rebalances"]        = pos.get("hedge_rebalances", 0) + 1
+        state["open"]["realized_hedge_pnl_usd"]  = new_realized
 
         # Enregistrer le rebalancement dans l'historique
         _vwap_note = (
@@ -714,6 +732,8 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             "vwap_before": round(old_avg, 2),
             "vwap_after":  round(new_avg, 2),
             "drift":       round(hedge["delta_drift"], 5),
+            "realized_pnl_usd": round(realized_this, 2),
+            "realized_cumul_usd": new_realized,
             "delta_net_after_pct": _delta_after_pct,
             "note":        _vwap_note,
         }
