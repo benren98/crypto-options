@@ -773,6 +773,7 @@ def compute_portfolio_snapshot(state: dict) -> dict:
         "current_bid_btc":     p0["current_bid_btc"],
         "current_iv_pct":      p0["current_iv_pct"],
         "entry_iv_pct":        p0["entry_iv_pct"],
+        "iv_change":           p0.get("iv_change", round(p0["current_iv_pct"] - p0["entry_iv_pct"], 2)),
         # PnL
         "pnl_option_usd":      round(pnl_option_total, 2),
         "pnl_hedge_usd":       round(pnl_hedge_usd, 2),
