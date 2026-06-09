@@ -480,7 +480,9 @@ def _greeks_card() -> str:
 
 # ── Card PnL global ────────────────────────────────────────────────────────────
 def _pnl_global_card() -> str:
-    pnl_opt_total = float(s.get("pnl_option_usd", 0))
+    # pnl_opt_total calculé depuis positions_detail (même source que les cartes attribution)
+    # pour rester cohérent avec positions_list après expiry/roll
+    pnl_opt_total = sum(float(pd_map.get(p.get("instrument_name",""),{}).get("pnl_option_usd", 0)) for p in positions_list)
     funding       = float(s.get("funding_pnl_usd", 0))
     total_prem    = sum(float(p.get("entry_price",0))*float(p.get("entry_spot",spot)) for p in positions_list)
 
@@ -528,15 +530,15 @@ def _pnl_global_card() -> str:
     <tr><td colspan="2"><hr style="border-color:#30363d;margin:6px 0"></td></tr>
     <tr>
       <td class="label"><b>TOTAL</b></td>
-      <td class="val {color(pnl_open)} big">{f(pnl_open,0,True)}$</td>
+      <td class="val {color(pnl_opt_total + pnl_hedge_usd + funding)} big">{f(pnl_opt_total + pnl_hedge_usd + funding,0,True)}$</td>
     </tr>
     <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-top:10px;padding-bottom:4px">STRATÉGIE CUMUL</td></tr>
     {row("Réalisé (clôtures)", f'<span class="{color(pnl_hist_total)}">{f(pnl_hist_total,0,True)}$</span>'  + (f'  <span style="color:#8b949e;font-size:0.75rem">({len(hist)} pos.)</span>' if hist else ''))}
-    {row("Latent (ouvert)",    f'<span class="{color(pnl_open)}">{f(pnl_open,0,True)}$</span>')}
+    {row("Latent (ouvert)",    f'<span class="{color(pnl_opt_total + pnl_hedge_usd + funding)}">{f(pnl_opt_total + pnl_hedge_usd + funding,0,True)}$</span>')}
     <tr><td colspan="2"><hr style="border-color:#30363d;margin:6px 0"></td></tr>
     <tr>
       <td class="label"><b>TOTAL STRATÉGIE</b></td>
-      <td class="val {color(pnl_cumul)}">{f(pnl_cumul,0,True)}$</td>
+      <td class="val {color(pnl_hist_total + pnl_opt_total + pnl_hedge_usd + funding)}">{f(pnl_hist_total + pnl_opt_total + pnl_hedge_usd + funding,0,True)}$</td>
     </tr>
   </table>
 </div>"""
