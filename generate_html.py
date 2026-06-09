@@ -64,6 +64,7 @@ pd_map = {d.get("instrument"): d for d in positions_detail}
 # scan_entry : top 5 opportunités (depuis greeks_hedge.py --run)
 se_file = Path("scan_entry.json")
 scan_entry = json.loads(se_file.read_text()) if se_file.exists() else {}
+_se_spot = float(scan_entry.get("market_context", {}).get("spot", 0)) or spot
 
 # Historique pour graphiques
 history_file = Path("pnl_history.json")
@@ -126,12 +127,36 @@ _delta_spot = (_curr_spot - _prev_spot)          if _prev_spot else None
 _delta_spot_pct = (_delta_spot / _prev_spot * 100) if _prev_spot else None
 _delta_pnl  = (_curr_pnl  - _prev_pnl)           if _prev_pnl  is not None else None
 
-# Move spot sur 4h et 1j (depuis pnl_history : 1 point/heure)
-def _spot_move(n_hours: int):
-    """Retourne (move_abs, move_pct) vs il y a n_hours, ou (None, None)."""
-    if len(pnl_history) <= n_hours:
+# Move spot sur 4h et 1j — cherche le snapshot le plus proche dans le temps
+def _parse_ts(ts_str) -> datetime | None:
+    if not ts_str:
+        return None
+    s = str(ts_str).strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S UTC", "%Y-%m-%d %H:%M UTC",
+                "%Y-%m-%dT%H:%M:%S+00:00", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(s.replace(" UTC", ""), fmt.replace(" UTC", "")).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+def _spot_move(target_hours: float):
+    """Retourne (move_abs, move_pct) vs le snapshot le plus proche de target_hours en arrière."""
+    if not pnl_history:
         return None, None
-    ref = float(pnl_history[-(n_hours + 1)].get("spot", 0))
+    now_utc = datetime.now(timezone.utc)
+    target_dt = now_utc - timedelta(hours=target_hours)
+    best, best_diff = None, None
+    for p in pnl_history[:-1]:  # exclure le dernier (= snapshot courant)
+        dt = _parse_ts(p.get("ts"))
+        if dt is None:
+            continue
+        diff = abs((dt - target_dt).total_seconds())
+        if best_diff is None or diff < best_diff:
+            best, best_diff = p, diff
+    if best is None or best_diff > 3 * 3600:  # pas de snapshot dans ±3h de la cible
+        return None, None
+    ref = float(best.get("spot", 0))
     if ref == 0:
         return None, None
     return _curr_spot - ref, (_curr_spot - ref) / ref * 100
@@ -530,7 +555,7 @@ def _scan_entry_card() -> str:
       <td>{f(c.get("s_rank",0)*100,0)}%</td>
       <td>{f(c.get("yield_ann_pct",0),1)}%/an</td>
       <td class="{ba_cl}">{f(ba,1)}%</td>
-      <td>{f(c.get("mark_price",0),5)}</td>
+      <td>${f(float(c.get("mark_price",0)) * _se_spot, 0)}</td>
     </tr>"""
 
     return f"""<div class="card full">
@@ -547,7 +572,7 @@ def _scan_entry_card() -> str:
     <tr>
       <th style="text-align:left">Instrument</th>
       <th>Score</th><th>Strike</th><th>TTE</th><th>Delta</th>
-      <th>IV</th><th>IV/HV</th><th>Rang IV</th><th>Yield ann.</th><th>B/A</th><th>Prime mid (BTC)</th>
+      <th>IV</th><th>IV/HV</th><th>Rang IV</th><th>Yield ann.</th><th>B/A</th><th>Prime mid ($)</th>
     </tr>
     {rows if rows else '<tr><td colspan="11" class="muted" style="text-align:center">Aucun candidat</td></tr>'}
   </table>
