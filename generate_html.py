@@ -828,6 +828,27 @@ if pnl_history:
     spot_js      = _json.dumps(spot_data)
     n_pts        = len(pnl_history)
 
+    # Strikes des positions ouvertes — lignes horizontales sur l'axe spot
+    _strike_colors = ["#f85149", "#d29922", "#a371f7", "#58a6ff", "#3fb950"]
+    _strike_datasets_greeks = ""
+    _strike_datasets_pnl    = ""
+    for _i, _p in enumerate(_all_pos := positions_list + hist):
+        _strike = _p.get("strike")
+        if not _strike:
+            continue
+        _instr = _p.get("instrument_name", "")
+        _label = f"Strike {int(_strike):,} ({_instr.split('-')[2] if '-' in _instr else _instr})"
+        _is_closed = _p in hist
+        _col = _strike_colors[_i % len(_strike_colors)]
+        _dash = "[6,4]" if _is_closed else "[4,2]"
+        _data_js = _json.dumps([_strike] * n_pts)
+        _strike_datasets_greeks += f"""
+    {{ label:{_json.dumps(_label)}, data:{_data_js}, borderColor:"{_col}", backgroundColor:"transparent",
+      yAxisID:"yS", tension:0, pointRadius:0, borderWidth:1.5, borderDash:{_dash} }},"""
+        _strike_datasets_pnl += f"""
+    {{ label:{_json.dumps(_label)}, data:{_data_js}, borderColor:"{_col}", backgroundColor:"transparent",
+      yAxisID:"yS2", tension:0, pointRadius:0, borderWidth:1.5, borderDash:{_dash} }},"""
+
     html += f"""
 <div class="chart-section">
 
@@ -858,7 +879,7 @@ new Chart(document.getElementById("chartGreeks"), {{
     {{ label:"Gamma (pts/1%)", data:{gamma_js}, borderColor:"#f85149", backgroundColor:"transparent",
       yAxisID:"yG", tension:0.3, pointRadius:PT_R, borderWidth:2, borderDash:[5,3] }},
     {{ label:"Spot BTC ($)", data:{spot_js}, borderColor:"rgba(210,153,34,0.7)", backgroundColor:"transparent",
-      yAxisID:"yS", tension:0.3, pointRadius:0, borderWidth:1.5, borderDash:[2,4] }},
+      yAxisID:"yS", tension:0.3, pointRadius:0, borderWidth:2, borderDash:[2,4] }},{_strike_datasets_greeks}
   ]}},
   options:{{ responsive:true, maintainAspectRatio:false,
     interaction:{{mode:"index",intersect:false}},
@@ -867,7 +888,7 @@ new Chart(document.getElementById("chartGreeks"), {{
       x:{{ticks:{{color:"#484f58",maxTicksLimit:14,maxRotation:30,font:{{size:10}}}},grid:{{color:"#21262d"}}}},
       yD:{{type:"linear",position:"left",ticks:{{color:"#58a6ff",font:{{size:10}},callback:v=>v.toFixed(1)+"%"}},grid:{{color:"#21262d"}}}},
       yG:{{type:"linear",position:"right",ticks:{{color:"#f85149",font:{{size:10}},callback:v=>v.toFixed(2)}},grid:{{drawOnChartArea:false}}}},
-      yS:{{type:"linear",position:"right",ticks:{{color:"#d29922",font:{{size:10}},callback:v=>"$"+Math.round(v/1000)+"k"}},grid:{{drawOnChartArea:false}},offset:true}},
+      yS:{{type:"linear",position:"right",ticks:{{color:"#d29922",font:{{size:10}},callback:v=>"$"+Math.round(v/1000)+"k"}},grid:{{drawOnChartArea:false}}}},
     }}
   }}
 }});
@@ -882,7 +903,7 @@ new Chart(document.getElementById("chartPnl"), {{
     {{ label:"PnL Total ($)", data:{pnl_tot_js}, borderColor:"#e6edf3", backgroundColor:"rgba(230,237,243,0.04)",
       yAxisID:"yP", tension:0.3, pointRadius:PT_R, borderWidth:2.5, fill:true }},
     {{ label:"Spot BTC ($)", data:{spot_js}, borderColor:"rgba(210,153,34,0.7)", backgroundColor:"transparent",
-      yAxisID:"yS2", tension:0.3, pointRadius:0, borderWidth:1.5, borderDash:[2,4] }},
+      yAxisID:"yS2", tension:0.3, pointRadius:0, borderWidth:2, borderDash:[2,4] }},{_strike_datasets_pnl}
   ]}},
   options:{{ responsive:true, maintainAspectRatio:false,
     interaction:{{mode:"index",intersect:false}},
@@ -890,7 +911,7 @@ new Chart(document.getElementById("chartPnl"), {{
     scales:{{
       x:{{ticks:{{color:"#484f58",maxTicksLimit:14,maxRotation:30,font:{{size:10}}}},grid:{{color:"#21262d"}}}},
       yP:{{type:"linear",position:"left",ticks:{{color:"#8b949e",font:{{size:10}},callback:v=>(v>=0?"+":"")+v.toFixed(0)+"$"}},grid:{{color:"#21262d"}}}},
-      yS2:{{type:"linear",position:"right",ticks:{{color:"#d29922",font:{{size:10}},callback:v=>"$"+Math.round(v/1000)+"k"}},grid:{{drawOnChartArea:false}},offset:true}},
+      yS2:{{type:"linear",position:"right",ticks:{{color:"#d29922",font:{{size:10}},callback:v=>"$"+Math.round(v/1000)+"k"}},grid:{{drawOnChartArea:false}}}},
     }}
   }}
 }});
