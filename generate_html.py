@@ -652,6 +652,50 @@ def _move_line(label, move_abs, move_pct):
 _move4h_html = _move_line("4h", _move4h_abs, _move4h_pct)
 _move1d_html = _move_line("1j", _move1d_abs, _move1d_pct)
 
+# ── Dernière transaction (hedge rebalancement, roll, nouvelle position) ─────────
+def _last_tx_html() -> str:
+    events = []
+
+    # Rebalancements hedge
+    for h in hedge_data.get("history", []):
+        note = h.get("note", "")
+        if "entree opportuniste" in note or "hedge initial" in note:
+            if "entree opportuniste" in note:
+                label = f"Nouvelle position ({note.replace('entree opportuniste ', '')})"
+                cat = "new"
+            else:
+                label = f"Ouverture hedge ({note.replace('hedge initial ', '')})"
+                cat = "new"
+        else:
+            side = h.get("side", "?")
+            qty  = abs(float(h.get("qty", 0)))
+            label = f"Rebal. hedge — {side} {qty:.4f} BTC-PERP"
+            cat = "hedge"
+        events.append({"ts": h.get("ts", ""), "label": label, "cat": cat})
+
+    # Rolls (history des positions clôturées)
+    for h in hist:
+        events.append({"ts": h.get("exit_ts", ""), "label": f"Roll — {h.get('instrument_name','?')}", "cat": "roll"})
+
+    # Ouvertures de positions courantes (entrée)
+    for p in positions_list:
+        events.append({"ts": p.get("entry_ts", ""), "label": f"Ouverture — {p.get('instrument_name','?')}", "cat": "new"})
+
+    # Trier par timestamp décroissant, prendre le plus récent
+    def _ts_key(e):
+        dt = _parse_ts(e["ts"])
+        return dt.timestamp() if dt else 0
+
+    events = [e for e in events if e["ts"]]
+    if not events:
+        return '<span class="chip-delta neu">—</span>'
+
+    last = max(events, key=_ts_key)
+    cat_cl = {"hedge": "warn", "roll": "neg", "new": "pos"}.get(last["cat"], "neu")
+    return f'<span class="chip-delta {cat_cl}">{to_ny(last["ts"])[:16]}</span><span class="chip-delta neu" style="margin-top:1px">{last["label"]}</span>'
+
+_last_tx = _last_tx_html()
+
 _pnl_delta_html = (
     f'<span class="chip-delta {_dpnl_cl}">{f(_delta_pnl,0,True)}$ vs snapshot préc.</span>'
 ) if _delta_pnl is not None else '<span class="chip-delta neu">— premier snapshot</span>'
@@ -695,14 +739,13 @@ else:
     <span class="chip-delta neu">TTE min <span class="{_tte_cl}">{f(_tte_min,2)}j</span></span>
   </div>
   <div class="chip">
-    <span class="chip-label">Hedge drift</span>
-    <span class="chip-value {_drift_cl}">{f(_drift_pct,2)}%</span>
-    <span class="chip-delta neu">Seuil {f(hedge_thr_pct,1)}% · {"⚠️ REBALANCER" if _drift_abs>hedge_thr_btc else "✅ OK"}</span>
+    <span class="chip-label">Net delta</span>
+    <span class="chip-value {_drift_cl}">{f(_drift*100,2,True)}%  ≈  {f(_drift*spot,0,True)}$</span>
+    <span class="chip-delta neu">Seuil rebal. {f(hedge_thr_pct,1)}% · <span class="{"neg" if _drift_abs>hedge_thr_btc else "ok"}">{"REBALANCER" if _drift_abs>hedge_thr_btc else "OK"}</span></span>
   </div>
-  <div class="chip">
-    <span class="chip-label">Net delta (pos+hedge)</span>
-    <span class="chip-value {_drift_cl}">{f(_drift*100,2,True)}%</span>
-    <span class="chip-delta neu">{f(_drift,4,True)} BTC ≈ {f(_drift*spot,0,True)}$</span>
+  <div class="chip" style="min-width:220px">
+    <span class="chip-label">Derniere transaction</span>
+    {_last_tx}
   </div>
 </div>
 
