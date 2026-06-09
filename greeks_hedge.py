@@ -593,6 +593,59 @@ def display_pnl(p: dict):
 
 # ── Main run ──────────────────────────────────────────────────────────────────
 
+def expire_positions(state: dict, spot: float) -> list[str]:
+    """
+    Déplace les positions expirées de positions[] vers history[].
+    Retourne la liste des instruments expirés (pour affichage).
+    """
+    now = datetime.now(timezone.utc)
+    expired_names = []
+    remaining = []
+
+    for pos in state.get("positions", []):
+        try:
+            expiry = datetime.fromisoformat(pos["expiry_dt"])
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+        except Exception:
+            remaining.append(pos)
+            continue
+
+        if now < expiry:
+            remaining.append(pos)
+            continue
+
+        # Position expirée : calculer le PnL final
+        exit_price = 0.0  # OTM → expire sans valeur par défaut
+        try:
+            t = fetch_ticker_full(pos["instrument_name"])
+            exit_price = t.get("mark_price") or 0.0
+        except Exception:
+            pass  # instrument retiré de l'API → on suppose worthless
+
+        n = pos.get("contracts", 1)
+        pnl_btc = (pos["entry_price"] - exit_price) * n
+        pnl_usd = round(pnl_btc * spot, 2)
+
+        closed = {
+            **pos,
+            "exit_price":    exit_price,
+            "exit_spot":     spot,
+            "exit_ts":       now_dt(),
+            "tte_at_exit":   0.0,
+            "exit_reason":   "expiration",
+            "pnl_btc":       round(pnl_btc, 6),
+            "pnl_usd":       pnl_usd,
+        }
+        state.setdefault("history", []).append(closed)
+        expired_names.append(pos["instrument_name"])
+        print(f"  [EXPIRATION] {pos['instrument_name']} clôturée "
+              f"— exit {exit_price:.5f} BTC  PnL {'+' if pnl_usd>=0 else ''}{pnl_usd:.2f} USD")
+
+    state["positions"] = remaining
+    return expired_names
+
+
 def run_once(currency: str = CURRENCY, verbose: bool = True):
     global pos_greeks_cache
 
@@ -605,6 +658,12 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     print(f"\n  Spot {currency}: ${spot:,.2f}")
 
     state = load_positions()
+
+    # ── Expiration automatique ─────────────────────────────────────────────────
+    expired = expire_positions(state, spot)
+    if expired:
+        # Recalculer l'état "open" après expiration
+        state["open"] = state["positions"][0] if state.get("positions") else None
 
     # ── Vérifier si roll nécessaire ───────────────────────────────────────────
     if state["open"] is not None:
