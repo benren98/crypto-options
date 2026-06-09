@@ -259,9 +259,23 @@ def fetch_put_candidates(currency: str,
 # ── Position & Roll Manager ───────────────────────────────────────────────────
 
 def load_positions() -> dict:
-    if POSITIONS_FILE.exists():
-        return json.loads(POSITIONS_FILE.read_text())
-    return {"open": None, "history": []}
+    if not POSITIONS_FILE.exists():
+        return {"positions": [], "hedge": {}, "history": []}
+    state = json.loads(POSITIONS_FILE.read_text())
+    # Migration ancien format open:dict → positions:list
+    if "open" in state and "positions" not in state:
+        pos = state.pop("open") or {}
+        state["positions"] = [pos] if pos else []
+        state["hedge"] = {
+            "qty":              pos.pop("hedge_qty", 0.0),
+            "avg_entry":        pos.pop("hedge_avg_entry", pos.get("hedge_entry_spot", 0.0)),
+            "rebalances":       pos.pop("hedge_rebalances", 0),
+            "history":          pos.pop("hedge_history", []),
+            "realized_pnl_usd": pos.pop("realized_hedge_pnl_usd", 0.0),
+        }
+    # Compat: expose state["open"] = première position ouverte (pour roll logic legacy)
+    state["open"] = state["positions"][0] if state.get("positions") else None
+    return state
 
 
 def save_positions(state: dict):
@@ -658,24 +672,42 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                       f"delta={row['delta']:+.3f}  "
                       f"IV={row['mark_iv']:.1f}%")
 
-    # ── Greeks de la position ouverte ─────────────────────────────────────────
-    pos = state["open"]
-    print_section("GREEKS DE LA POSITION")
-    pos_greeks = compute_position_greeks(pos, spot)
-    pos_greeks_cache = pos_greeks
-    display_greeks(pos_greeks)
+    # ── Greeks de TOUTES les positions (cumulés) ──────────────────────────────
+    open_positions = state.get("positions", [])
+    if not open_positions:
+        open_positions = [state["open"]] if state.get("open") else []
 
-    # ── Hedge delta ───────────────────────────────────────────────────────────
-    print_section("HEDGE DELTA (via BTC-PERPETUAL)")
-    hedge = compute_hedge_order(pos_greeks, pos.get("hedge_qty", 0.0), spot)
+    print_section(f"GREEKS PORTEFEUILLE ({len(open_positions)} position(s))")
+    all_greeks = [compute_position_greeks(p, spot) for p in open_positions]
+    for pg in all_greeks:
+        display_greeks(pg)
+
+    # Greeks cumulés pour le hedge
+    combined_greeks = {
+        "pos_delta": sum(g["pos_delta"] for g in all_greeks),
+        "pos_gamma": sum(g["pos_gamma"] for g in all_greeks),
+        "pos_vega":  sum(g["pos_vega"]  for g in all_greeks),
+        "pos_theta": sum(g["pos_theta"] for g in all_greeks),
+        "mark_iv_pct": max(g.get("mark_iv_pct") or 50 for g in all_greeks),
+        "spot":      spot,
+    }
+    pos_greeks = combined_greeks
+    pos_greeks_cache = combined_greeks
+
+    # ── Hedge delta (sur delta cumulé portfolio) ───────────────────────────────
+    hedge_data = state.get("hedge", {})
+    current_hedge_qty = float(hedge_data.get("qty", 0.0))
+
+    print_section("HEDGE DELTA PORTFOLIO (via BTC-PERPETUAL)")
+    hedge = compute_hedge_order(combined_greeks, current_hedge_qty, spot)
     display_hedge(hedge)
 
     # ── Rebalancement automatique si drift > seuil ────────────────────────────
     if hedge["needs_rebalance"]:
-        old_qty    = pos.get("hedge_qty", 0.0)
-        old_avg    = pos.get("hedge_avg_entry", pos.get("hedge_entry_spot", spot))
+        old_qty    = current_hedge_qty
+        old_avg    = float(hedge_data.get("avg_entry", spot))
         new_qty    = hedge["target_hedge_qty"]     # négatif (short)
-        order_qty  = new_qty - old_qty             # delta à trader (négatif = short plus)
+        order_qty  = new_qty - old_qty             # delta à trader
 
         # Prix d'entrée moyen pondéré du hedge (VWAP des exécutions)
         # short qty négatif -> on prend les valeurs absolues pour le calcul
@@ -705,22 +737,24 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         else:
             realized_this = 0.0  # short augmenté : pas de PnL réalisé
 
-        prev_realized = float(pos.get("realized_hedge_pnl_usd", 0.0))
+        prev_realized = float(hedge_data.get("realized_pnl_usd", 0.0))
         new_realized  = round(prev_realized + realized_this, 2)
 
-        state["open"]["hedge_qty"]               = round(new_qty, 5)
-        state["open"]["hedge_avg_entry"]         = round(new_avg, 2)
-        state["open"]["hedge_rebalances"]        = pos.get("hedge_rebalances", 0) + 1
-        state["open"]["realized_hedge_pnl_usd"]  = new_realized
+        # Mettre à jour le hedge partagé dans state["hedge"]
+        if "hedge" not in state:
+            state["hedge"] = {}
+        state["hedge"]["qty"]              = round(new_qty, 5)
+        state["hedge"]["avg_entry"]        = round(new_avg, 2)
+        state["hedge"]["rebalances"]       = hedge_data.get("rebalances", 0) + 1
+        state["hedge"]["realized_pnl_usd"] = new_realized
 
-        # Enregistrer le rebalancement dans l'historique
+        # Enregistrer le rebalancement dans l'historique du hedge
         _vwap_note = (
             "rachat partiel — VWAP entrée inchangé"   if order_qty > 0 and abs_new < abs_old
             else "short augmenté — VWAP recalculé"     if order_qty < 0 and abs_new > abs_old
             else "position fermée"                     if abs_new < 1e-8
             else ""
         )
-        # Delta net estimé APRÈS rebalancement (pour affichage dashboard)
         _delta_after_pct = round((hedge["delta_drift"] - order_qty) * 100, 3)
         rebal_entry = {
             "ts":        now_dt(),
@@ -737,9 +771,9 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             "delta_net_after_pct": _delta_after_pct,
             "note":        _vwap_note,
         }
-        if "hedge_history" not in state["open"]:
-            state["open"]["hedge_history"] = []
-        state["open"]["hedge_history"].append(rebal_entry)
+        if "history" not in state["hedge"]:
+            state["hedge"]["history"] = []
+        state["hedge"]["history"].append(rebal_entry)
 
         print(f"\n  [AUTO-REBALANCE]")
         print(f"  Ordre      : {'SELL' if order_qty < 0 else 'BUY'} "
@@ -749,6 +783,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
 
     # ── PnL ───────────────────────────────────────────────────────────────────
     print_section("PnL MARK-TO-MARKET")
+    pos = state.get("open") or (open_positions[0] if open_positions else {})
     pnl = compute_pnl(pos, spot)
     display_pnl(pnl)
 
@@ -800,12 +835,16 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                   f"pnl={'+' if row['pnl_usd']>=0 else ''}{row['pnl_usd']:.2f}$")
 
     # ── Sauvegarder + sync Gist ───────────────────────────────────────────────
+    # Supprimer la clé compat "open" avant de sauvegarder (évite duplication)
+    state.pop("open", None)
     save_positions(state)
     push_positions()   # sync automatique vers GitHub Gist
 
     # ── Export CSV snapshot ───────────────────────────────────────────────────
     tag = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    snap = {**pos_greeks, **hedge,
+    hedge_save = state.get("hedge", {})
+    snap = {**combined_greeks, **hedge,
+            "hedge_qty": hedge_save.get("qty", 0),
             "pnl_usd": pnl["pnl_usd"],
             "total_pnl_usd": pnl["total_pnl_usd"],
             "timestamp": now_dt()}

@@ -622,40 +622,254 @@ def print_report(snapshots: pd.DataFrame, position: dict):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def load_position() -> dict | None:
+def load_state() -> dict:
+    """Charge positions.json — supporte l'ancien format (open:dict) et le nouveau (positions:list)."""
     if not POSITIONS_FILE.exists():
-        return None
+        return {"positions": [], "hedge": {}}
     state = json.loads(POSITIONS_FILE.read_text())
-    return state.get("open")
+    # Migration ancien format
+    if "open" in state and "positions" not in state:
+        pos = state.pop("open") or {}
+        state["positions"] = [pos] if pos else []
+        state["hedge"] = {
+            "qty":              pos.pop("hedge_qty", 0.0),
+            "avg_entry":        pos.pop("hedge_avg_entry", pos.get("hedge_entry_spot", 0.0)),
+            "rebalances":       pos.pop("hedge_rebalances", 0),
+            "history":          pos.pop("hedge_history", []),
+            "realized_pnl_usd": pos.pop("realized_hedge_pnl_usd", 0.0),
+        }
+    return state
+
+
+def compute_option_pnl(position: dict, spot: float) -> dict:
+    """Calcule le PnL option (MtM) et les Greeks live pour une position, sans hedge."""
+    instr      = position["instrument_name"]
+    entry_p    = position["entry_price"]
+    entry_s    = position["entry_spot"]
+    contracts  = position["contracts"]
+
+    ticker     = fetch_option_ticker(instr)
+    curr_mark  = ticker.get("mark_price", entry_p)
+    curr_bid   = ticker.get("best_bid_price") or curr_mark
+    curr_ask   = ticker.get("best_ask_price") or curr_mark
+    curr_iv    = ticker.get("mark_iv", position["iv_at_entry"])
+    greeks     = ticker.get("greeks") or {}
+    curr_delta = greeks.get("delta", position["delta_at_entry"])
+    curr_gamma = greeks.get("gamma", position.get("gamma_at_entry", 7e-5))
+    curr_vega  = greeks.get("vega",  position.get("vega_at_entry", 13.0))
+    curr_theta = greeks.get("theta", 0)
+
+    expiry_dt = pd.to_datetime(position["expiry_dt"], utc=True)
+    tte_days  = (expiry_dt - pd.Timestamp(now_utc())).total_seconds() / 86400
+    entry_dt  = pd.to_datetime(position["entry_ts"].replace(" UTC", ""),
+                               format="%Y-%m-%d %H:%M:%S", utc=True)
+    days_held = (pd.Timestamp(now_utc()) - entry_dt).total_seconds() / 86400
+
+    pnl_opt_btc = (entry_p - curr_mark) * contracts
+    pnl_opt_usd = pnl_opt_btc * spot
+
+    theta_entry_btc = abs(position.get("theta_at_entry", 0))
+    theta_theory_usd = theta_entry_btc * entry_s * days_held
+    theta_deribit_usd = abs(curr_theta) if curr_theta else 0.0
+
+    vrp_capture_pct = (pnl_opt_usd / theta_theory_usd * 100
+                       if theta_theory_usd > 0.5 and days_held > 0.25
+                       else float("nan"))
+
+    return {
+        "instrument":         instr,
+        "tte_days":           round(tte_days, 4),
+        "days_held":          round(days_held, 4),
+        "entry_spot":         entry_s,
+        "entry_price_btc":    entry_p,
+        "current_price_btc":  round(curr_mark, 6),
+        "current_ask_btc":    round(curr_ask,  6),
+        "current_bid_btc":    round(curr_bid,  6),
+        "current_iv_pct":     curr_iv,
+        "entry_iv_pct":       position["iv_at_entry"],
+        "iv_change":          round(curr_iv - position["iv_at_entry"], 2),
+        "pnl_option_btc":     round(pnl_opt_btc, 6),
+        "pnl_option_usd":     round(pnl_opt_usd, 2),
+        "pnl_pct_of_premium": round(pnl_opt_usd / (entry_p * entry_s) * 100, 2),
+        "theta_theory_usd":   round(theta_theory_usd, 2),
+        "theta_daily_now_usd":round(theta_deribit_usd, 2),
+        "vrp_capture_pct":    round(vrp_capture_pct, 1),
+        "live_delta":         round(curr_delta, 5),
+        "live_gamma":         round(curr_gamma, 7),
+        "live_vega":          round(curr_vega,  4),
+    }
+
+
+def compute_portfolio_snapshot(state: dict) -> dict:
+    """Calcule le snapshot portfolio : option PnL par position + hedge PnL partagé."""
+    positions = state.get("positions", [])
+    hedge     = state.get("hedge", {})
+
+    if not positions:
+        return {}
+
+    spot         = fetch_spot()
+    funding_8h   = fetch_perp_funding()
+    funding_daily = funding_8h * 3
+    perp_mark    = fetch_perp_mark()
+
+    hedge_qty         = float(hedge.get("qty", 0.0))
+    hedge_avg         = float(hedge.get("avg_entry", spot))
+    realized_hedge    = float(hedge.get("realized_pnl_usd", 0.0))
+
+    # Option PnL par position
+    pos_snaps = [compute_option_pnl(p, spot) for p in positions]
+
+    # Greeks cumulés du portefeuille
+    net_delta   = sum(s["live_delta"] for s in pos_snaps)
+    net_gamma   = sum(s["live_gamma"] for s in pos_snaps)
+    net_vega    = sum(s["live_vega"]  for s in pos_snaps)
+    net_theta   = sum(s["theta_daily_now_usd"] for s in pos_snaps)
+    net_theta_theory = sum(s["theta_theory_usd"] for s in pos_snaps)
+
+    # Hedge PnL
+    pnl_hedge_mtm = hedge_qty * (spot - hedge_avg)
+    pnl_hedge_usd = pnl_hedge_mtm + realized_hedge
+
+    # Funding (sur notionnel total du hedge)
+    days_held_max = max(s["days_held"] for s in pos_snaps)
+    hedge_notional = abs(hedge_qty) * perp_mark
+    funding_pnl_usd = funding_daily * days_held_max * hedge_notional
+
+    # PnL option total
+    pnl_option_total = sum(s["pnl_option_usd"] for s in pos_snaps)
+    total_pnl_usd    = pnl_option_total + pnl_hedge_usd + funding_pnl_usd
+
+    # Seuil hedge dynamique basé sur IV de la position principale (la plus longue)
+    primary = max(pos_snaps, key=lambda s: s["tte_days"])
+    iv_scale      = math.sqrt(max(primary["current_iv_pct"], 20.0) / 70.0)
+    hedge_thr_pct = max(2.0, min(8.0, 5.0 * iv_scale))
+    hedge_thr_btc = hedge_thr_pct / 100.0
+
+    # Drift = (delta net des options + hedge) = ce qu'il reste non couvert
+    # net_delta < 0 pour puts (holders), -net_delta = position delta du vendeur
+    hedge_delta_drift = round(-net_delta - abs(hedge_qty), 5)
+
+    # Snap primaire = position avec TTE max (pour affichage principal)
+    p0 = primary
+
+    # VRP capture portfolio
+    pnl_opt_total_check = pnl_option_total
+    vrp_portfolio = (pnl_opt_total_check / net_theta_theory * 100
+                     if net_theta_theory > 0.5 else float("nan"))
+
+    # Snap principal = référence position la plus longue + données portfolio
+    snap = {
+        "timestamp":           now_str(),
+        "spot":                round(spot, 2),
+        "entry_spot":          p0["entry_spot"],
+        "spot_move_pct":       round((spot / p0["entry_spot"] - 1) * 100, 3),
+        "tte_days":            p0["tte_days"],
+        "days_held":           days_held_max,
+        # Option principale (pour compat dashboard)
+        "entry_price_btc":     p0["entry_price_btc"],
+        "current_price_btc":   p0["current_price_btc"],
+        "current_ask_btc":     p0["current_ask_btc"],
+        "current_bid_btc":     p0["current_bid_btc"],
+        "current_iv_pct":      p0["current_iv_pct"],
+        "entry_iv_pct":        p0["entry_iv_pct"],
+        # PnL
+        "pnl_option_usd":      round(pnl_option_total, 2),
+        "pnl_hedge_usd":       round(pnl_hedge_usd, 2),
+        "funding_pnl_usd":     round(funding_pnl_usd, 4),
+        "total_pnl_usd":       round(total_pnl_usd, 2),
+        "pnl_pct_of_premium":  p0["pnl_pct_of_premium"],
+        # Greeks portfolio
+        "live_delta":          round(net_delta, 5),
+        "live_gamma":          round(net_gamma, 7),
+        "live_vega":           round(net_vega,  4),
+        "theta_daily_now_usd": round(net_theta, 2),
+        "theta_theory_usd":    round(net_theta_theory, 2),
+        "vrp_capture_pct":     round(vrp_portfolio, 1),
+        # Hedge
+        "hedge_qty":           hedge_qty,
+        "hedge_delta_drift":   hedge_delta_drift,
+        "hedge_threshold_pct": round(hedge_thr_pct, 2),
+        "hedge_threshold_btc": round(hedge_thr_btc, 5),
+        # Détail par position (pour dashboard multi)
+        "positions_detail":    pos_snaps,
+    }
+    return snap
+
+
+# ── compute_snapshot reste disponible pour compat greeks_hedge.py ────────────
+def compute_snapshot(position: dict) -> dict:
+    """Wrapper compat : snapshot single position (lit hedge depuis positions.json)."""
+    state = load_state()
+    hedge = state.get("hedge", {})
+    spot  = fetch_option_ticker(position["instrument_name"]).get("underlying_price") or fetch_spot()
+    pos_snap = compute_option_pnl(position, spot)
+
+    hedge_qty      = float(hedge.get("qty", position.get("hedge_qty", 0.0)))
+    hedge_avg      = float(hedge.get("avg_entry", position.get("hedge_avg_entry", spot)))
+    realized_hedge = float(hedge.get("realized_pnl_usd", position.get("realized_hedge_pnl_usd", 0.0)))
+
+    funding_8h    = fetch_perp_funding()
+    perp_mark     = fetch_perp_mark()
+    funding_daily = funding_8h * 3
+    hedge_notional = abs(hedge_qty) * perp_mark
+    funding_pnl_usd = funding_daily * pos_snap["days_held"] * hedge_notional
+
+    pnl_hedge_usd = hedge_qty * (spot - hedge_avg) + realized_hedge
+    total_pnl_usd = pos_snap["pnl_option_usd"] + pnl_hedge_usd + funding_pnl_usd
+
+    iv_scale      = math.sqrt(max(pos_snap["current_iv_pct"], 20.0) / 70.0)
+    hedge_thr_pct = max(2.0, min(8.0, 5.0 * iv_scale))
+
+    snap = {**pos_snap,
+        "timestamp":           now_str(),
+        "spot":                round(spot, 2),
+        "spot_move_pct":       round((spot / pos_snap["entry_spot"] - 1) * 100, 3),
+        "pnl_hedge_usd":       round(pnl_hedge_usd, 2),
+        "funding_pnl_usd":     round(funding_pnl_usd, 4),
+        "total_pnl_usd":       round(total_pnl_usd, 2),
+        "hedge_qty":           hedge_qty,
+        "hedge_delta_drift":   round(-pos_snap["live_delta"] - abs(hedge_qty), 5),
+        "hedge_threshold_pct": round(hedge_thr_pct, 2),
+        "hedge_threshold_btc": round(hedge_thr_pct / 100, 5),
+    }
+    return snap
+
+
+def load_position() -> dict | None:
+    state = load_state()
+    positions = state.get("positions", [])
+    return positions[0] if positions else None
 
 
 def run_once(plot: bool = False, report: bool = False):
-    position = load_position()
-    if position is None:
+    state = load_state()
+    positions = state.get("positions", [])
+    if not positions:
         print("Aucune position ouverte dans positions.json")
-        print("Lance d'abord : python greeks_hedge.py --run")
         return
 
-    print(f"Calcul snapshot pour {position['instrument_name']}...")
-    snap = compute_snapshot(position)
-    display_snapshot(snap, position)
+    print(f"Calcul snapshot portfolio ({len(positions)} position(s))...")
+    snap = compute_portfolio_snapshot(state)
+
+    # Affichage console (position principale)
+    primary_pos = max(positions, key=lambda p: pd.to_datetime(
+        p["expiry_dt"], utc=True).timestamp())
+    display_snapshot(snap, primary_pos)
     save_snapshot(snap)
 
     snapshots = load_snapshots()
-
     if plot:
-        print("Generation des graphiques...")
-        plot_pnl(snapshots, position)
-
+        plot_pnl(snapshots, primary_pos)
     if report:
-        print_report(snapshots, position)
+        print_report(snapshots, primary_pos)
 
-    # Export dernier snapshot CSV
+    # Export CSV
     tag = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    pd.DataFrame([snap]).to_csv(
+    pd.DataFrame([{k: v for k, v in snap.items() if k != "positions_detail"}]).to_csv(
         OUTPUT_DIR / f"pnl_snap_{tag}.csv", index=False)
 
-    # ── Accumuler dans pnl_history.json (graphiques dashboard) ───────────────
+    # pnl_history.json
     history_file = Path(__file__).parent / "pnl_history.json"
     history: list = []
     if history_file.exists():
@@ -664,29 +878,29 @@ def run_once(plot: bool = False, report: bool = False):
         except Exception:
             history = []
 
-    # Point de données pour les graphiques
+    # Delta net = sum des deltas options (position vendeur = -delta)
+    net_delta_abs = abs(float(snap.get("live_delta", 0)))
     gamma_pts = float(snap.get("live_gamma", 0)) * float(snap.get("spot", 0)) * 0.01 * 100
     hist_point = {
-        "ts":          snap["timestamp"],
-        "spot":        snap["spot"],
-        "tte_days":    snap["tte_days"],
-        "delta_pct":   round(abs(float(snap.get("live_delta", 0))) * 100, 3),
+        "ts":            snap["timestamp"],
+        "spot":          snap["spot"],
+        "tte_days":      snap["tte_days"],
+        "delta_pct":     round(net_delta_abs * 100, 3),
         "net_delta_pct": round(float(snap.get("hedge_delta_drift", 0)) * 100, 3),
-        "gamma_pts":   round(gamma_pts, 4),
-        "iv_pct":      snap.get("current_iv_pct"),
-        "pnl_option":  snap.get("pnl_option_usd"),
-        "pnl_hedge":   snap.get("pnl_hedge_usd"),
-        "pnl_total":   snap.get("total_pnl_usd"),
-        "theta_daily": snap.get("theta_daily_now_usd"),
-        "instrument":  position["instrument_name"],
+        "gamma_pts":     round(gamma_pts, 4),
+        "iv_pct":        snap.get("current_iv_pct"),
+        "pnl_option":    snap.get("pnl_option_usd"),
+        "pnl_hedge":     snap.get("pnl_hedge_usd"),
+        "pnl_total":     snap.get("total_pnl_usd"),
+        "theta_daily":   snap.get("theta_daily_now_usd"),
+        "n_positions":   len(positions),
     }
     history.append(hist_point)
-    # Garder max 500 points (≈ 20 jours de runs horaires)
     history = history[-500:]
     history_file.write_text(json.dumps(history, indent=2))
     print(f"  pnl_history.json : {len(history)} points")
 
-    push_positions()   # sync positions.json vers GitHub Gist
+    push_positions()
 
 
 def watch_loop(interval_min: int = 5):

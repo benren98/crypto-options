@@ -63,14 +63,18 @@ def to_ny(ts_str) -> str:
 pos_raw  = json.loads(Path("positions.json").read_text())
 summ_raw = json.loads(Path("pnl_summary.json").read_text())
 
-pos   = pos_raw.get("open")
-hist  = pos_raw.get("history", [])
+# Support multi-position (nouveau format) et ancien format (open:dict)
+positions_list = pos_raw.get("positions") or ([pos_raw["open"]] if pos_raw.get("open") else [])
+hedge_data     = pos_raw.get("hedge", {})
+# Compat: pos = première/principale position (la plus longue TTE)
+pos  = max(positions_list, key=lambda p: p.get("expiry_dt",""), default=None) if positions_list else None
+hist = pos_raw.get("history", [])
 
 # Historique pour graphiques
 history_file = Path("pnl_history.json")
 pnl_history  = json.loads(history_file.read_text()) if history_file.exists() else []
 
-no_position = pos is None and not hist
+no_position = not positions_list and not hist
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def f(v, decimals=2, sign=False):
@@ -106,8 +110,8 @@ if pos and summ_raw.get("spot"):
     # Gamma : préférer live_gamma (pnl_summary.json) → recalculé à chaque run Actions
     # Fallback sur gamma_at_entry uniquement si le champ live n'est pas encore présent
     gamma_entry  = float(s.get("live_gamma") or pos.get("gamma_at_entry", 7e-5))
-    hedge_avg    = float(pos.get("hedge_avg_entry", entry_spot))
-    hedge_qty        = float(s.get("hedge_qty", pos.get("hedge_qty", 0)))
+    hedge_avg    = float(hedge_data.get("avg_entry", pos.get("hedge_avg_entry", entry_spot)))
+    hedge_qty        = float(s.get("hedge_qty", hedge_data.get("qty", pos.get("hedge_qty", 0))))
     hedge_thr_pct    = float(s.get("hedge_threshold_pct") or 5.0)
     hedge_thr_btc    = float(s.get("hedge_threshold_btc") or hedge_thr_pct / 100)
     curr_mark    = float(s.get("current_price_btc", 0))
@@ -185,6 +189,42 @@ if pos and summ_raw.get("spot"):
         pnl_h     = -abs(hedge_qty) * (ns - hedge_avg)
         pnl_n     = pnl_o + pnl_h
         matrix_rows.append((pct, ns, nd_pct, pnl_o, pnl_h, pnl_n))
+
+# ── Card par position ──────────────────────────────────────────────────────────
+def _pos_card(p: dict, s: dict, attr: dict, spot: float) -> str:
+    instr   = p.get("instrument_name","—")
+    strike  = int(p.get("strike",0))
+    expiry  = (p.get("expiry_dt","—") or "—")[:10]
+    # PnL option pour cette position : chercher dans positions_detail si dispo
+    pd_list = s.get("positions_detail") or []
+    pd_map  = {d.get("instrument"): d for d in pd_list}
+    pd      = pd_map.get(instr, {})
+    pnl_opt = float(pd.get("pnl_option_usd", 0))
+    iv_now  = float(pd.get("current_iv_pct", s.get("current_iv_pct", 0)))
+    tte     = float(pd.get("tte_days", 0))
+    delta   = float(pd.get("live_delta", 0))
+    ask     = float(pd.get("current_ask_btc", 0))
+    cl_pnl  = color(pnl_opt)
+    cl_tte  = "warn" if tte <= 1 else "neu"
+    iv_delta = iv_now - float(p.get("iv_at_entry", 0))
+    return f"""<div class="card">
+  <h2>📍 {instr}</h2>
+  <table>
+    {row("Strike / Expiry", f'${strike:,}  ·  {expiry}')}
+    {row("TTE", f'<b class="{cl_tte}">{f(tte,2)}j</b>')}
+    {row("Prime encaissée", f'{p.get("entry_price")} BTC = <b>${f(float(p.get("entry_price",0))*float(p.get("entry_spot",0)),0)}</b>')}
+    {row("Rachat (ask)", f'{f(ask,5)} BTC = ${f(ask*spot,0)}')}
+    {row("IV actuelle", f'{f(iv_now,1)}%  <span class="{"neg" if iv_delta>0 else "pos"}">{f(iv_delta,1,True)}pts vs entrée</span>')}
+    {row("Delta live", f'{f(delta,4)}')}
+    {row("PnL option", f'<b class="{cl_pnl}">{f(pnl_opt,0,True)}$</b>')}
+    <tr><td colspan="2" style="padding-top:8px;color:#8b949e;font-size:0.78rem;">ENTRÉE</td></tr>
+    {row("Date", to_ny(p.get("entry_ts","—")))}
+    {row("Spot", f'${f(p.get("entry_spot"),0)}')}
+    {row("IV", f'{p.get("iv_at_entry")}%')}
+    {row("Delta", f'{p.get("delta_at_entry")}')}
+  </table>
+</div>
+"""
 
 # ── PnL historique ─────────────────────────────────────────────────────────────
 pnl_hist_total = sum(float(h.get("pnl_usd", 0)) for h in hist)
@@ -332,28 +372,8 @@ else:
 
 <div class="grid">
 
-<!-- POSITION -->
-<div class="card">
-  <h2>📍 Position & Nominal</h2>
-  <table>
-    {row("Instrument", f'<b>{instrument}</b>')}
-    {row("Strike / Expiry", f'${int(pos["strike"]):,}  ·  {expiry}')}
-    {row("TTE restant", f'<b class="{"warn" if float(s.get("tte_days",2))<=1 else "neu"}">{f(s.get("tte_days"),2)} jours</b>')}
-    {row("Spot actuel", f'<b>${f(s.get("spot"),0)}</b>  <span class="{"pos" if float(s.get("spot_move_pct",0))>=0 else "neg"}">{spot_move}%</span>')}
-    {row("IV actuelle", f'{f(s.get("current_iv_pct"),1)}%  <span class="{"neg" if float(s.get("current_iv_pct",0))>float(pos.get("iv_at_entry",0)) else "pos"}">{f(attr.get("delta_iv",0),1,True)}pts</span>')}
-    {row("Nominal brut", f'${int(pos["strike"] * int(pos.get("contracts",1))):,}')}
-    {row("Expo delta-ajustée", f'${f(attr.get("delta_pct",0)/100 * attr.get("spot",0), 0)}')}
-    {row("Prime encaissée", f'{pos.get("entry_price")} BTC = <b>${f(float(pos.get("entry_price",0)) * float(pos.get("entry_spot",0)), 0)}</b>')}
-    {row("Rachat (ask)", f'{s.get("current_ask_btc")} BTC = ${f(float(s.get("current_ask_btc",0))*float(s.get("spot",0)),0)}')}
-    <tr><td colspan="2" style="padding-top:10px; color:#8b949e; font-size:0.78rem;">ENTRÉE</td></tr>
-    {row("Date d'entrée", to_ny(pos.get("entry_ts","—")))}
-    {row("Spot à l'entrée", f'${f(pos.get("entry_spot"),0)}')}
-    {row("Prix vendu (bid)", f'{pos.get("entry_price")} BTC  ({f(float(pos.get("entry_price",0))*100/float(pos.get("entry_mark_price",1)),1)}% vs mark)')}
-    {row("Mark à l'entrée", f'{pos.get("entry_mark_price")} BTC')}
-    {row("IV à l'entrée", f'{pos.get("iv_at_entry")}%')}
-    {row("Delta à l'entrée", f'{pos.get("delta_at_entry")}')}
-  </table>
-</div>
+<!-- POSITIONS (une card par position) -->
+{"".join(_pos_card(p, s, attr, spot) for p in positions_list)}
 
 <!-- GREEKS -->
 <div class="card">
@@ -365,11 +385,11 @@ else:
     {row("Θ Theta", f'<span class="pos">+${f(attr.get("theta_daily",0),0)}/jour</span>')}
     {row("Theta restant (théo)", f'<span class="pos">+${f(attr.get("theta_daily",0) * attr.get("tte_days",0),0)}</span>  sur {f(attr.get("tte_days",0),2)}j')}
     <tr><td colspan="2" style="padding-top:10px; color:#8b949e; font-size:0.78rem;">HEDGE PERP</td></tr>
-    {row("Qty short", f'{s.get("hedge_qty")} BTC')}
-    {row("VWAP entrée", f'${f(pos.get("hedge_avg_entry"),0)}')}
-    {row("Rebalancements", str(pos.get("hedge_rebalances", 0)))}
+    {row("Qty short", f'{f(hedge_data.get("qty", s.get("hedge_qty", 0)),5)} BTC')}
+    {row("VWAP entrée", f'${f(hedge_data.get("avg_entry", pos.get("hedge_avg_entry",0)),0)}')}
+    {row("Rebalancements", str(hedge_data.get("rebalances", pos.get("hedge_rebalances", 0))))}
     {(lambda drift=float(s.get("hedge_delta_drift",0)), net_usd=float(s.get("hedge_delta_drift",0))*float(s.get("spot",0)):
-      row("Delta net (pos+hedge)",
+      row("Delta net portefeuille",
           f'<b class="{"warn" if abs(drift)>hedge_thr_btc else ("pos" if drift>0 else "neg")}">'
           f'{f(drift*100,2,True)}%</b>'
           f'  ({f(drift,4,True)} BTC'
@@ -381,10 +401,10 @@ else:
           f'  <span class="{"warn" if abs(drift)>hedge_thr_btc else "ok"}" style="font-size:0.8rem">'
           f'{"⚠️ REBALANCER" if abs(drift)>hedge_thr_btc else "✅ OK"}</span>'
       ))()}
-    {(lambda hh=pos.get("hedge_history",[]), ts_snap=summ_raw.get("timestamp",""):
-      row("Dernier rebal. ce cycle",
+    {(lambda hh=hedge_data.get("history", pos.get("hedge_history",[])):
+      row("Dernier rebal.",
           (lambda last=hh[-1] if hh else None:
-            (f'<span class="ok">✅ Exécuté {to_ny(last["ts"])} — '
+            (f'<span class="ok">✅ {to_ny(last["ts"])} — '
              f'{"BUY" if last.get("qty",0)>0 else "SELL"} {f(abs(last.get("qty",0)),5)} BTC @ ${f(last.get("spot",0),0)}'
              f'<br><span style="font-size:0.78rem;color:#8b949e">'
              f'Qty: {f(last.get("qty_before",0),5)} → {f(last.get("qty_after",0),5)} BTC'
@@ -393,7 +413,7 @@ else:
              + f'</span></span>'
              if last else '<span class="neu">—</span>')
           )()
-      ) if hh else row("Dernier rebal. ce cycle", '<span class="neu">Aucun rebalancement</span>')
+      ) if hh else row("Dernier rebal.", '<span class="neu">Aucun rebalancement</span>')
     )()}
   </table>
   {drift_bar_html}
@@ -506,11 +526,13 @@ else:
     html += "  </table>\n</div>\n"
 
     # ── Historique rebalancements hedge ──────────────────────────────────────
-    hedge_hist = pos.get("hedge_history", [])
+    hedge_hist = hedge_data.get("history", pos.get("hedge_history", []))
+    _hvwap = hedge_data.get("avg_entry", pos.get("hedge_avg_entry", 0))
+    _hqty  = hedge_data.get("qty", pos.get("hedge_qty", 0))
     html += f"""
 <!-- HEDGE HISTORY -->
 <div class="card" style="grid-column: 1 / -1">
-  <h2>🔄 Historique Hedge — {len(hedge_hist)} exécution(s)  <span style="font-weight:400;color:#484f58">VWAP actuel ${f(pos.get("hedge_avg_entry",0),2)} · Qty {pos.get("hedge_qty",0)} BTC</span></h2>
+  <h2>🔄 Historique Hedge — {len(hedge_hist)} exécution(s)  <span style="font-weight:400;color:#484f58">VWAP actuel ${f(_hvwap,2)} · Qty {_hqty} BTC</span></h2>
   <table class="matrix">
     <tr>
       <th style="text-align:left">Date / Heure</th>
