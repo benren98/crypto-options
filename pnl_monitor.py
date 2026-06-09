@@ -901,6 +901,10 @@ def run_once(plot: bool = False, report: bool = False):
     history_file.write_text(json.dumps(history, indent=2))
     print(f"  pnl_history.json : {len(history)} points")
 
+    # Sauvegarder positions_detail.json pour generate_html.py (données live par position)
+    pd_file = Path(__file__).parent / "positions_detail.json"
+    pd_file.write_text(json.dumps(snap.get("positions_detail", []), indent=2, default=str))
+
     push_positions()
 
 

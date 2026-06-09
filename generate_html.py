@@ -1,5 +1,5 @@
 """
-generate_html.py — Génère docs/index.html depuis pnl_summary.json + positions.json
+generate_html.py — Génère docs/index.html depuis pnl_summary.json + positions.json + positions_detail.json
 Appelé par GitHub Actions après chaque snapshot.
 """
 import json, math
@@ -11,44 +11,33 @@ try:
     from zoneinfo import ZoneInfo
     _TZ_NY = ZoneInfo("America/New_York")
 except Exception:
-    _TZ_NY = None  # fallback manuel ci-dessous
+    _TZ_NY = None
 
 def to_ny(ts_str) -> str:
-    """Convertit un timestamp UTC en heure NY (EDT/EST).
-    Accepte : datetime object, 'YYYY-MM-DD HH:MM:SS UTC',
-              'YYYY-MM-DD HH:MM UTC', 'YYYY-MM-DDTHH:MM:SS+00:00'.
-    Retourne : 'YYYY-MM-DD HH:MM EDT' (ou EST en hiver).
-    """
     if not ts_str or ts_str == "—":
         return str(ts_str)
-    # --- parsing ---
     if isinstance(ts_str, datetime):
         dt = ts_str if ts_str.tzinfo else ts_str.replace(tzinfo=timezone.utc)
     else:
         s = str(ts_str).strip()
         dt = None
-        # Formats à essayer dans l'ordre (sans manipuler la chaîne globalement)
-        candidates = [
+        for fmt, val in [
             ("%Y-%m-%d %H:%M:%S UTC", s),
             ("%Y-%m-%d %H:%M UTC",    s),
             ("%Y-%m-%dT%H:%M:%S+00:00", s),
             ("%Y-%m-%d %H:%M:%S",     s.replace(" UTC", "")),
             ("%Y-%m-%d %H:%M",        s.replace(" UTC", "")),
-        ]
-        for fmt, val in candidates:
+        ]:
             try:
-                dt = datetime.strptime(val, fmt).replace(tzinfo=timezone.utc)
-                break
+                dt = datetime.strptime(val, fmt).replace(tzinfo=timezone.utc); break
             except ValueError:
                 continue
         if dt is None:
-            return s  # impossible à parser → retour brut
-    # --- conversion NY ---
+            return s
     if _TZ_NY:
         dt_ny = dt.astimezone(_TZ_NY)
-        label = dt_ny.strftime("%Z")   # "EDT" ou "EST"
+        label = dt_ny.strftime("%Z")
     else:
-        # Calcul manuel DST : 2ème dim mars 02h → 1er dim nov 02h
         year = dt.year
         mar8  = datetime(year, 3,  8, tzinfo=timezone.utc)
         nov1  = datetime(year, 11, 1, tzinfo=timezone.utc)
@@ -63,12 +52,14 @@ def to_ny(ts_str) -> str:
 pos_raw  = json.loads(Path("positions.json").read_text())
 summ_raw = json.loads(Path("pnl_summary.json").read_text())
 
-# Support multi-position (nouveau format) et ancien format (open:dict)
 positions_list = pos_raw.get("positions") or ([pos_raw["open"]] if pos_raw.get("open") else [])
 hedge_data     = pos_raw.get("hedge", {})
-# Compat: pos = première/principale position (la plus longue TTE)
-pos  = max(positions_list, key=lambda p: p.get("expiry_dt",""), default=None) if positions_list else None
-hist = pos_raw.get("history", [])
+hist           = pos_raw.get("history", [])
+
+# positions_detail : données live par position (depuis pnl_monitor.py)
+pd_file = Path("positions_detail.json")
+positions_detail = json.loads(pd_file.read_text()) if pd_file.exists() else []
+pd_map = {d.get("instrument"): d for d in positions_detail}
 
 # Historique pour graphiques
 history_file = Path("pnl_history.json")
@@ -78,7 +69,6 @@ no_position = not positions_list and not hist
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def f(v, decimals=2, sign=False):
-    """Formate un nombre float depuis string ou float."""
     try:
         n = float(v)
         fmt = f"{{:+,.{decimals}f}}" if sign else f"{{:,.{decimals}f}}"
@@ -87,172 +77,440 @@ def f(v, decimals=2, sign=False):
         return str(v) if v else "—"
 
 def color(v, invert=False):
-    """Classe CSS selon signe."""
     try:
         n = float(v)
-        if invert:
-            n = -n
+        if invert: n = -n
         return "pos" if n > 0 else ("neg" if n < 0 else "neu")
     except:
         return "neu"
 
-# ── Calculs attribution ────────────────────────────────────────────────────────
-attr = {}
-matrix_rows = []
+def row(label, value, cls=""):
+    return f'<tr><td class="label">{label}</td><td class="{cls}">{value}</td></tr>'
 
-if pos and summ_raw.get("spot"):
-    s = summ_raw
-    spot         = float(s.get("spot", 0))
-    entry_spot   = float(pos.get("entry_spot", spot))
-    entry_price  = float(pos.get("entry_price", 0))
-    entry_mark   = float(pos.get("entry_mark_price", 0))
-    entry_iv     = float(pos.get("iv_at_entry", 0))
-    # Gamma : préférer live_gamma (pnl_summary.json) → recalculé à chaque run Actions
-    # Fallback sur gamma_at_entry uniquement si le champ live n'est pas encore présent
-    gamma_entry  = float(s.get("live_gamma") or pos.get("gamma_at_entry", 7e-5))
-    hedge_avg    = float(hedge_data.get("avg_entry", pos.get("hedge_avg_entry", entry_spot)))
-    hedge_qty        = float(s.get("hedge_qty", hedge_data.get("qty", pos.get("hedge_qty", 0))))
-    hedge_thr_pct    = float(s.get("hedge_threshold_pct") or 5.0)
-    hedge_thr_btc    = float(s.get("hedge_threshold_btc") or hedge_thr_pct / 100)
-    curr_mark    = float(s.get("current_price_btc", 0))
-    curr_ask     = float(s.get("current_ask_btc", 0))
-    curr_bid     = float(s.get("current_bid_btc", 0))
-    curr_iv      = float(s.get("current_iv_pct", entry_iv))
-    delta_live   = float(s.get("live_delta", 0))
-    vega_live    = float(s.get("live_vega", 0))
-    theta_daily  = float(s.get("theta_daily_now_usd", 0))
-    days_held    = float(s.get("days_held", 0))
-    tte_days     = float(s.get("tte_days", 0))
+def srow(label, val, invert=False, decimals=0):
+    v  = f(val, decimals, sign=True)
+    cl = color(val, invert)
+    return f'<tr><td class="label">{label}</td><td class="val {cl}">{v} $</td></tr>'
 
-    delta_spot   = spot - entry_spot
-    delta_iv     = curr_iv - entry_iv
-    hours_held   = days_held * 24
-    delta_pct    = abs(delta_live) * 100
-    gamma_pts    = gamma_entry * (spot * 0.01) * 100
+# ── Données portfolio ──────────────────────────────────────────────────────────
+s = summ_raw
+spot           = float(s.get("spot", 0))
+hedge_qty      = float(s.get("hedge_qty", hedge_data.get("qty", 0)))
+hedge_avg      = float(hedge_data.get("avg_entry", 0))
+hedge_thr_pct  = float(s.get("hedge_threshold_pct") or 5.0)
+hedge_thr_btc  = float(s.get("hedge_threshold_btc") or hedge_thr_pct / 100)
+_drift         = float(s.get("hedge_delta_drift", 0))
+_drift_abs     = abs(_drift)
+_drift_pct     = _drift_abs * 100
+_fill_pct      = min(100.0, _drift_abs / max(hedge_thr_btc, 1e-9) * 100)
+_bar_color     = "#f85149" if _drift_abs > hedge_thr_btc else ("#d29922" if _fill_pct > 70 else "#3fb950")
+_drift_cl      = "warn" if _drift_abs > hedge_thr_btc else ("warn" if _fill_pct > 70 else "ok")
 
-    pnl_delta    = abs(delta_live) * delta_spot
-    pnl_gamma    = 0.5 * (-gamma_entry) * delta_spot ** 2
-    pnl_theta    = theta_daily * days_held
-    pnl_vega     = (-vega_live) * delta_iv
-    mid_to_mid   = (entry_mark - curr_mark) * spot
-    pnl_residual = mid_to_mid - (pnl_delta + pnl_gamma + pnl_theta + pnl_vega)
-    ba_entry     = -(entry_mark - entry_price) * entry_spot
-    ba_exit      = -(curr_ask - curr_mark) * spot
-    total_option = mid_to_mid + ba_entry + ba_exit
-
-    # ── Barre de drift hedge ───────────────────────────────────────────────
-    _drift_abs    = abs(float(s.get("hedge_delta_drift", 0)))
-    _drift_pct    = _drift_abs * 100
-    _fill_pct     = min(100.0, _drift_abs / max(hedge_thr_btc, 1e-9) * 100)
-    _bar_color    = "#f85149" if _drift_abs > hedge_thr_btc else ("#d29922" if _fill_pct > 70 else "#3fb950")
-    _drift_cl     = "warn" if _drift_abs > hedge_thr_btc else ("warn" if _fill_pct > 70 else "ok")
-    _warn_label   = f(hedge_thr_pct * 0.7, 1)
-    drift_bar_html = f"""
-  <div style="margin-top:12px">
-    <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:#8b949e;margin-bottom:4px">
-      <span>Drift actuel&nbsp;: <b class="{_drift_cl}">{f(_drift_pct,2)}%&thinsp;&#916;</b></span>
-      <span>Seuil&nbsp;: {f(hedge_thr_pct,1)}%&thinsp;&#916;</span>
-    </div>
-    <div style="background:#21262d;border-radius:4px;height:8px;position:relative;overflow:hidden">
-      <div style="height:8px;border-radius:4px;width:{_fill_pct:.1f}%;background:{_bar_color}"></div>
-      <div style="position:absolute;top:0;right:0;bottom:0;width:2px;background:#484f58"></div>
-    </div>
-    <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#484f58;margin-top:3px">
-      <span>0%</span><span style="color:#8b949e">{_warn_label}% &#9888;</span><span>{f(hedge_thr_pct,1)}% &#128308;</span>
-    </div>
-  </div>"""
-
-    attr = dict(
-        spot=spot, entry_spot=entry_spot, delta_spot=delta_spot,
-        delta_iv=delta_iv, hours_held=hours_held,
-        delta_pct=delta_pct, gamma_pts=gamma_pts,
-        pnl_delta=pnl_delta, pnl_gamma=pnl_gamma,
-        pnl_theta=pnl_theta, pnl_vega=pnl_vega,
-        mid_to_mid=mid_to_mid, pnl_residual=pnl_residual,
-        ba_entry=ba_entry, ba_exit=ba_exit, total_option=total_option,
-        entry_price=entry_price, entry_mark=entry_mark,
-        curr_ask=curr_ask, curr_mark=curr_mark,
-        theta_daily=theta_daily, tte_days=tte_days,
-        delta_live=delta_live, vega_live=vega_live,
-    )
-
-    # Matrice ±5%
-    premium_usd = entry_price * entry_spot
-    for pct in [-5, -3, -2, -1, 0, 1, 2, 3, 5]:
-        ds        = spot * pct / 100
-        ns        = spot + ds
-        # Put : spot baisse → plus ITM → delta monte ; spot monte → plus OTM → delta baisse
-        nd_pct    = (delta_pct + gamma_pts * abs(pct)) if pct < 0 else max(0.0, delta_pct - gamma_pts * abs(pct))
-        pnl_o     = abs(delta_live) * ds - 0.5 * gamma_entry * ds ** 2
-        if pct > 0:
-            pnl_o = min(pnl_o, premium_usd)
-        pnl_h     = -abs(hedge_qty) * (ns - hedge_avg)
-        pnl_n     = pnl_o + pnl_h
-        matrix_rows.append((pct, ns, nd_pct, pnl_o, pnl_h, pnl_n))
-
-# ── Card par position ──────────────────────────────────────────────────────────
-def _pos_card(p: dict, s: dict, attr: dict, spot: float) -> str:
-    instr   = p.get("instrument_name","—")
-    strike  = int(p.get("strike",0))
-    expiry  = (p.get("expiry_dt","—") or "—")[:10]
-    # PnL option pour cette position : chercher dans positions_detail si dispo
-    pd_list = s.get("positions_detail") or []
-    pd_map  = {d.get("instrument"): d for d in pd_list}
-    pd      = pd_map.get(instr, {})
-    pnl_opt = float(pd.get("pnl_option_usd", 0))
-    iv_now  = float(pd.get("current_iv_pct", s.get("current_iv_pct", 0)))
-    tte     = float(pd.get("tte_days", 0))
-    delta   = float(pd.get("live_delta", 0))
-    ask     = float(pd.get("current_ask_btc", 0))
-    cl_pnl  = color(pnl_opt)
-    cl_tte  = "warn" if tte <= 1 else "neu"
-    iv_delta = iv_now - float(p.get("iv_at_entry", 0))
-    return f"""<div class="card">
-  <h2>📍 {instr}</h2>
-  <table>
-    {row("Strike / Expiry", f'${strike:,}  ·  {expiry}')}
-    {row("TTE", f'<b class="{cl_tte}">{f(tte,2)}j</b>')}
-    {row("Prime encaissée", f'{p.get("entry_price")} BTC = <b>${f(float(p.get("entry_price",0))*float(p.get("entry_spot",0)),0)}</b>')}
-    {row("Rachat (ask)", f'{f(ask,5)} BTC = ${f(ask*spot,0)}')}
-    {row("IV actuelle", f'{f(iv_now,1)}%  <span class="{"neg" if iv_delta>0 else "pos"}">{f(iv_delta,1,True)}pts vs entrée</span>')}
-    {row("Delta live", f'{f(delta,4)}')}
-    {row("PnL option", f'<b class="{cl_pnl}">{f(pnl_opt,0,True)}$</b>')}
-    <tr><td colspan="2" style="padding-top:8px;color:#8b949e;font-size:0.78rem;">ENTRÉE</td></tr>
-    {row("Date", to_ny(p.get("entry_ts","—")))}
-    {row("Spot", f'${f(p.get("entry_spot"),0)}')}
-    {row("IV", f'{p.get("iv_at_entry")}%')}
-    {row("Delta", f'{p.get("delta_at_entry")}')}
-  </table>
-</div>
-"""
-
-# ── PnL historique ─────────────────────────────────────────────────────────────
+# PnL cumulé (historique + ouvert)
 pnl_hist_total = sum(float(h.get("pnl_usd", 0)) for h in hist)
-pnl_open       = float(summ_raw.get("total_pnl_usd", 0)) if pos else 0.0
+pnl_open       = float(s.get("total_pnl_usd", 0))
 pnl_cumul      = pnl_hist_total + pnl_open
+realized_hedge = float(hedge_data.get("realized_pnl_usd", 0))
+pnl_hedge_usd  = float(s.get("pnl_hedge_usd", 0))
 
-# ── Timestamp ─────────────────────────────────────────────────────────────────
-ts = to_ny(summ_raw.get("timestamp", "—"))
+# Deltas depuis dernier snapshot
+_prev_spot  = float(pnl_history[-2].get("spot",      0)) if len(pnl_history) >= 2 else None
+_prev_pnl   = float(pnl_history[-2].get("pnl_total", 0)) if len(pnl_history) >= 2 else None
+_curr_spot  = float(s.get("spot", 0))
+_curr_pnl   = float(s.get("total_pnl_usd", 0))
+_delta_spot = (_curr_spot - _prev_spot)          if _prev_spot else None
+_delta_spot_pct = (_delta_spot / _prev_spot * 100) if _prev_spot else None
+_delta_pnl  = (_curr_pnl  - _prev_pnl)           if _prev_pnl  is not None else None
+
+ts        = to_ny(s.get("timestamp", "—"))
 generated = to_ny(datetime.now(timezone.utc))
 
-# ── Deltas depuis le dernier snapshot (pour l'en-tête) ────────────────────────
-_prev_spot    = float(pnl_history[-2].get("spot",      0)) if len(pnl_history) >= 2 else None
-_prev_pnl     = float(pnl_history[-2].get("pnl_total", 0)) if len(pnl_history) >= 2 else None
-_curr_spot    = float(summ_raw.get("spot", 0))
-_curr_pnl     = float(summ_raw.get("total_pnl_usd", 0))
-_delta_spot   = (_curr_spot - _prev_spot)           if _prev_spot is not None else None
-_delta_spot_pct = (_delta_spot / _prev_spot * 100)  if _prev_spot else None
-_delta_pnl    = (_curr_pnl  - _prev_pnl)            if _prev_pnl  is not None else None
+# ── CSS & layout ───────────────────────────────────────────────────────────────
+CSS = """
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'SF Mono', 'Fira Code', monospace; background: #0d1117; color: #e6edf3; min-height: 100vh; padding: 24px; }
+h1 { font-size: 1.4rem; color: #58a6ff; margin-bottom: 10px; }
+.subtitle { color: #8b949e; font-size: 0.82rem; margin-bottom: 16px; }
+.section-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: .1em; color: #8b949e;
+  border-bottom: 1px solid #21262d; padding-bottom: 8px; margin: 20px 0 12px; }
+
+/* chips */
+.header-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; align-items: center; }
+.chip { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px;
+  font-size: 0.82rem; display: flex; flex-direction: column; gap: 2px; min-width: 140px; }
+.chip-label { color: #8b949e; font-size: 0.70rem; text-transform: uppercase; letter-spacing: .06em; }
+.chip-value { font-weight: 700; font-size: 1.05rem; color: #e6edf3; }
+.chip-delta { font-size: 0.75rem; margin-top: 1px; }
+
+/* grid */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.full { grid-column: 1 / -1; }
+
+/* cards */
+.card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; }
+.card h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: .1em; color: #8b949e;
+  border-bottom: 1px solid #21262d; padding-bottom: 10px; margin-bottom: 14px; }
+.total-card { border-color: #388bfd44; }
+.alert-card { border-color: #f8514944; }
+.pos2-card  { border-color: #3fb95033; }
+
+/* tables */
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+td { padding: 5px 4px; vertical-align: top; }
+td.label { color: #8b949e; width: 50%; }
+td.val { text-align: right; font-weight: 600; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.tbl th { color: #8b949e; font-weight: 500; padding: 6px 8px; text-align: right;
+  border-bottom: 1px solid #21262d; white-space: nowrap; }
+.tbl th:first-child { text-align: left; }
+.tbl td { padding: 5px 8px; text-align: right; border-bottom: 1px solid #1c2128; }
+.tbl td:first-child { text-align: left; color: #e6edf3; }
+.tbl tr.hl { background: #1c2128; }
+.tbl tr:hover { background: #21262d; }
+.tbl td.muted { color: #8b949e; }
+.tbl td.left { text-align: left; }
+
+/* colors */
+.pos { color: #3fb950; }
+.neg { color: #f85149; }
+.neu { color: #e6edf3; }
+.warn { color: #d29922; }
+.ok  { color: #3fb950; }
+.big { font-size: 1.6rem; font-weight: 700; }
+
+/* drift bar */
+.progress-bg { background: #21262d; border-radius: 4px; height: 6px; margin-top: 6px; }
+.progress-fill { border-radius: 4px; height: 6px; }
+
+/* hist rows */
+.hist-row { display: flex; justify-content: space-between; padding: 6px 0;
+  border-bottom: 1px solid #21262d; font-size: 0.85rem; }
+.hist-row:last-child { border-bottom: none; }
+
+/* charts */
+.chart-section { margin-top: 16px; display: flex; flex-direction: column; gap: 16px; }
+.chart-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; }
+.chart-card h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: .1em; color: #8b949e;
+  border-bottom: 1px solid #21262d; padding-bottom: 10px; margin-bottom: 14px; }
+.chart-wrap { position: relative; height: 360px; }
+
+footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28px; }
+"""
+
+# ── Barre drift ────────────────────────────────────────────────────────────────
+drift_bar_html = f"""
+<div style="margin-top:12px">
+  <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:#8b949e;margin-bottom:4px">
+    <span>Drift actuel&nbsp;: <b class="{_drift_cl}">{f(_drift_pct,2)}%&thinsp;&#916;</b></span>
+    <span>Seuil&nbsp;: {f(hedge_thr_pct,1)}%&thinsp;&#916;</span>
+  </div>
+  <div style="background:#21262d;border-radius:4px;height:8px;position:relative;overflow:hidden">
+    <div style="height:8px;border-radius:4px;width:{_fill_pct:.1f}%;background:{_bar_color}"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#484f58;margin-top:3px">
+    <span>0%</span><span>{f(hedge_thr_pct,1)}% &#128308;</span>
+  </div>
+</div>"""
+
+# ── Attribution PnL par position ───────────────────────────────────────────────
+def _attr_card(p: dict, live: dict) -> str:
+    """Carte attribution PnL pour une position."""
+    instr      = p.get("instrument_name","—")
+    entry_spot = float(p.get("entry_spot", spot))
+    entry_p    = float(p.get("entry_price", 0))
+    entry_mark = float(p.get("entry_mark_price", entry_p))
+    entry_iv   = float(p.get("iv_at_entry", 0))
+    gamma_e    = float(p.get("gamma_at_entry", 7e-5))
+
+    curr_mark  = float(live.get("current_price_btc", 0))
+    curr_iv    = float(live.get("current_iv_pct", entry_iv))
+    d_live     = float(live.get("live_delta", 0))
+    vega_live  = float(live.get("live_vega", 0))
+    days_held  = float(live.get("days_held", 0))
+    theta_d    = float(live.get("theta_daily_now_usd", 0))
+    pnl_opt    = float(live.get("pnl_option_usd", 0))
+
+    ds         = spot - entry_spot
+    div        = curr_iv - entry_iv
+    delta_pct  = abs(d_live) * 100
+    gamma_pts  = gamma_e * (spot * 0.01) * 100
+
+    pnl_delta  = abs(d_live) * ds
+    pnl_gamma  = 0.5 * (-gamma_e) * ds ** 2
+    pnl_theta  = theta_d * days_held
+    pnl_vega   = (-vega_live) * div
+    mid_mid    = (entry_mark - curr_mark) * spot
+    pnl_resid  = mid_mid - (pnl_delta + pnl_gamma + pnl_theta + pnl_vega)
+    ba_entry   = -(entry_mark - entry_p) * entry_spot
+    total_opt  = mid_mid + ba_entry
+    tte        = float(live.get("tte_days", 0))
+    cl_tte     = "warn" if tte <= 1 else "neu"
+
+    return f"""<div class="card">
+  <h2>📐 Attribution PnL — {instr}</h2>
+  <div style="font-size:0.75rem;color:#8b949e;margin-bottom:10px">
+    ΔSpot {f(ds,0,True)}$&nbsp;·&nbsp;ΔIV {f(div,1,True)}pts&nbsp;·&nbsp;{f(days_held*24,1)}h tenu&nbsp;·&nbsp;TTE <span class="{cl_tte}">{f(tte,2)}j</span>
+  </div>
+  <table class="tbl">
+    <tr><th style="text-align:left">Composante</th><th>Valeur ($)</th><th>% PnL opt.</th></tr>
+    {_attr_row("Δ Delta",  pnl_delta, pnl_opt)}
+    {_attr_row("Γ Gamma",  pnl_gamma, pnl_opt)}
+    {_attr_row("Θ Theta",  pnl_theta, pnl_opt)}
+    {_attr_row("ν Vega",   pnl_vega,  pnl_opt)}
+    {_attr_row("~ Résidu", pnl_resid, pnl_opt)}
+    <tr style="border-top:1px solid #30363d">
+      <td>Mid / mid</td>
+      <td class="{color(mid_mid)}">{f(mid_mid,0,True)}</td>
+      <td class="muted">—</td>
+    </tr>
+    <tr style="border-top:1px solid #30363d;font-weight:600">
+      <td>TOTAL OPTION</td>
+      <td class="{color(total_opt)}">{f(total_opt,0,True)}</td>
+      <td class="muted">100%</td>
+    </tr>
+  </table>
+</div>"""
+
+def _attr_row(label, val, total):
+    pct = (val / total * 100) if abs(total) > 0.01 else 0
+    return (f'<tr><td>{label}</td>'
+            f'<td class="{color(val)}">{f(val,0,True)}</td>'
+            f'<td class="{color(val)}" style="font-size:0.78rem">{f(pct,0,True)}%</td></tr>')
+
+# ── Tableau des positions ──────────────────────────────────────────────────────
+def _positions_table() -> str:
+    if not positions_list:
+        return '<p style="color:#8b949e">Aucune position ouverte.</p>'
+    rows = ""
+    for p in positions_list:
+        instr   = p.get("instrument_name","—")
+        live    = pd_map.get(instr, {})
+        strike  = int(p.get("strike", 0))
+        expiry  = (p.get("expiry_dt","") or "")[:10]
+        tte     = float(live.get("tte_days", 0))
+        cl_tte  = "warn" if tte <= 1 else ("neu" if tte > 3 else "warn")
+        entry_p = float(p.get("entry_price", 0))
+        entry_s = float(p.get("entry_spot", spot))
+        curr_m  = float(live.get("current_price_btc", 0))
+        ask     = float(live.get("current_ask_btc", 0))
+        iv_e    = float(p.get("iv_at_entry", 0))
+        iv_c    = float(live.get("current_iv_pct", iv_e))
+        div     = iv_c - iv_e
+        d_live  = float(live.get("live_delta", p.get("delta_at_entry", 0)))
+        gamma   = float(live.get("live_gamma", p.get("gamma_at_entry", 0)))
+        vega    = float(live.get("live_vega",  p.get("vega_at_entry",  0)))
+        pnl_opt = float(live.get("pnl_option_usd", 0))
+        pnl_pct = float(live.get("pnl_pct_of_premium", 0))
+        cl_pnl  = color(pnl_opt)
+        cl_iv   = "neg" if div > 0 else "pos"
+        moneyness = (strike / spot - 1) * 100
+        cl_m    = "neg" if moneyness < 0 else "pos"
+        rows += f"""<tr>
+      <td class="left"><b>{instr}</b></td>
+      <td>${strike:,} <span class="{cl_m}" style="font-size:0.75rem">({f(moneyness,1,True)}%)</span></td>
+      <td>{expiry}</td>
+      <td class="{cl_tte}"><b>{f(tte,2)}j</b></td>
+      <td>{f(entry_p,5)} <span class="muted" style="font-size:0.75rem">(${f(entry_p*entry_s,0)})</span></td>
+      <td>{f(curr_m,5)} <span class="muted" style="font-size:0.75rem">(ask {f(ask,5)})</span></td>
+      <td>{f(iv_e,1)}% → <b>{f(iv_c,1)}%</b> <span class="{cl_iv}" style="font-size:0.75rem">({f(div,1,True)}pts)</span></td>
+      <td>{f(d_live,4)}</td>
+      <td style="font-size:0.75rem;color:#8b949e">{f(gamma,6)} / {f(abs(vega),2)}$</td>
+      <td class="{cl_pnl}"><b>{f(pnl_opt,0,True)}$</b></td>
+      <td class="{cl_pnl}">{f(pnl_pct,1,True)}%</td>
+    </tr>"""
+    return f"""<div class="card full">
+  <h2>📍 Positions ouvertes — {len(positions_list)} position(s)</h2>
+  <div style="overflow-x:auto">
+  <table class="tbl">
+    <tr>
+      <th style="text-align:left">Instrument</th>
+      <th>Strike (moneyness)</th>
+      <th>Expiry</th>
+      <th>TTE</th>
+      <th>Prime encaissée</th>
+      <th>Mark / Ask actuel</th>
+      <th>IV entrée → actuelle</th>
+      <th>Delta</th>
+      <th>Gamma / Vega</th>
+      <th>PnL option</th>
+      <th>% prime</th>
+    </tr>
+    {rows}
+  </table>
+  </div>
+</div>"""
+
+# ── Tableau Greeks nets ────────────────────────────────────────────────────────
+def _greeks_card() -> str:
+    net_delta  = float(s.get("live_delta", 0))
+    net_gamma  = float(s.get("live_gamma", 0))
+    net_vega   = float(s.get("live_vega",  0))
+    net_theta  = float(s.get("theta_daily_now_usd", 0))
+    gamma_pts  = abs(net_gamma) * spot * 0.01 * 100
+    delta_pct  = abs(net_delta) * 100
+    reb_count  = hedge_data.get("rebalances", 0)
+
+    hh = hedge_data.get("history", [])
+    last_reb = hh[-1] if hh else None
+    last_reb_html = (
+        f'<span class="ok">{to_ny(last_reb["ts"])} — '
+        f'{"BUY" if last_reb.get("qty",0)>0 else "SELL"} '
+        f'{f(abs(last_reb.get("qty",0)),5)} BTC @ ${f(last_reb.get("spot",0),0)}'
+        f'<br><span style="font-size:0.75rem;color:#8b949e">'
+        f'Qty: {f(last_reb.get("qty_before",0),5)} → {f(last_reb.get("qty_after",0),5)} BTC'
+        f'  · VWAP: ${f(last_reb.get("vwap_before",0),2)} → ${f(last_reb.get("vwap_after",0),2)}'
+        + (f'  · {last_reb["note"]}' if last_reb and last_reb.get("note") else "")
+        + '</span></span>'
+    ) if last_reb else '<span class="neu">—</span>'
+
+    return f"""<div class="card">
+  <h2>📐 Greeks nets portfolio</h2>
+  <table>
+    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-bottom:4px">OPTIONS (cumulé {len(positions_list)} pos.)</td></tr>
+    {row("Δ Delta net",   f'<b>{f(net_delta,4)}</b>  ({f(delta_pct,1)}%)')}
+    {row("Γ Gamma net",   f'<span class="neg">−{f(gamma_pts,2)} pts Δ / 1% move</span>')}
+    {row("ν Vega net",    f'<span class="neg">{f(net_vega,2)}</span>  ({f(-net_vega,0)}$ / +1pt IV)')}
+    {row("Θ Theta net",   f'<span class="pos">+${f(net_theta,0)}/jour</span>')}
+    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-top:10px;padding-bottom:4px">HEDGE PERP</td></tr>
+    {row("Qty short",     f'{f(hedge_qty,5)} BTC')}
+    {row("VWAP entrée",   f'${f(hedge_avg,0)}')}
+    {row("Rebalancements", str(reb_count))}
+    {row("Delta net (pos+hedge)",
+         f'<b class="{_drift_cl}">{f(_drift*100,2,True)}%</b>'
+         f'  ({f(_drift,4,True)} BTC  ≈ {f(_drift*spot,0,True)}$)')}
+    {row("Seuil rebal. (IV-adj)",
+         f'<span class="neu">{f(hedge_thr_pct,1)}% = {f(hedge_thr_btc,4)} BTC</span>'
+         f'  <span class="{"warn" if _drift_abs>hedge_thr_btc else "ok"}" style="font-size:0.8rem">'
+         f'{"⚠️ REBALANCER" if _drift_abs>hedge_thr_btc else "✅ OK"}</span>')}
+    {row("Dernier rebal.", last_reb_html)}
+  </table>
+  {drift_bar_html}
+</div>"""
+
+# ── Card PnL global ────────────────────────────────────────────────────────────
+def _pnl_global_card() -> str:
+    pnl_opt_total = float(s.get("pnl_option_usd", 0))
+    funding       = float(s.get("funding_pnl_usd", 0))
+    days_held     = float(s.get("days_held", 0))
+    # theta theory = somme des positions
+    theta_theory  = sum(float(pd_map.get(p.get("instrument_name",""),{}).get("theta_theory_usd",0)) for p in positions_list)
+    vrp           = (pnl_opt_total / theta_theory * 100) if theta_theory > 0.5 else float("nan")
+    cap_cl        = "pos" if vrp >= 80 else ("warn" if vrp >= 0 else "neg")
+    total_prem    = sum(float(p.get("entry_price",0))*float(p.get("entry_spot",spot)) for p in positions_list)
+    pnl_pct_prem  = (pnl_open / total_prem * 100) if total_prem > 0 else 0
+
+    return f"""<div class="card total-card">
+  <h2>💰 PnL global ouvert</h2>
+  <table>
+    {srow("Option (MtM total)", pnl_opt_total)}
+    {(lambda: row("Hedge perp (MtM + réalisé)",
+        f'<span class="{color(pnl_hedge_usd)}">{f(pnl_hedge_usd,0,True)}$</span>'
+        + (f'  <span style="color:#8b949e;font-size:0.75rem">'
+           f'MtM: {f(pnl_hedge_usd-realized_hedge,0,True)}$'
+           f'  · réalisé: {f(realized_hedge,0,True)}$</span>'
+           if abs(realized_hedge) > 0.01 else "")
+    ))()}
+    {srow("Funding perp", funding)}
+    <tr><td colspan="2"><hr style="border-color:#30363d;margin:6px 0"></td></tr>
+    <tr>
+      <td class="label"><b>TOTAL</b></td>
+      <td class="val {color(pnl_open)} big">{f(pnl_open,0,True)}$</td>
+    </tr>
+    {row("% primes encaissées", f'<span class="{color(pnl_pct_prem)}">{f(pnl_pct_prem,1,True)}%</span>')}
+    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-top:10px;padding-bottom:4px">THETA</td></tr>
+    {row("Théorique cumulé", f'<span class="pos">+${f(theta_theory,0)}</span>  sur {f(days_held*24,1)}h')}
+    {row("Capturé (PnL opt / Theta théo)",
+         f'<span class="{cap_cl}">{f(vrp,0)}%</span>'
+         f'<span style="color:#484f58;font-size:0.75rem"> (100% = tout capturé)</span>'
+         if not math.isnan(vrp) else '<span class="neu">—</span>')}
+    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-top:10px;padding-bottom:4px">STRATÉGIE CUMUL</td></tr>
+    {row("Réalisé (clôtures)", f'<span class="{color(pnl_hist_total)}">{f(pnl_hist_total,0,True)}$</span>'  + (f'  <span style="color:#8b949e;font-size:0.75rem">({len(hist)} pos.)</span>' if hist else ''))}
+    {row("Latent (ouvert)",    f'<span class="{color(pnl_open)}">{f(pnl_open,0,True)}$</span>')}
+    <tr><td colspan="2"><hr style="border-color:#30363d;margin:6px 0"></td></tr>
+    <tr>
+      <td class="label"><b>TOTAL STRATÉGIE</b></td>
+      <td class="val {color(pnl_cumul)}">{f(pnl_cumul,0,True)}$</td>
+    </tr>
+  </table>
+</div>"""
+
+# ── Tableau hedge history ──────────────────────────────────────────────────────
+def _hedge_history_card() -> str:
+    hh = hedge_data.get("history", [])
+    if not hh:
+        return ""
+    rows = ""
+    for h in hh:
+        side    = h.get("side","?")
+        side_cl = "neg" if side == "SELL" else "pos"
+        rpnl    = h.get("realized_pnl_usd")
+        rpnl_h  = (f'<span class="{color(rpnl)}">{f(rpnl,0,True)}$</span>'
+                   if rpnl is not None else '<span style="color:#484f58">—</span>')
+        rows += f"""<tr>
+      <td class="left muted" style="font-size:0.78rem">{to_ny(h.get("ts",""))}</td>
+      <td class="{side_cl}"><b>{side}</b></td>
+      <td class="{side_cl}">{f(h.get("qty",0),5,True)} BTC</td>
+      <td>${f(h.get("spot",0),0)}</td>
+      <td class="muted">{f(h.get("qty_before",0),5)} BTC</td>
+      <td><b>{f(h.get("qty_after",0),5)} BTC</b></td>
+      <td class="muted">${f(h.get("vwap_before",0),2)}</td>
+      <td><b>${f(h.get("vwap_after",0),2)}</b></td>
+      <td>{rpnl_h}</td>
+      <td class="muted" style="font-size:0.75rem">{h.get("note","")}</td>
+    </tr>"""
+    return f"""<div class="card full">
+  <h2>🔄 Historique hedge — {len(hh)} exécution(s)  <span style="font-weight:400;color:#484f58">VWAP actuel ${f(hedge_avg,2)} · Qty {f(hedge_qty,5)} BTC</span></h2>
+  <div style="overflow-x:auto">
+  <table class="tbl">
+    <tr>
+      <th style="text-align:left">Date / Heure</th>
+      <th>Côté</th><th>Ordre</th><th>Spot</th>
+      <th>Avant</th><th>Après</th>
+      <th>VWAP avant</th><th>VWAP après</th>
+      <th>PnL réalisé</th><th style="text-align:left">Note</th>
+    </tr>
+    {rows}
+  </table>
+  </div>
+</div>"""
+
+# ── Alertes ────────────────────────────────────────────────────────────────────
+def _alerts_card() -> str:
+    tte_min  = min((float(pd_map.get(p.get("instrument_name",""),{}).get("tte_days", 99)) for p in positions_list), default=99)
+    div_main = float(s.get("iv_change", 0))
+    total_prem = sum(float(p.get("entry_price",0))*float(p.get("entry_spot",spot)) for p in positions_list)
+    alerts = []
+    if tte_min <= 1:  alerts.append(("neg", "⚠️ ROLLER",        f"TTE min = {f(tte_min,2)}j"))
+    else:             alerts.append(("ok",  "✅ Roll OK",        f"TTE min = {f(tte_min,2)}j"))
+    if _drift_abs > hedge_thr_btc:
+                      alerts.append(("neg", "⚠️ REBALANCER",    f"Drift = {f(_drift_pct,2)}% > seuil {f(hedge_thr_pct,1)}%"))
+    else:             alerts.append(("ok",  "✅ Hedge OK",       f"Drift = {f(_drift_pct,2)}% < seuil {f(hedge_thr_pct,1)}%"))
+    if div_main > 10: alerts.append(("neg", "🚨 IV SPIKE",       f"ΔIV = {f(div_main,1,True)}pts"))
+    elif div_main > 5:alerts.append(("warn","⚠️ IV élevée",      f"ΔIV = {f(div_main,1,True)}pts"))
+    else:             alerts.append(("ok",  "✅ IV OK",          f"ΔIV = {f(div_main,1,True)}pts"))
+    if pnl_open < -total_prem:
+                      alerts.append(("neg", "🚨 STOP-LOSS",      f"Perte {f(pnl_open,0,True)}$"))
+    else:             alerts.append(("ok",  "✅ Stop OK",        f"Perte latente {f(pnl_open,0,True)}$ / prime {f(total_prem,0)}$"))
+    rows = "".join(f'<tr><td class="val {cl}" style="width:28%">{lbl}</td><td style="color:#8b949e">{det}</td></tr>'
+                   for cl, lbl, det in alerts)
+    return f'<div class="card alert-card full"><h2>🚨 Alertes</h2><table>{rows}</table></div>'
 
 # ── HTML ───────────────────────────────────────────────────────────────────────
-def row(label, value, cls="", unit=""):
-    return f'<tr><td class="label">{label}</td><td class="{cls}">{value}{unit}</td></tr>'
+title    = f"VRP Monitor — {len(positions_list)} position(s)" if positions_list else "VRP Monitor"
+_spot_cl = "pos" if (_delta_spot or 0) >= 0 else "neg"
+_pnl_cl  = "pos" if _curr_pnl >= 0 else "neg"
+_dpnl_cl = ("pos" if (_delta_pnl or 0) >= 0 else "neg") if _delta_pnl is not None else "neu"
+_tte_min = min((float(pd_map.get(p.get("instrument_name",""),{}).get("tte_days",99)) for p in positions_list), default=99)
+_tte_cl  = "warn" if _tte_min <= 1 else "neu"
 
-def srow(label, val, invert=False, unit="$", decimals=0):
-    v = f(val, decimals, sign=True)
-    cl = color(val, invert)
-    u = f" {unit}" if unit else ""
-    return f'<tr><td class="label">{label}</td><td class="val {cl}">{v}{u}</td></tr>'
+_spot_delta_html = (
+    f'<span class="chip-delta {_spot_cl}">{f(_delta_spot,0,True)}$ ({f(_delta_spot_pct,2,True)}%) vs snapshot préc.</span>'
+) if _delta_spot is not None else '<span class="chip-delta neu">— premier snapshot</span>'
+
+_pnl_delta_html = (
+    f'<span class="chip-delta {_dpnl_cl}">{f(_delta_pnl,0,True)}$ vs snapshot préc.</span>'
+) if _delta_pnl is not None else '<span class="chip-delta neu">— premier snapshot</span>'
 
 html = f"""<!DOCTYPE html>
 <html lang="fr">
@@ -261,59 +519,8 @@ html = f"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="300">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<title>VRP Monitor — {pos["instrument_name"] if pos else "Aucune position"}</title>
-<style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: 'SF Mono', 'Fira Code', monospace; background: #0d1117; color: #e6edf3; min-height: 100vh; padding: 24px; }}
-  h1 {{ font-size: 1.4rem; color: #58a6ff; margin-bottom: 10px; }}
-  .subtitle {{ color: #8b949e; font-size: 0.82rem; margin-bottom: 6px; }}
-  /* En-tête chips */
-  .header-bar {{ display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; align-items: center; }}
-  .chip {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.82rem; display: flex; flex-direction: column; gap: 2px; min-width: 140px; }}
-  .chip-label {{ color: #8b949e; font-size: 0.70rem; text-transform: uppercase; letter-spacing: .06em; }}
-  .chip-value {{ font-weight: 700; font-size: 1.05rem; color: #e6edf3; }}
-  .chip-delta {{ font-size: 0.75rem; margin-top: 1px; }}
-  .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }}
-  .card {{ background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; }}
-  .card h2 {{ font-size: 0.78rem; text-transform: uppercase; letter-spacing: .1em; color: #8b949e; border-bottom: 1px solid #21262d; padding-bottom: 10px; margin-bottom: 14px; }}
-  table {{ width: 100%; border-collapse: collapse; font-size: 0.88rem; }}
-  td {{ padding: 5px 4px; vertical-align: top; }}
-  td.label {{ color: #8b949e; width: 52%; }}
-  td.val {{ text-align: right; font-weight: 600; }}
-  .pos {{ color: #3fb950; }}
-  .neg {{ color: #f85149; }}
-  .neu {{ color: #e6edf3; }}
-  .warn {{ color: #d29922; }}
-  .ok  {{ color: #3fb950; }}
-  .big {{ font-size: 1.6rem; font-weight: 700; }}
-  .total-card {{ border-color: #388bfd44; }}
-  .alert-card {{ border-color: #f8514944; }}
-
-  /* Matrice */
-  .matrix {{ width: 100%; border-collapse: collapse; font-size: 0.82rem; }}
-  .matrix th {{ color: #8b949e; font-weight: 500; padding: 6px 8px; text-align: right; border-bottom: 1px solid #21262d; }}
-  .matrix th:first-child {{ text-align: left; }}
-  .matrix td {{ padding: 5px 8px; text-align: right; border-bottom: 1px solid #1c2128; }}
-  .matrix td:first-child {{ text-align: left; color: #8b949e; }}
-  .matrix tr.zero {{ background: #1c2128; }}
-  .matrix tr:hover {{ background: #21262d; }}
-
-  /* Historique */
-  .hist-row {{ display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #21262d; font-size: 0.85rem; }}
-  .hist-row:last-child {{ border-bottom: none; }}
-
-  /* Barre theta */
-  .progress-bg {{ background: #21262d; border-radius: 4px; height: 6px; margin-top: 6px; }}
-  .progress-fill {{ background: #3fb950; border-radius: 4px; height: 6px; }}
-
-  /* Graphiques pleine largeur */
-  .chart-section {{ margin-top: 16px; display: flex; flex-direction: column; gap: 16px; }}
-  .chart-card {{ background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; }}
-  .chart-card h2 {{ font-size: 0.78rem; text-transform: uppercase; letter-spacing: .1em; color: #8b949e; border-bottom: 1px solid #21262d; padding-bottom: 10px; margin-bottom: 14px; }}
-  .chart-wrap {{ position: relative; height: 360px; }}
-
-  footer {{ text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28px; }}
-</style>
+<title>{title}</title>
+<style>{CSS}</style>
 </head>
 <body>
 """
@@ -321,319 +528,126 @@ html = f"""<!DOCTYPE html>
 if no_position:
     html += "<h1>Aucune position ouverte.</h1></body></html>"
 else:
-    s = summ_raw
-    instrument = pos["instrument_name"] if pos else "—"
-    expiry     = pos.get("expiry_dt", "—")[:10] if pos else "—"
-    spot_move  = f(float(s.get("spot_move_pct", 0)), 2, sign=True)
-
-    # ── Chips de l'en-tête ────────────────────────────────────────────────────
-    _spot_cl  = "pos" if (_delta_spot or 0) >= 0 else "neg"
-    _pnl_cl   = "pos" if _curr_pnl >= 0 else "neg"
-    _dpnl_cl  = ("pos" if (_delta_pnl or 0) >= 0 else "neg") if _delta_pnl is not None else "neu"
-    _tte_cl   = "warn" if float(s.get("tte_days", 99)) <= 1 else "neu"
-
-    _spot_delta_html = (
-        f'<span class="chip-delta {_spot_cl}">'
-        f'{f(_delta_spot, 0, True)}$'
-        f' ({f(_delta_spot_pct, 2, True)}%) vs snapshot préc.</span>'
-    ) if _delta_spot is not None else '<span class="chip-delta neu">— premier snapshot</span>'
-
-    _pnl_delta_html = (
-        f'<span class="chip-delta {_dpnl_cl}">'
-        f'{f(_delta_pnl, 0, True)}$ vs snapshot préc.</span>'
-    ) if _delta_pnl is not None else '<span class="chip-delta neu">— premier snapshot</span>'
-
     html += f"""
-<h1>📊 {instrument}</h1>
+<h1>📊 VRP Monitor — {len(positions_list)} position(s) ouverte(s)</h1>
 <div class="subtitle">Données : {ts} · Généré : {generated} · ↻ auto-refresh 5min</div>
 
 <div class="header-bar">
   <div class="chip">
     <span class="chip-label">Spot BTC</span>
-    <span class="chip-value">${f(_curr_spot, 0)}</span>
+    <span class="chip-value">${f(_curr_spot,0)}</span>
     {_spot_delta_html}
   </div>
   <div class="chip">
     <span class="chip-label">PnL total</span>
-    <span class="chip-value {_pnl_cl}">{f(_curr_pnl, 0, True)}$</span>
+    <span class="chip-value {_pnl_cl}">{f(_curr_pnl,0,True)}$</span>
     {_pnl_delta_html}
   </div>
   <div class="chip">
-    <span class="chip-label">TTE restant</span>
-    <span class="chip-value {_tte_cl}">{f(s.get("tte_days"), 2)}j</span>
-    <span class="chip-delta neu">Expiry {expiry}</span>
+    <span class="chip-label">Positions</span>
+    <span class="chip-value">{len(positions_list)}</span>
+    <span class="chip-delta neu">TTE min <span class="{_tte_cl}">{f(_tte_min,2)}j</span></span>
   </div>
   <div class="chip">
-    <span class="chip-label">IV actuelle</span>
-    <span class="chip-value {"neg" if float(s.get("current_iv_pct",0)) > float(pos.get("iv_at_entry",0)) else "pos"}">{f(s.get("current_iv_pct"), 1)}%</span>
-    <span class="chip-delta {"neg" if float(s.get("current_iv_pct",0)) > float(pos.get("iv_at_entry",0)) else "pos"}">{f(float(s.get("current_iv_pct",0)) - float(pos.get("iv_at_entry",0)), 1, True)} pts vs entrée</span>
+    <span class="chip-label">Hedge drift</span>
+    <span class="chip-value {_drift_cl}">{f(_drift_pct,2)}%</span>
+    <span class="chip-delta neu">Seuil {f(hedge_thr_pct,1)}% · {"⚠️ REBALANCER" if _drift_abs>hedge_thr_btc else "✅ OK"}</span>
+  </div>
+  <div class="chip">
+    <span class="chip-label">Net delta (pos+hedge)</span>
+    <span class="chip-value {_drift_cl}">{f(_drift*100,2,True)}%</span>
+    <span class="chip-delta neu">{f(_drift,4,True)} BTC ≈ {f(_drift*spot,0,True)}$</span>
   </div>
 </div>
 
 <div class="grid">
-
-<!-- POSITIONS (une card par position) -->
-{"".join(_pos_card(p, s, attr, spot) for p in positions_list)}
-
-<!-- GREEKS -->
-<div class="card">
-  <h2>📐 Greeks (short, signés)</h2>
-  <table>
-    {row("Δ Delta", f'<b>+{f(attr.get("delta_pct",0),1)}%</b>  ({f(abs(attr.get("delta_live",0)),4)} BTC)')}
-    {row("Γ Gamma", f'<span class="neg">−{f(attr.get("gamma_pts",0),2)} pts Δ / 1% move</span>')}
-    {row("ν Vega", f'<span class="neg">−{f(attr.get("vega_live",0),2)}</span>  (−${f(attr.get("vega_live",0),0)} / +1pt IV)')}
-    {row("Θ Theta", f'<span class="pos">+${f(attr.get("theta_daily",0),0)}/jour</span>')}
-    {row("Theta restant (théo)", f'<span class="pos">+${f(attr.get("theta_daily",0) * attr.get("tte_days",0),0)}</span>  sur {f(attr.get("tte_days",0),2)}j')}
-    <tr><td colspan="2" style="padding-top:10px; color:#8b949e; font-size:0.78rem;">HEDGE PERP</td></tr>
-    {row("Qty short", f'{f(hedge_data.get("qty", s.get("hedge_qty", 0)),5)} BTC')}
-    {row("VWAP entrée", f'${f(hedge_data.get("avg_entry", pos.get("hedge_avg_entry",0)),0)}')}
-    {row("Rebalancements", str(hedge_data.get("rebalances", pos.get("hedge_rebalances", 0))))}
-    {(lambda drift=float(s.get("hedge_delta_drift",0)), net_usd=float(s.get("hedge_delta_drift",0))*float(s.get("spot",0)):
-      row("Delta net portefeuille",
-          f'<b class="{"warn" if abs(drift)>hedge_thr_btc else ("pos" if drift>0 else "neg")}">'
-          f'{f(drift*100,2,True)}%</b>'
-          f'  ({f(drift,4,True)} BTC'
-          f'  ≈ {f(net_usd,0,True)}$)'
-      ))()}
-    {(lambda drift=float(s.get("hedge_delta_drift",0)):
-      row("Seuil rebal. (IV-adj)",
-          f'<span class="neu">{f(hedge_thr_pct,1)}% delta = {f(hedge_thr_btc,4)} BTC</span>'
-          f'  <span class="{"warn" if abs(drift)>hedge_thr_btc else "ok"}" style="font-size:0.8rem">'
-          f'{"⚠️ REBALANCER" if abs(drift)>hedge_thr_btc else "✅ OK"}</span>'
-      ))()}
-    {(lambda hh=hedge_data.get("history", pos.get("hedge_history",[])):
-      row("Dernier rebal.",
-          (lambda last=hh[-1] if hh else None:
-            (f'<span class="ok">✅ {to_ny(last["ts"])} — '
-             f'{"BUY" if last.get("qty",0)>0 else "SELL"} {f(abs(last.get("qty",0)),5)} BTC @ ${f(last.get("spot",0),0)}'
-             f'<br><span style="font-size:0.78rem;color:#8b949e">'
-             f'Qty: {f(last.get("qty_before",0),5)} → {f(last.get("qty_after",0),5)} BTC'
-             f'  · VWAP: ${f(last.get("vwap_before",0),2)} → ${f(last.get("vwap_after",0),2)}'
-             + (f'  · {last["note"]}' if last.get("note") else "")
-             + f'</span></span>'
-             if last else '<span class="neu">—</span>')
-          )()
-      ) if hh else row("Dernier rebal.", '<span class="neu">Aucun rebalancement</span>')
-    )()}
-  </table>
-  {drift_bar_html}
+{_positions_table()}
 </div>
 
-<!-- PnL OPEN -->
-<div class="card total-card">
-  <h2>💰 PnL Position Ouverte</h2>
-  <table>
-    {srow("Option MtM", s.get("pnl_option_usd"), invert=False)}
-    {(lambda rh=float(pos.get("realized_hedge_pnl_usd", 0)), hpnl=float(s.get("pnl_hedge_usd",0)):
-      row("Hedge perp (MtM + réalisé)",
-          f'<span class="{color(hpnl)}">{f(hpnl,0,True)}$</span>'
-          + (f'  <span style="color:#8b949e;font-size:0.78rem">'
-             f'(MtM: {f(hpnl-rh,0,True)}$  · réalisé rachats: {f(rh,0,True)}$)</span>'
-             if abs(rh) > 0.01 else '')
-      ))()}
-    <tr><td colspan="2"><hr style="border-color:#30363d;margin:6px 0"></td></tr>
-    <tr><td class="label"><b>TOTAL</b></td>
-        <td class="val {color(s.get('total_pnl_usd'))} big">{f(s.get("total_pnl_usd"),0,True)}$</td></tr>
-    {row("% de la prime", f'<span class="{color(s.get("pnl_pct_of_premium"))}">{f(s.get("pnl_pct_of_premium"),1,True)}%</span>')}
-    <tr><td colspan="2" style="padding-top:10px; color:#8b949e; font-size:0.78rem;">THETA</td></tr>
-    {row("Cumulé théorique", f'<span class="pos">+${f(s.get("theta_theory_usd"),0)}</span>  sur {f(attr.get("hours_held",0),1)}h')}
-    {(lambda cap=float(s.get("vrp_capture_pct") or 0), th=float(s.get("theta_theory_usd") or 0):
-      row("Theta capturé",
-          f'<span class="{"pos" if cap >= 80 else ("warn" if cap >= 0 else "neg")}">'
-          f'{f(cap, 0)}%</span>'
-          f'<span style="color:#484f58;font-size:0.78rem"> = PnL option / Theta théo.</span>'
-          f'<br><span style="color:#484f58;font-size:0.72rem">'
-          f'100% = tout le theta capturé · &gt;100% = IV compression bonus · &lt;0% = IV/Δ mangent tout</span>'
-      ))()}
-  </table>
-  <div class="progress-bg" title="Theta cumulé / Prime">
-    <div class="progress-fill" style="width:{min(100, abs(float(s.get('theta_theory_usd',0))/float(pos.get('entry_price_usd',400))*100)):.0f}%"></div>
-  </div>
-  <div style="font-size:0.72rem;color:#484f58;margin-top:4px">Theta accumulé vs prime encaissée</div>
+<div class="grid" style="margin-top:16px">
+{_greeks_card()}
+{_pnl_global_card()}
 </div>
 
-<!-- ATTRIBUTION -->
-<div class="card">
-  <h2>📐 Attribution PnL  <span style="font-weight:400;color:#484f58">ΔSpot {f(attr.get("delta_spot",0),0,True)}$  ·  ΔIV {f(attr.get("delta_iv",0),1,True)}pts  ·  {f(attr.get("hours_held",0),1)}h</span></h2>
-  <table>
-    {srow("Δ Delta", attr.get("pnl_delta",0))}
-    {srow("Γ Gamma", attr.get("pnl_gamma",0))}
-    {srow("Θ Theta", attr.get("pnl_theta",0))}
-    {srow("ν Vega", attr.get("pnl_vega",0))}
-    {srow("~ Résidu", attr.get("pnl_residual",0))}
-    <tr><td colspan="2"><hr style="border-color:#30363d;margin:6px 0"></td></tr>
-    {srow("Mid / mid", attr.get("mid_to_mid",0))}
-    {srow("BA entrée", attr.get("ba_entry",0))}
-    {srow("BA sortie", attr.get("ba_exit",0))}
-    <tr><td colspan="2"><hr style="border-color:#30363d;margin:6px 0"></td></tr>
-    {srow("TOTAL OPTION", attr.get("total_option",0))}
-  </table>
-</div>
-
-<!-- HISTORIQUE -->
-<div class="card">
-  <h2>📈 PnL Cumulé — Toutes Positions</h2>
+<div class="section-title">Attribution PnL par position</div>
+<div class="grid-3">
 """
-    if not hist:
-        html += '<p style="color:#8b949e;font-size:0.85rem;">(Première position — pas encore de clôture)</p>'
-    else:
+
+    for p in positions_list:
+        instr = p.get("instrument_name","")
+        live  = pd_map.get(instr, {})
+        if live:
+            html += _attr_card(p, live)
+        else:
+            html += f'<div class="card"><h2>📐 {instr}</h2><p style="color:#8b949e;font-size:0.85rem">Données live non disponibles (prochain cycle Actions)</p></div>'
+
+    html += "</div>\n<div class=\"grid\" style=\"margin-top:16px\">\n"
+    html += _hedge_history_card()
+    html += _alerts_card()
+
+    # Historique des clôtures
+    if hist:
+        h_rows = ""
         for h in hist:
-            pnl_h = float(h.get("pnl_usd", 0))
-            cl    = "pos" if pnl_h >= 0 else "neg"
-            html += f"""
-  <div class="hist-row">
-    <span style="color:#8b949e">{h.get("instrument_name","?")}  <span style="font-size:0.75rem">{str(h.get("entry_ts",""))[:10]}</span></span>
-    <span class="{cl}">{f(pnl_h,0,True)} $</span>
-  </div>"""
-
-    cl_hist  = color(pnl_hist_total)
-    cl_open  = color(pnl_open)
-    cl_cumul = color(pnl_cumul)
-    html += f"""
-  <table style="margin-top:14px">
-    <tr><td class="label">Réalisé ({len(hist)} position(s))</td><td class="val {cl_hist}">{f(pnl_hist_total,0,True)} $</td></tr>
-    <tr><td class="label">Latent (ouverte)</td><td class="val {cl_open}">{f(pnl_open,0,True)} $</td></tr>
-    <tr><td colspan="2"><hr style="border-color:#30363d;margin:6px 0"></td></tr>
-    <tr><td class="label"><b>TOTAL STRATÉGIE</b></td><td class="val {cl_cumul} big">{f(pnl_cumul,0,True)} $</td></tr>
+            pnl_h = float(h.get("pnl_usd",0))
+            h_rows += f"""<tr>
+          <td class="left">{h.get("instrument_name","?")}</td>
+          <td class="muted">{str(h.get("entry_ts",""))[:10]}</td>
+          <td class="muted">{str(h.get("exit_ts",""))[:10]}</td>
+          <td class="{color(pnl_h)}"><b>{f(pnl_h,0,True)}$</b></td>
+          <td class="muted">{h.get("exit_reason","—")}</td>
+        </tr>"""
+        html += f"""<div class="card full">
+  <h2>📈 Positions clôturées — {len(hist)} roll(s)</h2>
+  <table class="tbl">
+    <tr><th style="text-align:left">Instrument</th><th style="text-align:left">Entrée</th>
+        <th style="text-align:left">Sortie</th><th>PnL</th><th style="text-align:left">Raison</th></tr>
+    {h_rows}
+    <tr style="border-top:1px solid #30363d;font-weight:600">
+      <td colspan="3">TOTAL RÉALISÉ</td>
+      <td class="{color(pnl_hist_total)}">{f(pnl_hist_total,0,True)}$</td>
+      <td></td>
+    </tr>
   </table>
-</div>
+</div>"""
 
-<!-- MATRICE -->
-<div class="card" style="grid-column: 1 / -1">
-  <h2>🎯 Sensibilité ±5%  <span style="font-weight:400;color:#484f58">Hedge depuis VWAP ${f(pos.get("hedge_avg_entry",0),0)} · Option cappée prime au-delà de +4%</span></h2>
-  <table class="matrix">
-    <tr>
-      <th>Move</th><th>Spot</th><th>Delta</th>
-      <th>PnL Option</th><th>PnL Hedge</th><th>PnL NET</th>
-    </tr>
-"""
-    for (pct, ns, nd, po, ph, pn) in matrix_rows:
-        is_zero = pct == 0
-        rc      = "zero" if is_zero else ""
-        co      = color(po)
-        ch      = color(ph)
-        cn      = color(pn)
-        capped  = " 🔒" if pct >= 5 else ""
-        html += f"""    <tr class="{rc}">
-      <td>{'<b>' if is_zero else ''}{'+' if pct>0 else ''}{pct}%{'</b>' if is_zero else ''}</td>
-      <td>${f(ns,0)}</td>
-      <td>{f(nd,1)}%</td>
-      <td class="{co}">{f(po,0,True)}${capped}</td>
-      <td class="{ch}">{f(ph,0,True)}$</td>
-      <td class="{cn}"><b>{f(pn,0,True)}$</b></td>
-    </tr>
-"""
-    html += "  </table>\n</div>\n"
+    html += "</div>\n"  # ferme la grille
 
-    # ── Historique rebalancements hedge ──────────────────────────────────────
-    hedge_hist = hedge_data.get("history", pos.get("hedge_history", []))
-    _hvwap = hedge_data.get("avg_entry", pos.get("hedge_avg_entry", 0))
-    _hqty  = hedge_data.get("qty", pos.get("hedge_qty", 0))
-    html += f"""
-<!-- HEDGE HISTORY -->
-<div class="card" style="grid-column: 1 / -1">
-  <h2>🔄 Historique Hedge — {len(hedge_hist)} exécution(s)  <span style="font-weight:400;color:#484f58">VWAP actuel ${f(_hvwap,2)} · Qty {_hqty} BTC</span></h2>
-  <table class="matrix">
-    <tr>
-      <th style="text-align:left">Date / Heure</th>
-      <th>Côté</th>
-      <th>Qty ordre</th>
-      <th>Spot</th>
-      <th>Qty avant</th>
-      <th>Qty après</th>
-      <th>VWAP avant</th>
-      <th>VWAP après</th>
-      <th>PnL réalisé</th>
-      <th>Drift</th>
-      <th style="text-align:left">Note</th>
-    </tr>
-"""
-    for h in hedge_hist:
-        side    = h.get("side", "?")
-        side_cl = "neg" if side == "SELL" else "pos"
-        qty_ord = h.get("qty", 0)
-        rpnl    = h.get("realized_pnl_usd")
-        rpnl_html = (
-            f'<span class="{color(rpnl)}">{f(rpnl,0,True)}$</span>'
-            if rpnl is not None else '<span style="color:#484f58">—</span>'
-        )
-        html += f"""    <tr>
-      <td style="text-align:left;color:#8b949e;font-size:0.8rem">{to_ny(h.get("ts",""))}</td>
-      <td class="{side_cl}"><b>{side}</b></td>
-      <td class="{side_cl}">{f(qty_ord,5,True)} BTC</td>
-      <td>${f(h.get("spot",0),0)}</td>
-      <td style="color:#8b949e">{f(h.get("qty_before",0),5)} BTC</td>
-      <td><b>{f(h.get("qty_after",0),5)} BTC</b></td>
-      <td style="color:#8b949e">${f(h.get("vwap_before",0),2)}</td>
-      <td><b>${f(h.get("vwap_after",0),2)}</b></td>
-      <td>{rpnl_html}</td>
-      <td style="color:#8b949e">{f(h.get("drift",0),4,True)}</td>
-      <td style="text-align:left;color:#484f58;font-size:0.78rem">{h.get("note","")}</td>
-    </tr>
-"""
-    html += "  </table>\n</div>\n"
-
-    # Alertes
-    tte   = float(s.get("tte_days", 99))
-    drft  = abs(float(s.get("hedge_delta_drift", 0)))
-    div   = attr.get("delta_iv", 0)
-    loss  = float(s.get("total_pnl_usd", 0))
-    prem  = float(pos.get("entry_price", 0)) * float(pos.get("entry_spot", 1))
-
-    alerts = []
-    if tte <= 1:    alerts.append(('neg', '⚠️ ROLLER MAINTENANT', f'TTE = {f(tte,2)}j'))
-    else:           alerts.append(('ok',  '✅ Roll OK',           f'TTE = {f(tte,2)}j'))
-    if drft > hedge_thr_btc: alerts.append(('neg', '⚠️ REBALANCER',  f'Drift = {f(drft*100,2)}% > seuil {f(hedge_thr_pct,1)}% (IV-adj)'))
-    else:                    alerts.append(('ok',  '✅ Hedge OK',    f'Drift = {f(drft*100,2)}% < seuil {f(hedge_thr_pct,1)}% (IV-adj)'))
-    if div > 10:    alerts.append(('neg', '🚨 IV SPIKE',           f'ΔIV = {f(div,1,True)}pts'))
-    elif div > 5:   alerts.append(('warn','⚠️ IV élevée',          f'ΔIV = {f(div,1,True)}pts'))
-    else:           alerts.append(('ok',  '✅ IV OK',              f'ΔIV = {f(div,1,True)}pts'))
-    if loss < -prem: alerts.append(('neg','🚨 STOP-LOSS',          f'Perte {f(loss,0,True)}$'))
-    else:            alerts.append(('ok', '✅ Stop OK',            f'Perte {f(loss,0,True)}$ / prime {f(prem,0)}$'))
-
-    html += '<div class="card alert-card" style="grid-column: 1 / -1"><h2>🚨 Alertes</h2><table>'
-    for (cl, label, detail) in alerts:
-        html += f'<tr><td class="val {cl}" style="width:30%">{label}</td><td style="color:#8b949e">{detail}</td></tr>'
-    html += "</table></div>\n"
-    html += "</div>\n"   # ← ferme la grille principale ici
-
-# ── Graphiques historiques (hors grille, pleine largeur) ─────────────────────
+# ── Graphiques ────────────────────────────────────────────────────────────────
 if pnl_history:
     import json as _json
 
-    labels     = [to_ny(p["ts"])[:16] for p in pnl_history]
-    delta_data    = [p.get("delta_pct", 0)     for p in pnl_history]
-    net_delta_data= [p.get("net_delta_pct", 0) for p in pnl_history]
-    gamma_data    = [p.get("gamma_pts", 0)     for p in pnl_history]
-    iv_data    = [p.get("iv_pct", 0)     for p in pnl_history]
-    pnl_opt    = [p.get("pnl_option", 0) for p in pnl_history]
-    pnl_hdg    = [p.get("pnl_hedge", 0)  for p in pnl_history]
-    pnl_tot    = [p.get("pnl_total", 0)  for p in pnl_history]
+    labels       = [to_ny(p["ts"])[:16]     for p in pnl_history]
+    delta_data   = [p.get("delta_pct",0)    for p in pnl_history]
+    net_d_data   = [p.get("net_delta_pct",0)for p in pnl_history]
+    gamma_data   = [p.get("gamma_pts",0)    for p in pnl_history]
+    iv_data      = [p.get("iv_pct",0)       for p in pnl_history]
+    pnl_opt      = [p.get("pnl_option",0)   for p in pnl_history]
+    pnl_hdg      = [p.get("pnl_hedge",0)    for p in pnl_history]
+    pnl_tot      = [p.get("pnl_total",0)    for p in pnl_history]
+    spot_data    = [p.get("spot",0)         for p in pnl_history]
+    n_pos_data   = [p.get("n_positions",1)  for p in pnl_history]
 
-    labels_js     = _json.dumps(labels)
-    delta_js      = _json.dumps(delta_data)
-    net_delta_js  = _json.dumps(net_delta_data)
-    gamma_js      = _json.dumps(gamma_data)
-    iv_js         = _json.dumps(iv_data)
-    pnl_opt_js    = _json.dumps(pnl_opt)
-    pnl_hdg_js    = _json.dumps(pnl_hdg)
-    pnl_tot_js    = _json.dumps(pnl_tot)
-
-    n_pts = len(pnl_history)
-
-    spot_js = _json.dumps([p.get("spot", 0) for p in pnl_history])
+    labels_js    = _json.dumps(labels)
+    delta_js     = _json.dumps(delta_data)
+    net_delta_js = _json.dumps(net_d_data)
+    gamma_js     = _json.dumps(gamma_data)
+    pnl_opt_js   = _json.dumps(pnl_opt)
+    pnl_hdg_js   = _json.dumps(pnl_hdg)
+    pnl_tot_js   = _json.dumps(pnl_tot)
+    spot_js      = _json.dumps(spot_data)
+    n_pts        = len(pnl_history)
 
     html += f"""
-<!-- GRAPHIQUES -->
 <div class="chart-section">
 
 <div class="chart-card">
-  <h2>📈 Greeks &amp; Spot — {n_pts} snapshots  <span style="font-weight:400;color:#484f58">Delta pos · Delta net · Gamma · Spot BTC</span></h2>
+  <h2>📈 Greeks &amp; Spot — {n_pts} snapshots</h2>
   <div class="chart-wrap"><canvas id="chartGreeks"></canvas></div>
 </div>
 
 <div class="chart-card">
-  <h2>💰 PnL &amp; Spot — dans le temps  <span style="font-weight:400;color:#484f58">Option · Hedge · Total · Spot BTC</span></h2>
+  <h2>💰 PnL &amp; Spot — dans le temps</h2>
   <div class="chart-wrap"><canvas id="chartPnl"></canvas></div>
 </div>
 
@@ -641,164 +655,52 @@ if pnl_history:
 
 <script>
 const LABELS = {labels_js};
-const PT_R   = LABELS.length > 50 ? 0 : 3;
-const TOOLTIP_DEFAULTS = {{
-  backgroundColor: "#161b22", borderColor: "#30363d", borderWidth: 1,
-  titleColor: "#e6edf3", bodyColor: "#8b949e",
-}};
+const PT_R = LABELS.length > 50 ? 0 : 3;
+const TT = {{ backgroundColor:"#161b22",borderColor:"#30363d",borderWidth:1,titleColor:"#e6edf3",bodyColor:"#8b949e" }};
 
-// ── Chart 1 : Delta + Gamma + Spot ────────────────────────────────────────
 new Chart(document.getElementById("chartGreeks"), {{
-  type: "line",
-  data: {{
-    labels: LABELS,
-    datasets: [
-      {{
-        label: "Delta pos (%)",
-        data: {delta_js},
-        borderColor: "#58a6ff",
-        backgroundColor: "rgba(88,166,255,0.07)",
-        yAxisID: "yDelta",
-        tension: 0.3, pointRadius: PT_R, borderWidth: 2, fill: true,
-      }},
-      {{
-        label: "Delta net pos+hedge (%)",
-        data: {net_delta_js},
-        borderColor: "#a371f7",
-        backgroundColor: "rgba(163,113,247,0.07)",
-        yAxisID: "yDelta",
-        tension: 0.3, pointRadius: PT_R, borderWidth: 2, borderDash: [4,2], fill: false,
-      }},
-      {{
-        label: "Gamma (pts/1%)",
-        data: {gamma_js},
-        borderColor: "#f85149",
-        backgroundColor: "transparent",
-        yAxisID: "yGamma",
-        tension: 0.3, pointRadius: PT_R, borderWidth: 2, borderDash: [5,3],
-      }},
-      {{
-        label: "Spot BTC ($)",
-        data: {spot_js},
-        borderColor: "rgba(210,153,34,0.7)",
-        backgroundColor: "transparent",
-        yAxisID: "ySpot",
-        tension: 0.3, pointRadius: 0, borderWidth: 1.5, borderDash: [2,4],
-      }},
-    ]
-  }},
-  options: {{
-    responsive: true, maintainAspectRatio: false,
-    interaction: {{ mode: "index", intersect: false }},
-    plugins: {{
-      legend: {{ labels: {{ color: "#8b949e", font: {{ size: 11 }} }} }},
-      tooltip: {{ ...TOOLTIP_DEFAULTS,
-        callbacks: {{
-          label: ctx => {{
-            const v = ctx.parsed.y;
-            if (ctx.dataset.yAxisID === "ySpot") return ` Spot: $` + v.toLocaleString("en-US", {{maximumFractionDigits:0}});
-            if (ctx.dataset.yAxisID === "yGamma") return ` Gamma: ` + v.toFixed(3) + ` pts`;
-            if (ctx.dataset.label.includes("net")) return ` Delta net: ` + (v>=0?"+":"") + v.toFixed(2) + `%`;
-            return ` Delta pos: ` + v.toFixed(2) + `%`;
-          }}
-        }}
-      }},
-    }},
-    scales: {{
-      x: {{ ticks: {{ color: "#484f58", maxTicksLimit: 14, maxRotation: 30, font: {{ size: 10 }} }}, grid: {{ color: "#21262d" }} }},
-      yDelta: {{
-        type: "linear", position: "left",
-        title: {{ display: true, text: "Delta (%)", color: "#58a6ff", font: {{ size: 10 }} }},
-        ticks: {{ color: "#58a6ff", font: {{ size: 10 }}, callback: v => v.toFixed(1)+"%" }},
-        grid: {{ color: "#21262d" }},
-      }},
-      yGamma: {{
-        type: "linear", position: "right",
-        title: {{ display: true, text: "Gamma (pts)", color: "#f85149", font: {{ size: 10 }} }},
-        ticks: {{ color: "#f85149", font: {{ size: 10 }}, callback: v => v.toFixed(2) }},
-        grid: {{ drawOnChartArea: false }},
-      }},
-      ySpot: {{
-        type: "linear", position: "right",
-        title: {{ display: true, text: "Spot ($)", color: "#d29922", font: {{ size: 10 }} }},
-        ticks: {{ color: "#d29922", font: {{ size: 10 }}, callback: v => "$"+Math.round(v/1000)+"k" }},
-        grid: {{ drawOnChartArea: false }},
-        offset: true,
-      }},
+  type:"line",
+  data:{{ labels:LABELS, datasets:[
+    {{ label:"Delta pos (%)", data:{delta_js}, borderColor:"#58a6ff", backgroundColor:"rgba(88,166,255,0.07)",
+      yAxisID:"yD", tension:0.3, pointRadius:PT_R, borderWidth:2, fill:true }},
+    {{ label:"Delta net (%)", data:{net_delta_js}, borderColor:"#a371f7", backgroundColor:"transparent",
+      yAxisID:"yD", tension:0.3, pointRadius:PT_R, borderWidth:2, borderDash:[4,2] }},
+    {{ label:"Gamma (pts/1%)", data:{gamma_js}, borderColor:"#f85149", backgroundColor:"transparent",
+      yAxisID:"yG", tension:0.3, pointRadius:PT_R, borderWidth:2, borderDash:[5,3] }},
+    {{ label:"Spot BTC ($)", data:{spot_js}, borderColor:"rgba(210,153,34,0.7)", backgroundColor:"transparent",
+      yAxisID:"yS", tension:0.3, pointRadius:0, borderWidth:1.5, borderDash:[2,4] }},
+  ]}},
+  options:{{ responsive:true, maintainAspectRatio:false,
+    interaction:{{mode:"index",intersect:false}},
+    plugins:{{ legend:{{labels:{{color:"#8b949e",font:{{size:11}}}}}}, tooltip:{{...TT}} }},
+    scales:{{
+      x:{{ticks:{{color:"#484f58",maxTicksLimit:14,maxRotation:30,font:{{size:10}}}},grid:{{color:"#21262d"}}}},
+      yD:{{type:"linear",position:"left",ticks:{{color:"#58a6ff",font:{{size:10}},callback:v=>v.toFixed(1)+"%"}},grid:{{color:"#21262d"}}}},
+      yG:{{type:"linear",position:"right",ticks:{{color:"#f85149",font:{{size:10}},callback:v=>v.toFixed(2)}},grid:{{drawOnChartArea:false}}}},
+      yS:{{type:"linear",position:"right",ticks:{{color:"#d29922",font:{{size:10}},callback:v=>"$"+Math.round(v/1000)+"k"}},grid:{{drawOnChartArea:false}},offset:true}},
     }}
   }}
 }});
 
-// ── Chart 2 : PnL + Spot ─────────────────────────────────────────────────
 new Chart(document.getElementById("chartPnl"), {{
-  type: "line",
-  data: {{
-    labels: LABELS,
-    datasets: [
-      {{
-        label: "PnL Option ($)",
-        data: {pnl_opt_js},
-        borderColor: "#3fb950",
-        backgroundColor: "rgba(63,185,80,0.07)",
-        yAxisID: "yPnl",
-        tension: 0.3, pointRadius: PT_R, borderWidth: 2, fill: true,
-      }},
-      {{
-        label: "PnL Hedge ($)",
-        data: {pnl_hdg_js},
-        borderColor: "#ff9800",
-        backgroundColor: "transparent",
-        yAxisID: "yPnl",
-        tension: 0.3, pointRadius: PT_R, borderWidth: 2, borderDash: [5,3],
-      }},
-      {{
-        label: "PnL Total ($)",
-        data: {pnl_tot_js},
-        borderColor: "#e6edf3",
-        backgroundColor: "rgba(230,237,243,0.04)",
-        yAxisID: "yPnl",
-        tension: 0.3, pointRadius: PT_R, borderWidth: 2.5, fill: true,
-      }},
-      {{
-        label: "Spot BTC ($)",
-        data: {spot_js},
-        borderColor: "rgba(210,153,34,0.7)",
-        backgroundColor: "transparent",
-        yAxisID: "ySpot2",
-        tension: 0.3, pointRadius: 0, borderWidth: 1.5, borderDash: [2,4],
-      }},
-    ]
-  }},
-  options: {{
-    responsive: true, maintainAspectRatio: false,
-    interaction: {{ mode: "index", intersect: false }},
-    plugins: {{
-      legend: {{ labels: {{ color: "#8b949e", font: {{ size: 11 }} }} }},
-      tooltip: {{ ...TOOLTIP_DEFAULTS,
-        callbacks: {{
-          label: ctx => {{
-            const v = ctx.parsed.y;
-            if (ctx.dataset.yAxisID === "ySpot2") return ` Spot: $` + v.toLocaleString("en-US", {{maximumFractionDigits:0}});
-            return ` ` + ctx.dataset.label + `: ` + (v >= 0 ? "+" : "") + v.toFixed(0) + `$`;
-          }}
-        }}
-      }},
-    }},
-    scales: {{
-      x: {{ ticks: {{ color: "#484f58", maxTicksLimit: 14, maxRotation: 30, font: {{ size: 10 }} }}, grid: {{ color: "#21262d" }} }},
-      yPnl: {{
-        type: "linear", position: "left",
-        title: {{ display: true, text: "PnL ($)", color: "#8b949e", font: {{ size: 10 }} }},
-        ticks: {{ color: "#8b949e", font: {{ size: 10 }}, callback: v => (v>=0?"+":"")+v.toFixed(0)+"$" }},
-        grid: {{ color: "#21262d" }},
-      }},
-      ySpot2: {{
-        type: "linear", position: "right",
-        title: {{ display: true, text: "Spot ($)", color: "#d29922", font: {{ size: 10 }} }},
-        ticks: {{ color: "#d29922", font: {{ size: 10 }}, callback: v => "$"+Math.round(v/1000)+"k" }},
-        grid: {{ drawOnChartArea: false }},
-        offset: true,
-      }},
+  type:"line",
+  data:{{ labels:LABELS, datasets:[
+    {{ label:"PnL Option ($)", data:{pnl_opt_js}, borderColor:"#3fb950", backgroundColor:"rgba(63,185,80,0.07)",
+      yAxisID:"yP", tension:0.3, pointRadius:PT_R, borderWidth:2, fill:true }},
+    {{ label:"PnL Hedge ($)", data:{pnl_hdg_js}, borderColor:"#ff9800", backgroundColor:"transparent",
+      yAxisID:"yP", tension:0.3, pointRadius:PT_R, borderWidth:2, borderDash:[5,3] }},
+    {{ label:"PnL Total ($)", data:{pnl_tot_js}, borderColor:"#e6edf3", backgroundColor:"rgba(230,237,243,0.04)",
+      yAxisID:"yP", tension:0.3, pointRadius:PT_R, borderWidth:2.5, fill:true }},
+    {{ label:"Spot BTC ($)", data:{spot_js}, borderColor:"rgba(210,153,34,0.7)", backgroundColor:"transparent",
+      yAxisID:"yS2", tension:0.3, pointRadius:0, borderWidth:1.5, borderDash:[2,4] }},
+  ]}},
+  options:{{ responsive:true, maintainAspectRatio:false,
+    interaction:{{mode:"index",intersect:false}},
+    plugins:{{ legend:{{labels:{{color:"#8b949e",font:{{size:11}}}}}}, tooltip:{{...TT}} }},
+    scales:{{
+      x:{{ticks:{{color:"#484f58",maxTicksLimit:14,maxRotation:30,font:{{size:10}}}},grid:{{color:"#21262d"}}}},
+      yP:{{type:"linear",position:"left",ticks:{{color:"#8b949e",font:{{size:10}},callback:v=>(v>=0?"+":"")+v.toFixed(0)+"$"}},grid:{{color:"#21262d"}}}},
+      yS2:{{type:"linear",position:"right",ticks:{{color:"#d29922",font:{{size:10}},callback:v=>"$"+Math.round(v/1000)+"k"}},grid:{{drawOnChartArea:false}},offset:true}},
     }}
   }}
 }});
