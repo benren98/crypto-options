@@ -54,6 +54,16 @@ HEDGE_IV_REF         = 70.0      # IV de référence BTC "normale" — calibre l
 RISK_FREE_RATE  = 0.05           # taux sans risque annualisé (approx)
 CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur Deribit)
 
+# ── Gestion de portefeuille ────────────────────────────────────────────────────
+MAX_POSITIONS    = 3      # nombre max de positions simultanées
+BA_MAX_PCT       = 12.0   # spread bid/ask max en % du mark pour entrer
+ENTRY_SCORE_MIN  = 0.58   # score minimum pour entrée opportuniste
+ENTRY_IV_HV_MIN  = 1.10   # ratio IV/HV minimum pour entrée opportuniste
+SCAN_TTE_MIN     = 5.0    # TTE min pour le scan (roll + opportuniste)
+SCAN_TTE_MAX     = 30.0   # TTE max pour le scan
+SCAN_DELTA_MIN   = -0.30  # delta min pour le scan
+SCAN_DELTA_MAX   = -0.10  # delta max pour le scan
+
 
 # ── Helpers API ───────────────────────────────────────────────────────────────
 
@@ -696,40 +706,126 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             print(f"  PnL realise     : {closed['pnl_btc']:+.6f} BTC  "
                   f"({'+' if closed['pnl_usd']>=0 else ''}{closed['pnl_usd']:.2f} USD)")
 
-    # ── Ouvrir une nouvelle position si nécessaire ────────────────────────────
-    if state["open"] is None:
-        print_section("RECHERCHE CANDIDAT SHORT PUT")
-        print(f"  Criteres: TTE [{MIN_TTE_ENTRY:.0f}j - {MAX_TTE_ENTRY:.0f}j]"
-              f"  |  delta cible: {DELTA_TARGET:+.2f} +/- {DELTA_TOL:.2f}")
+    # ── Marché : contexte de vol (une seule fois) ─────────────────────────────
+    ctx = get_market_context(currency)
 
-        candidates = fetch_put_candidates(currency)
+    # ── Roll ou ouverture si portfolio vide ────────────────────────────────────
+    open_positions_now = state.get("positions", [])
+    must_open = len(open_positions_now) == 0   # garantie "toujours au moins 1"
+
+    if state["open"] is None or must_open:
+        reason = "portfolio vide -- ouverture obligatoire" if must_open else "roll declenche"
+        print_section(f"SELECTION CANDIDAT ({reason.upper()})")
+        print(f"  HV 10j: {ctx['hv_10d']:.1f}%  |  IV: {ctx['curr_iv']:.1f}%  "
+              f"|  IV/HV: {ctx['iv_hv_ratio']:.2f}x  |  Regime: {ctx['regime']}")
+
+        candidates = fetch_scored_candidates(
+            currency, spot,
+            ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
+        )
         if candidates.empty:
-            print("  Aucun candidat trouve. Reessayer plus tard.")
-            save_positions(state)
-            return
+            print("  Aucun candidat liquide trouve (filtre B/A). On reessaie plus tard.")
+            if not must_open:
+                save_positions(state)
+                return
+            # Si portfolio vide : fallback sans filtre B/A (on entre quand meme)
+            candidates = fetch_scored_candidates(
+                currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
+                ba_max_pct=999
+            )
+            if candidates.empty:
+                print("  Aucune option trouvee du tout. Abandon.")
+                save_positions(state)
+                return
 
         best = candidates.iloc[0]
-        # On vend un put : on reçoit le BID (le market maker achète au bid)
-        # Fallback sur mark si bid absent (illiquidité)
-        entry_price = best["bid_price"] or best["mark_price"]
-        state["open"] = open_position(best, entry_price, CONTRACTS, spot)
+        new_pos = open_position_from_candidate(best, spot)
 
-        print(f"\n  Meilleur candidat:")
-        print(f"  {best['instrument_name']}")
-        print(f"    Strike     : {best['strike']:,.0f}  ({(best['strike']/spot-1)*100:+.1f}% moneyness)")
-        print(f"    TTE        : {best['tte_days']:.2f} jours")
-        print(f"    Delta      : {best['delta']:+.4f}")
-        print(f"    IV         : {best['mark_iv']:.1f}%")
-        print(f"    Prix entry : {entry_price:.5f} BTC  (${entry_price*spot:,.2f})")
-        print(f"    OI         : {best['open_interest']:.1f} contracts")
+        # Ajouter au hedge partagé
+        hd = state.setdefault("hedge", {})
+        old_qty = float(hd.get("qty", 0.0))
+        old_avg = float(hd.get("avg_entry", spot))
+        delta_new_pos = abs(float(best["delta"]))
+        hedge_for_new = -delta_new_pos * CONTRACTS
+        new_qty = round(old_qty + hedge_for_new, 5)
+        abs_old, abs_add, abs_new = abs(old_qty), abs(hedge_for_new), abs(new_qty)
+        new_avg = (abs_old * old_avg + abs_add * spot) / abs_new if abs_new > 1e-8 else spot
 
-        if verbose and len(candidates) > 1:
-            print(f"\n  Autres candidats:")
-            for _, row in candidates.head(5).iterrows():
-                print(f"    {row['instrument_name']:<30}  "
-                      f"TTE={row['tte_days']:.1f}j  "
-                      f"delta={row['delta']:+.3f}  "
-                      f"IV={row['mark_iv']:.1f}%")
+        hd["qty"]         = new_qty
+        hd["avg_entry"]   = round(new_avg, 2)
+        hd["rebalances"]  = hd.get("rebalances", 0) + 1
+        hd.setdefault("history", []).append({
+            "ts":          now_dt(),
+            "side":        "SELL",
+            "qty":         round(hedge_for_new, 5),
+            "spot":        round(spot, 2),
+            "qty_before":  round(old_qty, 5),
+            "qty_after":   new_qty,
+            "vwap_before": round(old_avg, 2),
+            "vwap_after":  round(new_avg, 2),
+            "drift":       round(delta_new_pos, 5),
+            "note":        f"hedge initial {new_pos['instrument_name']}",
+        })
+
+        state.setdefault("positions", []).append(new_pos)
+        state["open"] = new_pos
+
+        print(f"  [OUVERTURE] {new_pos['instrument_name']}")
+        print(f"    Score    : {best['score']:.3f}  (IV/HV {best['iv_hv_ratio']:.2f}x  rank {best['s_rank']*100:.0f}%  yield {best['yield_ann_pct']:.1f}%/an)")
+        print(f"    Strike   : {best['strike']:,.0f}  ({best['moneyness']:+.1f}%)")
+        print(f"    TTE      : {best['tte_days']:.1f}j  |  Delta {best['delta']:+.3f}  |  IV {best['mark_iv']:.1f}%")
+        print(f"    Prix     : {new_pos['entry_price']:.5f} BTC = ${new_pos['entry_price_usd']:,.0f}  (bid)")
+        print(f"    B/A      : {best['ba_pct']:.1f}%  |  OI {best['open_interest']:.0f}")
+        print(f"    Hedge    : SELL {abs(hedge_for_new):.5f} BTC-PERPETUAL @ ~${spot:,.0f}")
+
+    # ── Entrée opportuniste (positions < MAX) ──────────────────────────────────
+    open_positions_now = state.get("positions", [])
+    open_names = {p["instrument_name"] for p in open_positions_now}
+    if len(open_positions_now) < MAX_POSITIONS and ctx["signal_ok"]:
+        candidates = fetch_scored_candidates(
+            currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
+        )
+        # Exclure les instruments déjà en portefeuille
+        candidates = candidates[~candidates["instrument_name"].isin(open_names)]
+        if not candidates.empty and candidates.iloc[0]["score"] >= ENTRY_SCORE_MIN:
+            best2 = candidates.iloc[0]
+            new_pos2 = open_position_from_candidate(best2, spot)
+
+            hd = state.setdefault("hedge", {})
+            old_qty = float(hd.get("qty", 0.0))
+            old_avg = float(hd.get("avg_entry", spot))
+            delta2  = abs(float(best2["delta"]))
+            hedge2  = -delta2 * CONTRACTS
+            new_qty = round(old_qty + hedge2, 5)
+            abs_old, abs_add, abs_new = abs(old_qty), abs(hedge2), abs(new_qty)
+            new_avg = (abs_old * old_avg + abs_add * spot) / abs_new if abs_new > 1e-8 else spot
+
+            hd["qty"]        = new_qty
+            hd["avg_entry"]  = round(new_avg, 2)
+            hd["rebalances"] = hd.get("rebalances", 0) + 1
+            hd.setdefault("history", []).append({
+                "ts":          now_dt(),
+                "side":        "SELL",
+                "qty":         round(hedge2, 5),
+                "spot":        round(spot, 2),
+                "qty_before":  round(old_qty, 5),
+                "qty_after":   new_qty,
+                "vwap_before": round(old_avg, 2),
+                "vwap_after":  round(new_avg, 2),
+                "drift":       round(delta2, 5),
+                "note":        f"entree opportuniste {new_pos2['instrument_name']}",
+            })
+
+            state["positions"].append(new_pos2)
+            print_section("ENTREE OPPORTUNISTE")
+            print(f"  [OUVERTURE] {new_pos2['instrument_name']}")
+            print(f"    Score    : {best2['score']:.3f}  (IV/HV {best2['iv_hv_ratio']:.2f}x)")
+            print(f"    Strike   : {best2['strike']:,.0f}  ({best2['moneyness']:+.1f}%)")
+            print(f"    TTE      : {best2['tte_days']:.1f}j  |  Delta {best2['delta']:+.3f}  |  IV {best2['mark_iv']:.1f}%")
+            print(f"    Prix     : {new_pos2['entry_price']:.5f} BTC = ${new_pos2['entry_price_usd']:,.0f}")
+        else:
+            score_top = candidates.iloc[0]["score"] if not candidates.empty else 0
+            print(f"  [Opportuniste] score {score_top:.3f} < seuil {ENTRY_SCORE_MIN:.2f} ou IV/HV insuffisant -- pas d'entree")
 
     # ── Greeks de TOUTES les positions (cumulés) ──────────────────────────────
     open_positions = state.get("positions", [])
@@ -916,7 +1012,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     print_separator()
 
 
-# ── Entry Scanner ─────────────────────────────────────────────────────────────
+# ── Entry Scanner & Portfolio Manager ────────────────────────────────────────
 
 def fetch_hv(currency: str = CURRENCY, days: int = 10) -> float:
     """Volatilité historique réalisée sur N jours (log-returns daily closes)."""
@@ -961,75 +1057,25 @@ def fetch_iv_range(currency: str = CURRENCY, days: int = 30) -> tuple[float, flo
     return 30.0, 120.0  # fallback
 
 
-def scan_entry(currency: str = CURRENCY,
-               tte_min: float = 5.0, tte_max: float = 30.0,
-               delta_min: float = -0.30, delta_max: float = -0.10,
-               top_n: int = 8):
-    """Scanne les puts OTM et affiche un score d'opportunité composite."""
-    print_separator()
-    print(f"  Entry Scanner — {now_dt()}")
-    print(f"  TTE [{tte_min:.0f}j – {tte_max:.0f}j]  |  Delta [{delta_min:.2f} – {delta_max:.2f}]")
-    print_separator()
+def fetch_scored_candidates(currency: str, spot: float,
+                            hv_10d: float, iv_min: float, iv_max: float,
+                            tte_min: float = SCAN_TTE_MIN,
+                            tte_max: float = SCAN_TTE_MAX,
+                            delta_min: float = SCAN_DELTA_MIN,
+                            delta_max: float = SCAN_DELTA_MAX,
+                            ba_max_pct: float = BA_MAX_PCT) -> pd.DataFrame:
+    """
+    Scanne les puts OTM, calcule le score composite, filtre le spread B/A.
+    Retourne un DataFrame trié par score décroissant.
+    """
+    instruments = get("get_instruments", {"currency": currency, "kind": "option", "expired": "false"})
+    now_t = now_ms()
+    rows  = []
 
-    spot = fetch_spot(currency)
-    print(f"\n  Spot {currency}: ${spot:,.2f}")
-
-    print("  Calcul HV 10j...")
-    hv_10d = fetch_hv(currency, days=10)
-    print(f"  HV 10j     : {hv_10d:.1f}%")
-
-    print("  Calcul IV range 30j (DVOL)...")
-    iv_min, iv_max = fetch_iv_range(currency, days=30)
-    print(f"  IV range 30j: {iv_min:.1f}% – {iv_max:.1f}%")
-
-    # ── Régime de vol ────────────────────────────────────────────────────────
-    # Fetch IV courante via une option ATM courte maturité
-    try:
-        instruments = get("get_instruments", {"currency": currency, "kind": "option", "expired": "false"})
-        now = now_ms()
-        # ATM put ~7j
-        atm_cands = sorted(
-            [i for i in instruments if i["instrument_name"].endswith("-P")
-             and 3 < (i["expiration_timestamp"] - now) / 86_400_000 < 14],
-            key=lambda i: abs(i["strike"] - spot)
-        )
-        curr_iv = fetch_ticker_full(atm_cands[0]["instrument_name"]).get("mark_iv", 60) if atm_cands else 60.0
-    except Exception:
-        curr_iv = 60.0
-
-    iv_rank = max(0.0, min(1.0, (curr_iv - iv_min) / max(iv_max - iv_min, 5)))
-    iv_hv_ratio = curr_iv / hv_10d if hv_10d > 0 else 1.0
-
-    if curr_iv > 80:
-        regime, rec_delta = "HIGH   [!]", -0.15
-    elif curr_iv > 40:
-        regime, rec_delta = "NORMAL [~]", -0.20
-    else:
-        regime, rec_delta = "LOW    [ok]", None
-
-    print(f"\n  IV ATM ~7j  : {curr_iv:.1f}%")
-    print(f"  IV/HV ratio : {iv_hv_ratio:.2f}x  ({'VRP large → bon timing' if iv_hv_ratio > 1.3 else 'VRP faible' if iv_hv_ratio < 1.1 else 'VRP modéré'})")
-    print(f"  IV rank 30j : {iv_rank*100:.0f}%  ({'IV haute' if iv_rank > 0.6 else 'IV basse' if iv_rank < 0.3 else 'IV médiane'})")
-    print(f"  Régime      : {regime}")
-    if rec_delta:
-        print(f"  Delta recom.: {rec_delta:+.2f}")
-    else:
-        print(f"  → IV trop basse, peu d'edge à vendre de la vol")
-
-    # ── Scan des candidats ────────────────────────────────────────────────────
-    print(f"\n  Scan des puts OTM en cours...")
-    try:
-        instruments = get("get_instruments", {"currency": currency, "kind": "option", "expired": "false"})
-    except Exception as e:
-        print(f"  Erreur fetch instruments: {e}")
-        return
-
-    now = now_ms()
-    rows = []
     for inst in instruments:
         if not inst["instrument_name"].endswith("-P"):
             continue
-        tte = (inst["expiration_timestamp"] - now) / 86_400_000
+        tte = (inst["expiration_timestamp"] - now_t) / 86_400_000
         if not (tte_min <= tte <= tte_max):
             continue
         try:
@@ -1046,87 +1092,174 @@ def scan_entry(currency: str = CURRENCY,
             if not (delta_min <= delta <= delta_max):
                 continue
 
-            moneyness = (inst["strike"] / spot - 1) * 100
-
-            # ── Score composite ──────────────────────────────────────────────
-            # 1. IV/HV score (40%) : 0 si ratio=1, 1 si ratio≥2
-            s_iv_hv = max(0.0, min(1.0, (iv / hv_10d - 1.0)))
-
-            # 2. IV rank (30%)
-            s_rank  = max(0.0, min(1.0, (iv - iv_min) / max(iv_max - iv_min, 5)))
-
-            # 3. Yield annualisé normalisé (30%) : 0.20 BTC/an = 1.0
-            tte_yr  = tte / 365
-            yield_a = mark / tte_yr if tte_yr > 0 else 0
-            s_yield = min(1.0, yield_a / 0.20)
-
-            score = round(0.40 * s_iv_hv + 0.30 * s_rank + 0.30 * s_yield, 3)
-
-            # Spread bid/ask en % du mark (liquidité)
+            # Filtre spread B/A
             ba_pct = (ask - bid) / mark * 100 if mark > 0 else 999
+            if ba_pct > ba_max_pct:
+                continue
+
+            moneyness = (inst["strike"] / spot - 1) * 100
+            tte_yr    = tte / 365
+
+            # Score composite
+            s_iv_hv = max(0.0, min(1.0, (iv / hv_10d - 1.0)))
+            s_rank  = max(0.0, min(1.0, (iv - iv_min) / max(iv_max - iv_min, 5)))
+            yield_a = mark / tte_yr
+            s_yield = min(1.0, yield_a / 0.20)
+            score   = round(0.40 * s_iv_hv + 0.30 * s_rank + 0.30 * s_yield, 3)
 
             rows.append({
-                "instrument":  inst["instrument_name"],
-                "strike":      inst["strike"],
-                "tte":         round(tte, 2),
-                "delta":       delta,
-                "iv":          iv,
-                "mark":        mark,
-                "bid":         bid,
-                "ask":         ask,
-                "oi":          oi,
-                "moneyness":   round(moneyness, 1),
-                "premium_usd": round(mark * spot, 2),
-                "yield_ann":   round(yield_a * 100, 1),  # en %
-                "ba_pct":      round(ba_pct, 1),
-                "score":       score,
-                "s_iv_hv":     round(s_iv_hv, 3),
-                "s_rank":      round(s_rank, 3),
-                "s_yield":     round(s_yield, 3),
+                "instrument_name": inst["instrument_name"],
+                "strike":          inst["strike"],
+                "expiry_dt":       pd.to_datetime(inst["expiration_timestamp"], unit="ms", utc=True),
+                "tte_days":        round(tte, 2),
+                "delta":           delta,
+                "gamma":           greeks.get("gamma", 0),
+                "vega":            greeks.get("vega", 0),
+                "theta":           greeks.get("theta", 0),
+                "mark_iv":         iv,
+                "mark_price":      mark,
+                "bid_price":       bid,
+                "ask_price":       ask,
+                "open_interest":   oi,
+                "moneyness":       round(moneyness, 1),
+                "premium_usd":     round(mark * spot, 2),
+                "yield_ann_pct":   round(yield_a * 100, 1),
+                "ba_pct":          round(ba_pct, 1),
+                "score":           score,
+                "s_iv_hv":         round(s_iv_hv, 3),
+                "s_rank":          round(s_rank, 3),
+                "s_yield":         round(s_yield, 3),
+                "iv_hv_ratio":     round(iv / hv_10d, 3),
             })
         except Exception:
             continue
 
     if not rows:
-        print("  Aucun candidat trouvé dans ces critères.")
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
+
+
+def get_market_context(currency: str = CURRENCY) -> dict:
+    """Retourne HV 10j, IV range 30j, IV courante et régime de vol."""
+    hv_10d         = fetch_hv(currency, days=10)
+    iv_min, iv_max = fetch_iv_range(currency, days=30)
+
+    # IV courante : option ATM ~7j
+    try:
+        instruments = get("get_instruments", {"currency": currency, "kind": "option", "expired": "false"})
+        now_t = now_ms()
+        atm = sorted(
+            [i for i in instruments if i["instrument_name"].endswith("-P")
+             and 3 < (i["expiration_timestamp"] - now_t) / 86_400_000 < 14],
+            key=lambda i: abs(i["strike"] - fetch_spot(currency))
+        )
+        curr_iv = fetch_ticker_full(atm[0]["instrument_name"]).get("mark_iv", 60) if atm else 60.0
+    except Exception:
+        curr_iv = 60.0
+
+    iv_rank   = max(0.0, min(1.0, (curr_iv - iv_min) / max(iv_max - iv_min, 5)))
+    iv_hv_ratio = curr_iv / hv_10d if hv_10d > 0 else 1.0
+
+    if curr_iv > 80:
+        regime, rec_delta = "HIGH", -0.15
+    elif curr_iv > 40:
+        regime, rec_delta = "NORMAL", -0.20
+    else:
+        regime, rec_delta = "LOW", None
+
+    return {
+        "hv_10d":      hv_10d,
+        "iv_min":      iv_min,
+        "iv_max":      iv_max,
+        "curr_iv":     curr_iv,
+        "iv_rank":     iv_rank,
+        "iv_hv_ratio": iv_hv_ratio,
+        "regime":      regime,
+        "rec_delta":   rec_delta,
+        "signal_ok":   iv_hv_ratio >= ENTRY_IV_HV_MIN and curr_iv >= 35,
+    }
+
+
+def open_position_from_candidate(row: pd.Series, spot: float) -> dict:
+    """Crée un dict de position depuis une ligne du DataFrame des candidats."""
+    # Prix d'entrée = bid (on vend au bid)
+    entry_price = float(row["bid_price"]) if row["bid_price"] > 0 else float(row["mark_price"])
+    return open_position(row, entry_price, CONTRACTS, spot)
+
+
+def scan_entry(currency: str = CURRENCY,
+               tte_min: float = SCAN_TTE_MIN, tte_max: float = SCAN_TTE_MAX,
+               top_n: int = 8):
+    """Scanne les puts OTM et affiche un score d'opportunite composite."""
+    print_separator()
+    print(f"  Entry Scanner -- {now_dt()}")
+    print(f"  TTE [{tte_min:.0f}j - {tte_max:.0f}j]  |  Delta [{SCAN_DELTA_MIN:.2f} - {SCAN_DELTA_MAX:.2f}]")
+    print(f"  Filtre B/A: max {BA_MAX_PCT:.0f}% du mark")
+    print_separator()
+
+    spot = fetch_spot(currency)
+    print(f"\n  Spot {currency}: ${spot:,.2f}")
+    print("  Calcul contexte de vol...")
+    ctx = get_market_context(currency)
+
+    vrp_lbl = "VRP large -> bon timing" if ctx["iv_hv_ratio"] > 1.3 else ("VRP faible" if ctx["iv_hv_ratio"] < 1.1 else "VRP modere")
+    iv_rank_lbl = "IV haute" if ctx["iv_rank"] > 0.6 else ("IV basse" if ctx["iv_rank"] < 0.3 else "IV mediane")
+    regime_lbl = {"HIGH": "HIGH [!]", "NORMAL": "NORMAL [~]", "LOW": "LOW [ok]"}.get(ctx["regime"], ctx["regime"])
+
+    print(f"  HV 10j      : {ctx['hv_10d']:.1f}%")
+    print(f"  IV range 30j: {ctx['iv_min']:.1f}% - {ctx['iv_max']:.1f}%")
+    print(f"  IV ATM ~7j  : {ctx['curr_iv']:.1f}%")
+    print(f"  IV/HV ratio : {ctx['iv_hv_ratio']:.2f}x  ({vrp_lbl})")
+    print(f"  IV rank 30j : {ctx['iv_rank']*100:.0f}%  ({iv_rank_lbl})")
+    print(f"  Regime      : {regime_lbl}")
+    if ctx["rec_delta"]:
+        print(f"  Delta recom.: {ctx['rec_delta']:+.2f}")
+    else:
+        print(f"  -> IV trop basse, peu d'edge a vendre de la vol")
+
+    print(f"\n  Scan des puts OTM en cours...")
+    df = fetch_scored_candidates(currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
+                                  tte_min=tte_min, tte_max=tte_max)
+    df_all = fetch_scored_candidates(currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
+                                      tte_min=tte_min, tte_max=tte_max, ba_max_pct=999)
+
+    if df.empty:
+        print("  Aucun candidat trouve (apres filtre B/A et delta).")
+        if not df_all.empty:
+            print(f"  ({len(df_all)} options trouvees mais toutes rejetees spread B/A>{BA_MAX_PCT:.0f}%)")
         return
 
-    df = pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
-
-    # ── Affichage ─────────────────────────────────────────────────────────────
-    print_section(f"TOP {min(top_n, len(df))} CANDIDATS (sur {len(df)} options scannées)")
-
+    n_rejected = len(df_all) - len(df)
+    print_section(f"TOP {min(top_n, len(df))} CANDIDATS (sur {len(df_all)} scannees, {n_rejected} rejetees B/A>{BA_MAX_PCT:.0f}%)")
     print(f"  {'#':<3} {'Instrument':<30} {'TTE':>5} {'Delta':>7} {'IV':>6} "
           f"{'Money':>7} {'Prime$':>8} {'Yield/an':>9} {'B/A%':>6} "
           f"{'SCORE':>7}  IV/HV  Rank  Yield")
-    print(f"  {'─'*115}")
+    print(f"  {'-'*115}")
 
     for i, r in df.head(top_n).iterrows():
-        bar = "█" * int(r["score"] * 10) + "░" * (10 - int(r["score"] * 10))
-        print(f"  {i+1:<3} {r['instrument']:<30} "
-              f"{r['tte']:>5.1f}j "
+        bar = "x" * int(r["score"] * 10) + "." * (10 - int(r["score"] * 10))
+        print(f"  {i+1:<3} {r['instrument_name']:<30} "
+              f"{r['tte_days']:>5.1f}j "
               f"{r['delta']:>+7.3f} "
-              f"{r['iv']:>5.1f}% "
+              f"{r['mark_iv']:>5.1f}% "
               f"{r['moneyness']:>+6.1f}% "
               f"${r['premium_usd']:>7,.0f} "
-              f"{r['yield_ann']:>8.1f}% "
+              f"{r['yield_ann_pct']:>8.1f}% "
               f"{r['ba_pct']:>5.1f}% "
-              f"  {r['score']:.3f}  {r['s_iv_hv']:.2f}   {r['s_rank']:.2f}  {r['s_yield']:.2f}  {bar}")
+              f"  {r['score']:.3f}  {r['s_iv_hv']:.2f}   {r['s_rank']:.2f}  {r['s_yield']:.2f}  [{bar}]")
 
-    # ── Résumé signal ─────────────────────────────────────────────────────────
     best = df.iloc[0]
+    signal_ok = best["score"] >= ENTRY_SCORE_MIN and ctx["signal_ok"]
     print_section("SIGNAL GLOBAL")
-    threshold = 0.55
-    signal_ok = best["score"] >= threshold and iv_hv_ratio >= 1.1 and curr_iv >= 35
-    print(f"  Meilleur score  : {best['score']:.3f}  {'✅ OPPORTUNITÉ' if signal_ok else '⏸  ATTENDRE'}")
-    print(f"  Seuil d'entrée  : {threshold:.2f}")
-    print(f"  IV/HV ratio     : {iv_hv_ratio:.2f}x  (min 1.10 requis)")
-    print(f"  IV courante     : {curr_iv:.1f}%  (min 35% requis)")
+    print(f"  Meilleur score : {best['score']:.3f}  {'[OK] OPPORTUNITE' if signal_ok else '[--] ATTENDRE'}")
+    print(f"  Seuil score    : {ENTRY_SCORE_MIN:.2f}")
+    print(f"  IV/HV ratio    : {ctx['iv_hv_ratio']:.2f}x  (min {ENTRY_IV_HV_MIN:.2f} requis)")
+    print(f"  IV courante    : {ctx['curr_iv']:.1f}%  (min 35% requis)")
     if signal_ok:
-        print(f"\n  → Meilleur candidat : {best['instrument']}")
-        print(f"    Strike {best['strike']:,.0f}  |  TTE {best['tte']:.1f}j  |  Delta {best['delta']:+.3f}")
-        print(f"    Prime ${best['premium_usd']:,.0f}  |  Yield ann. {best['yield_ann']:.1f}%  |  IV {best['iv']:.1f}%")
-        print(f"    B/A spread {best['ba_pct']:.1f}%  |  OI {best['oi']:.0f} contrats")
+        print(f"\n  -> Meilleur candidat : {best['instrument_name']}")
+        print(f"     Strike {best['strike']:,.0f}  |  TTE {best['tte_days']:.1f}j  |  Delta {best['delta']:+.3f}")
+        print(f"     Prime ${best['premium_usd']:,.0f}  |  Yield ann. {best['yield_ann_pct']:.1f}%  |  IV {best['mark_iv']:.1f}%")
+        print(f"     B/A spread {best['ba_pct']:.1f}%  |  OI {best['open_interest']:.0f} contrats")
     print_separator()
 
 
