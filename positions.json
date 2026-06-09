@@ -1,7 +1,4 @@
 {
-  "history": [],
-  "snapshots": [],
-  "last_updated": "2026-06-09 01:40:17 UTC",
   "positions": [
     {
       "instrument_name": "BTC-9JUN26-58500-P",
@@ -19,14 +16,32 @@
       "entry_spot": 61608.03,
       "contracts": 1,
       "entry_ts": "2026-06-07 03:32:05 UTC",
-      "hedge_entry_spot": 61608.03,
       "note": "Position fictive ouverte manuellement le 2026-06-07"
+    },
+    {
+      "instrument_name": "BTC-26JUN26-58000-P",
+      "strike": 58000.0,
+      "expiry_dt": "2026-06-26 08:00:00+00:00",
+      "tte_at_entry": 17.27,
+      "delta_at_entry": -0.21608,
+      "gamma_at_entry": 4e-05,
+      "vega_at_entry": 40.06,
+      "theta_at_entry": -0.000927,
+      "iv_at_entry": 50.37,
+      "entry_price": 0.014,
+      "entry_mark_price": 0.0143,
+      "entry_price_usd": 879.69,
+      "entry_spot": 62835.18,
+      "contracts": 1,
+      "entry_ts": "2026-06-09 01:28:42 UTC",
+      "note": "Position fictive ouverte manuellement le 2026-06-09"
     }
   ],
   "hedge": {
-    "qty": -0.03608,
-    "avg_entry": 61598.56,
-    "rebalances": 4,
+    "qty": -0.21717,
+    "avg_entry": 62232.16,
+    "rebalances": 5,
+    "realized_pnl_usd": -124.95,
     "history": [
       {
         "ts": "2026-06-07 03:32:05 UTC",
@@ -39,7 +54,7 @@
         "vwap_before": 0.0,
         "vwap_after": 61598.56,
         "drift": 0.19532,
-        "note": "hedge initial \u00e0 l'entr\u00e9e (perp mark $61598.56 vs index $61608.03)"
+        "note": "hedge initial pos1"
       },
       {
         "ts": "2026-06-07 05:06:44 UTC",
@@ -51,7 +66,7 @@
         "vwap_before": 61598.56,
         "vwap_after": 61598.56,
         "drift": 0.01566,
-        "note": "rebalancement automatique (drift > 0.03)"
+        "note": "rebalancement automatique"
       },
       {
         "ts": "2026-06-07 23:48:19 UTC",
@@ -62,7 +77,8 @@
         "qty_after": -0.1059,
         "vwap_before": 61598.56,
         "vwap_after": 61598.56,
-        "drift": 0.07495
+        "drift": 0.07495,
+        "note": "rebalancement automatique"
       },
       {
         "ts": "2026-06-08 09:18:27 UTC",
@@ -76,10 +92,22 @@
         "drift": 0.06982,
         "realized_pnl_usd": -124.95,
         "realized_cumul_usd": -124.95,
-        "delta_net_after_pct": 0.0,
-        "note": "rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
+        "note": "rachat partiel \u00e2\u20ac\u201d VWAP entr\u00c3\u00a9e inchang\u00c3\u00a9"
+      },
+      {
+        "ts": "2026-06-09 01:28:42 UTC",
+        "side": "SELL",
+        "qty": -0.18109,
+        "spot": 62835.18,
+        "qty_before": -0.03608,
+        "qty_after": -0.21717,
+        "vwap_before": 61598.56,
+        "vwap_after": 62232.16,
+        "drift": 0.21608,
+        "note": "hedge initial pos2 BTC-26JUN26-58000-P"
       }
-    ],
-    "realized_pnl_usd": -124.95
-  }
+    ]
+  },
+  "history": [],
+  "last_updated": "2026-06-09 01:28:42 UTC"
 }
