@@ -126,6 +126,19 @@ _delta_spot = (_curr_spot - _prev_spot)          if _prev_spot else None
 _delta_spot_pct = (_delta_spot / _prev_spot * 100) if _prev_spot else None
 _delta_pnl  = (_curr_pnl  - _prev_pnl)           if _prev_pnl  is not None else None
 
+# Move spot sur 4h et 1j (depuis pnl_history : 1 point/heure)
+def _spot_move(n_hours: int):
+    """Retourne (move_abs, move_pct) vs il y a n_hours, ou (None, None)."""
+    if len(pnl_history) <= n_hours:
+        return None, None
+    ref = float(pnl_history[-(n_hours + 1)].get("spot", 0))
+    if ref == 0:
+        return None, None
+    return _curr_spot - ref, (_curr_spot - ref) / ref * 100
+
+_move4h_abs,  _move4h_pct  = _spot_move(4)
+_move1d_abs,  _move1d_pct  = _spot_move(24)
+
 ts        = to_ny(s.get("timestamp", "—"))
 generated = to_ny(datetime.now(timezone.utc))
 
@@ -580,6 +593,15 @@ _spot_delta_html = (
     f'<span class="chip-delta {_spot_cl}">{f(_delta_spot,0,True)}$ ({f(_delta_spot_pct,2,True)}%) vs snapshot préc.</span>'
 ) if _delta_spot is not None else '<span class="chip-delta neu">— premier snapshot</span>'
 
+def _move_line(label, move_abs, move_pct):
+    if move_abs is None:
+        return ""
+    cl = "pos" if move_pct >= 0 else "neg"
+    return f'<span class="chip-delta {cl}">{label} {f(move_pct,2,True)}% ({f(move_abs,0,True)}$)</span>'
+
+_move4h_html = _move_line("4h", _move4h_abs, _move4h_pct)
+_move1d_html = _move_line("1j", _move1d_abs, _move1d_pct)
+
 _pnl_delta_html = (
     f'<span class="chip-delta {_dpnl_cl}">{f(_delta_pnl,0,True)}$ vs snapshot préc.</span>'
 ) if _delta_pnl is not None else '<span class="chip-delta neu">— premier snapshot</span>'
@@ -608,7 +630,8 @@ else:
   <div class="chip">
     <span class="chip-label">Spot BTC</span>
     <span class="chip-value">${f(_curr_spot,0)}</span>
-    {_spot_delta_html}
+    {_move4h_html}
+    {_move1d_html}
   </div>
   <div class="chip">
     <span class="chip-label">PnL total</span>
