@@ -655,6 +655,7 @@ else:
   <div class="chip">
     <span class="chip-label">Spot BTC</span>
     <span class="chip-value">${f(_curr_spot,0)}</span>
+    {_spot_delta_html}
     {_move4h_html}
     {_move1d_html}
   </div>
