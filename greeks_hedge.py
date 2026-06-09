@@ -748,6 +748,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         "pos_vega":  sum(g["pos_vega"]  for g in all_greeks),
         "pos_theta": sum(g["pos_theta"] for g in all_greeks),
         "mark_iv_pct": max(g.get("mark_iv_pct") or 50 for g in all_greeks),
+        "tte_days":  min(g["tte_days"] for g in all_greeks),  # position la plus proche de l'expiry
         "spot":      spot,
     }
     pos_greeks = combined_greeks
