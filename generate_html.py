@@ -483,7 +483,7 @@ def _pnl_global_card() -> str:
     pnl_opt_total = float(s.get("pnl_option_usd", 0))
     funding       = float(s.get("funding_pnl_usd", 0))
     total_prem    = sum(float(p.get("entry_price",0))*float(p.get("entry_spot",spot)) for p in positions_list)
-    pnl_pct_prem  = (pnl_open / total_prem * 100) if total_prem > 0 else 0
+    pnl_pct_prem  = (pnl_opt_total / total_prem * 100) if total_prem > 0 else 0
 
     # Décomposition option : mid/mid total + coût B/A entrée total
     midmid_total = sum(
@@ -531,7 +531,7 @@ def _pnl_global_card() -> str:
       <td class="label"><b>TOTAL</b></td>
       <td class="val {color(pnl_open)} big">{f(pnl_open,0,True)}$</td>
     </tr>
-    {row("% primes encaissées", f'<span class="{color(pnl_pct_prem)}">{f(pnl_pct_prem,1,True)}%</span>')}
+    {row("Prime récupérée", f'<span class="{color(pnl_pct_prem)}">{f(pnl_pct_prem,1,True)}%</span><span style="color:#484f58;font-size:0.72rem"> PnL option / primes encaissées · 100% = option expire sans valeur</span>')}
     <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-top:10px;padding-bottom:4px">STRATÉGIE CUMUL</td></tr>
     {row("Réalisé (clôtures)", f'<span class="{color(pnl_hist_total)}">{f(pnl_hist_total,0,True)}$</span>'  + (f'  <span style="color:#8b949e;font-size:0.75rem">({len(hist)} pos.)</span>' if hist else ''))}
     {row("Latent (ouvert)",    f'<span class="{color(pnl_open)}">{f(pnl_open,0,True)}$</span>')}
