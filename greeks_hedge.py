@@ -916,6 +916,220 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     print_separator()
 
 
+# ── Entry Scanner ─────────────────────────────────────────────────────────────
+
+def fetch_hv(currency: str = CURRENCY, days: int = 10) -> float:
+    """Volatilité historique réalisée sur N jours (log-returns daily closes)."""
+    end_ts   = now_ms()
+    start_ts = end_ts - (days + 5) * 24 * 3600 * 1000
+    try:
+        data   = get("get_tradingview_chart_data", {
+            "instrument_name": f"{currency}-PERPETUAL",
+            "start_timestamp": start_ts,
+            "end_timestamp":   end_ts,
+            "resolution":      "1D",
+        })
+        closes = data.get("close", [])
+        closes = [c for c in closes if c]
+        if len(closes) < 3:
+            return 70.0
+        closes = closes[-(days + 1):]
+        log_rets = [math.log(closes[i] / closes[i-1]) for i in range(1, len(closes))]
+        mean  = sum(log_rets) / len(log_rets)
+        var   = sum((r - mean) ** 2 for r in log_rets) / max(len(log_rets) - 1, 1)
+        return round(math.sqrt(var) * math.sqrt(365) * 100, 2)
+    except Exception:
+        return 70.0
+
+
+def fetch_iv_range(currency: str = CURRENCY, days: int = 30) -> tuple[float, float]:
+    """(IV_min, IV_max) sur N jours via l'index DVOL de Deribit."""
+    end_ts   = now_ms()
+    start_ts = end_ts - days * 24 * 3600 * 1000
+    try:
+        data = get("get_volatility_index_data", {
+            "currency":        currency,
+            "start_timestamp": start_ts,
+            "end_timestamp":   end_ts,
+            "resolution":      "1D",
+        })
+        closes = [row[4] for row in data.get("data", []) if row[4]]
+        if len(closes) >= 5:
+            return min(closes), max(closes)
+    except Exception:
+        pass
+    return 30.0, 120.0  # fallback
+
+
+def scan_entry(currency: str = CURRENCY,
+               tte_min: float = 5.0, tte_max: float = 30.0,
+               delta_min: float = -0.30, delta_max: float = -0.10,
+               top_n: int = 8):
+    """Scanne les puts OTM et affiche un score d'opportunité composite."""
+    print_separator()
+    print(f"  Entry Scanner — {now_dt()}")
+    print(f"  TTE [{tte_min:.0f}j – {tte_max:.0f}j]  |  Delta [{delta_min:.2f} – {delta_max:.2f}]")
+    print_separator()
+
+    spot = fetch_spot(currency)
+    print(f"\n  Spot {currency}: ${spot:,.2f}")
+
+    print("  Calcul HV 10j...")
+    hv_10d = fetch_hv(currency, days=10)
+    print(f"  HV 10j     : {hv_10d:.1f}%")
+
+    print("  Calcul IV range 30j (DVOL)...")
+    iv_min, iv_max = fetch_iv_range(currency, days=30)
+    print(f"  IV range 30j: {iv_min:.1f}% – {iv_max:.1f}%")
+
+    # ── Régime de vol ────────────────────────────────────────────────────────
+    # Fetch IV courante via une option ATM courte maturité
+    try:
+        instruments = get("get_instruments", {"currency": currency, "kind": "option", "expired": "false"})
+        now = now_ms()
+        # ATM put ~7j
+        atm_cands = sorted(
+            [i for i in instruments if i["instrument_name"].endswith("-P")
+             and 3 < (i["expiration_timestamp"] - now) / 86_400_000 < 14],
+            key=lambda i: abs(i["strike"] - spot)
+        )
+        curr_iv = fetch_ticker_full(atm_cands[0]["instrument_name"]).get("mark_iv", 60) if atm_cands else 60.0
+    except Exception:
+        curr_iv = 60.0
+
+    iv_rank = max(0.0, min(1.0, (curr_iv - iv_min) / max(iv_max - iv_min, 5)))
+    iv_hv_ratio = curr_iv / hv_10d if hv_10d > 0 else 1.0
+
+    if curr_iv > 80:
+        regime, rec_delta = "HIGH   [!]", -0.15
+    elif curr_iv > 40:
+        regime, rec_delta = "NORMAL [~]", -0.20
+    else:
+        regime, rec_delta = "LOW    [ok]", None
+
+    print(f"\n  IV ATM ~7j  : {curr_iv:.1f}%")
+    print(f"  IV/HV ratio : {iv_hv_ratio:.2f}x  ({'VRP large → bon timing' if iv_hv_ratio > 1.3 else 'VRP faible' if iv_hv_ratio < 1.1 else 'VRP modéré'})")
+    print(f"  IV rank 30j : {iv_rank*100:.0f}%  ({'IV haute' if iv_rank > 0.6 else 'IV basse' if iv_rank < 0.3 else 'IV médiane'})")
+    print(f"  Régime      : {regime}")
+    if rec_delta:
+        print(f"  Delta recom.: {rec_delta:+.2f}")
+    else:
+        print(f"  → IV trop basse, peu d'edge à vendre de la vol")
+
+    # ── Scan des candidats ────────────────────────────────────────────────────
+    print(f"\n  Scan des puts OTM en cours...")
+    try:
+        instruments = get("get_instruments", {"currency": currency, "kind": "option", "expired": "false"})
+    except Exception as e:
+        print(f"  Erreur fetch instruments: {e}")
+        return
+
+    now = now_ms()
+    rows = []
+    for inst in instruments:
+        if not inst["instrument_name"].endswith("-P"):
+            continue
+        tte = (inst["expiration_timestamp"] - now) / 86_400_000
+        if not (tte_min <= tte <= tte_max):
+            continue
+        try:
+            t      = fetch_ticker_full(inst["instrument_name"])
+            greeks = t.get("greeks") or {}
+            delta  = greeks.get("delta")
+            iv     = t.get("mark_iv")
+            mark   = t.get("mark_price") or 0
+            bid    = t.get("best_bid_price") or 0
+            ask    = t.get("best_ask_price") or 0
+            oi     = t.get("open_interest") or 0
+            if delta is None or iv is None or mark == 0:
+                continue
+            if not (delta_min <= delta <= delta_max):
+                continue
+
+            moneyness = (inst["strike"] / spot - 1) * 100
+
+            # ── Score composite ──────────────────────────────────────────────
+            # 1. IV/HV score (40%) : 0 si ratio=1, 1 si ratio≥2
+            s_iv_hv = max(0.0, min(1.0, (iv / hv_10d - 1.0)))
+
+            # 2. IV rank (30%)
+            s_rank  = max(0.0, min(1.0, (iv - iv_min) / max(iv_max - iv_min, 5)))
+
+            # 3. Yield annualisé normalisé (30%) : 0.20 BTC/an = 1.0
+            tte_yr  = tte / 365
+            yield_a = mark / tte_yr if tte_yr > 0 else 0
+            s_yield = min(1.0, yield_a / 0.20)
+
+            score = round(0.40 * s_iv_hv + 0.30 * s_rank + 0.30 * s_yield, 3)
+
+            # Spread bid/ask en % du mark (liquidité)
+            ba_pct = (ask - bid) / mark * 100 if mark > 0 else 999
+
+            rows.append({
+                "instrument":  inst["instrument_name"],
+                "strike":      inst["strike"],
+                "tte":         round(tte, 2),
+                "delta":       delta,
+                "iv":          iv,
+                "mark":        mark,
+                "bid":         bid,
+                "ask":         ask,
+                "oi":          oi,
+                "moneyness":   round(moneyness, 1),
+                "premium_usd": round(mark * spot, 2),
+                "yield_ann":   round(yield_a * 100, 1),  # en %
+                "ba_pct":      round(ba_pct, 1),
+                "score":       score,
+                "s_iv_hv":     round(s_iv_hv, 3),
+                "s_rank":      round(s_rank, 3),
+                "s_yield":     round(s_yield, 3),
+            })
+        except Exception:
+            continue
+
+    if not rows:
+        print("  Aucun candidat trouvé dans ces critères.")
+        return
+
+    df = pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
+
+    # ── Affichage ─────────────────────────────────────────────────────────────
+    print_section(f"TOP {min(top_n, len(df))} CANDIDATS (sur {len(df)} options scannées)")
+
+    print(f"  {'#':<3} {'Instrument':<30} {'TTE':>5} {'Delta':>7} {'IV':>6} "
+          f"{'Money':>7} {'Prime$':>8} {'Yield/an':>9} {'B/A%':>6} "
+          f"{'SCORE':>7}  IV/HV  Rank  Yield")
+    print(f"  {'─'*115}")
+
+    for i, r in df.head(top_n).iterrows():
+        bar = "█" * int(r["score"] * 10) + "░" * (10 - int(r["score"] * 10))
+        print(f"  {i+1:<3} {r['instrument']:<30} "
+              f"{r['tte']:>5.1f}j "
+              f"{r['delta']:>+7.3f} "
+              f"{r['iv']:>5.1f}% "
+              f"{r['moneyness']:>+6.1f}% "
+              f"${r['premium_usd']:>7,.0f} "
+              f"{r['yield_ann']:>8.1f}% "
+              f"{r['ba_pct']:>5.1f}% "
+              f"  {r['score']:.3f}  {r['s_iv_hv']:.2f}   {r['s_rank']:.2f}  {r['s_yield']:.2f}  {bar}")
+
+    # ── Résumé signal ─────────────────────────────────────────────────────────
+    best = df.iloc[0]
+    print_section("SIGNAL GLOBAL")
+    threshold = 0.55
+    signal_ok = best["score"] >= threshold and iv_hv_ratio >= 1.1 and curr_iv >= 35
+    print(f"  Meilleur score  : {best['score']:.3f}  {'✅ OPPORTUNITÉ' if signal_ok else '⏸  ATTENDRE'}")
+    print(f"  Seuil d'entrée  : {threshold:.2f}")
+    print(f"  IV/HV ratio     : {iv_hv_ratio:.2f}x  (min 1.10 requis)")
+    print(f"  IV courante     : {curr_iv:.1f}%  (min 35% requis)")
+    if signal_ok:
+        print(f"\n  → Meilleur candidat : {best['instrument']}")
+        print(f"    Strike {best['strike']:,.0f}  |  TTE {best['tte']:.1f}j  |  Delta {best['delta']:+.3f}")
+        print(f"    Prime ${best['premium_usd']:,.0f}  |  Yield ann. {best['yield_ann']:.1f}%  |  IV {best['iv']:.1f}%")
+        print(f"    B/A spread {best['ba_pct']:.1f}%  |  OI {best['oi']:.0f} contrats")
+    print_separator()
+
+
 def monitor_loop(interval_minutes: int = 30, currency: str = CURRENCY):
     """Boucle de monitoring: execute run_once toutes les N minutes."""
     print(f"Mode MONITOR — refresh toutes les {interval_minutes} min")
@@ -939,13 +1153,19 @@ if __name__ == "__main__":
                         help="Intervalle monitor en minutes (default: 30)")
     parser.add_argument("--currency", type=str, default=CURRENCY,
                         help="BTC ou ETH (default: BTC)")
-    parser.add_argument("--reset",    action="store_true",
+    parser.add_argument("--reset",      action="store_true",
                         help="Remet a zero les positions sauvegardees")
+    parser.add_argument("--scan-entry", action="store_true",
+                        help="Scanner les opportunités d'entrée (score VRP)")
+    parser.add_argument("--tte-min",    type=float, default=5.0)
+    parser.add_argument("--tte-max",    type=float, default=30.0)
     args = parser.parse_args()
 
     if args.reset:
         POSITIONS_FILE.unlink(missing_ok=True)
         print("Positions remises a zero.")
+    elif getattr(args, "scan_entry", False):
+        scan_entry(args.currency, tte_min=args.tte_min, tte_max=args.tte_max)
     elif args.monitor:
         monitor_loop(args.interval, args.currency)
     else:
