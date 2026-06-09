@@ -559,6 +559,9 @@ def _scan_entry_card() -> str:
     sig_cl = "pos" if sig else "neg"
     sig_lbl = "Signal OK — conditions remplies" if sig else "Signal inactif — seuils non atteints"
 
+    iv_rank_pct = float(ctx.get("iv_rank", 0)) * 100
+    iv_rank_cl  = "pos" if iv_rank_pct >= 60 else ("warn" if iv_rank_pct >= 30 else "neg")
+
     rows = ""
     for i, c in enumerate(top5):
         sc   = float(c.get("score", 0))
@@ -573,7 +576,6 @@ def _scan_entry_card() -> str:
       <td>{f(c.get("delta",0),3)}</td>
       <td>{f(c.get("mark_iv",0),1)}%</td>
       <td>{f(c.get("iv_hv_ratio",0),2)}x</td>
-      <td>{f(c.get("s_rank",0)*100,0)}%</td>
       <td>{f(c.get("yield_ann_pct",0),1)}%/an</td>
       <td class="{ba_cl}">{f(ba,1)}%</td>
       <td>${f(float(c.get("mark_price",0)) * _se_spot, 0)}</td>
@@ -581,9 +583,10 @@ def _scan_entry_card() -> str:
 
     return f"""<div class="card full">
   <h2>Opportunites d\'entree — scan du {ts_se}</h2>
-  <div style="display:flex;gap:20px;margin-bottom:12px;font-size:0.82rem;flex-wrap:wrap">
+  <div style="display:flex;gap:20px;margin-bottom:12px;font-size:0.82rem;flex-wrap:wrap;align-items:center">
     <span>HV10j <b>{f(ctx.get("hv_10d",0),1)}%</b></span>
-    <span>IV actuelle <b>{f(ctx.get("curr_iv",0),1)}%</b></span>
+    <span>IV (DVOL) <b>{f(ctx.get("curr_iv",0),1)}%</b></span>
+    <span>Rang IV 30j <b class="{iv_rank_cl}">{f(iv_rank_pct,0)}%</b></span>
     <span>IV/HV <b>{f(ctx.get("iv_hv_ratio",0),2)}x</b></span>
     <span>Regime <b>{ctx.get("regime","—")}</b></span>
     <span class="{sig_cl}"><b>{sig_lbl}</b></span>
@@ -593,14 +596,15 @@ def _scan_entry_card() -> str:
     <tr>
       <th style="text-align:left">Instrument</th>
       <th>Score</th><th>Strike</th><th>TTE</th><th>Delta</th>
-      <th>IV</th><th>IV/HV</th><th>Rang IV</th><th>Yield ann.</th><th>B/A</th><th>Prime mid ($)</th>
+      <th>IV option</th><th>IV/HV</th><th>Yield ann.</th><th>B/A</th><th>Prime mid ($)</th>
     </tr>
-    {rows if rows else '<tr><td colspan="11" class="muted" style="text-align:center">Aucun candidat</td></tr>'}
+    {rows if rows else '<tr><td colspan="10" class="muted" style="text-align:center">Aucun candidat</td></tr>'}
   </table>
   </div>
   <div style="margin-top:14px;font-size:0.78rem;color:#8b949e;border-top:1px solid #21262d;padding-top:10px">
     <b style="color:#e6edf3">Méthodologie scoring</b> :
-    Score = 40% IV/HV + 30% rang IV + 30% yield annualisé ·
+    Score = 40% × (IV<sub>option</sub>/HV − 1) + 30% × rang DVOL 30j + 30% × yield annualisé ·
+    Rang IV = position du DVOL courant dans sa plage 30j (commun à toutes les options) ·
     <b>Seuils d\'entrée</b> : score ≥ 0.58 · IV/HV ≥ 1.10 · B/A ≤ 12% ·
     <b>Sizing</b> : round(score, 1) BTC · max 3 BTC portefeuille
   </div>
