@@ -272,7 +272,9 @@ def _attr_card(p: dict, live: dict) -> str:
     d_live     = float(live.get("live_delta", 0))
     vega_live  = float(live.get("live_vega", 0))
     days_held  = float(live.get("days_held", 0))
-    theta_d    = float(live.get("theta_daily_now_usd", 0))
+    theta_d       = float(live.get("theta_daily_now_usd", 0))
+    theta_theory  = float(live.get("theta_theory_usd", 0))
+    vrp_capture   = float(live.get("vrp_capture_pct", float("nan"))) if live.get("vrp_capture_pct") not in (None, "", "nan") else float("nan")
     pnl_opt    = float(live.get("pnl_option_usd", 0))
 
     ds         = spot - entry_spot
@@ -333,6 +335,21 @@ def _attr_card(p: dict, live: dict) -> str:
       <td class="muted">—</td>
     </tr>
   </table>
+  {(lambda: f'''<table style="margin-top:10px;border-top:1px solid #21262d;padding-top:8px;width:100%">
+    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-bottom:4px;padding-top:6px">THETA</td></tr>
+    <tr>
+      <td class="label">Théorique cumulé <span style="color:#484f58;font-size:0.72rem">(theta entrée × jours tenus)</span></td>
+      <td class="val pos">+{f(theta_theory,0)}$</td>
+    </tr>
+    <tr>
+      <td class="label">Theta actuel (live)</td>
+      <td class="val pos">+{f(theta_d,0)}$/j</td>
+    </tr>
+    <tr>
+      <td class="label">VRP capturé <span style="color:#484f58;font-size:0.72rem">(PnL opt / theta théo)</span></td>
+      <td class="val {"pos" if not math.isnan(vrp_capture) and vrp_capture>=80 else "warn" if not math.isnan(vrp_capture) and vrp_capture>=0 else "neg"}">{f(vrp_capture,0)+"%" if not math.isnan(vrp_capture) else "—"} <span style="color:#484f58;font-size:0.72rem">(100%=tout capturé)</span></td>
+    </tr>
+  </table>''')()}
 </div>"""
 
 def _attr_row(label, val, total):
@@ -465,18 +482,42 @@ def _greeks_card() -> str:
 def _pnl_global_card() -> str:
     pnl_opt_total = float(s.get("pnl_option_usd", 0))
     funding       = float(s.get("funding_pnl_usd", 0))
-    days_held     = float(s.get("days_held", 0))
-    # theta theory = somme des positions
-    theta_theory  = sum(float(pd_map.get(p.get("instrument_name",""),{}).get("theta_theory_usd",0)) for p in positions_list)
-    vrp           = (pnl_opt_total / theta_theory * 100) if theta_theory > 0.5 else float("nan")
-    cap_cl        = "pos" if vrp >= 80 else ("warn" if vrp >= 0 else "neg")
     total_prem    = sum(float(p.get("entry_price",0))*float(p.get("entry_spot",spot)) for p in positions_list)
     pnl_pct_prem  = (pnl_open / total_prem * 100) if total_prem > 0 else 0
 
+    # Décomposition option : mid/mid total + coût B/A entrée total
+    midmid_total = sum(
+        (float(p.get("entry_mark_price", p.get("entry_price", 0))) - float(pd_map.get(p.get("instrument_name",""),{}).get("current_price_btc", 0))) * spot
+        for p in positions_list
+    )
+    ba_entry_total = sum(
+        -(float(p.get("entry_mark_price", p.get("entry_price", 0))) - float(p.get("entry_price", 0))) * float(p.get("entry_spot", spot))
+        for p in positions_list
+    )
+
     return f"""<div class="card total-card">
-  <h2>💰 PnL global ouvert</h2>
+  <h2>PnL global ouvert</h2>
   <table>
-    {srow("Option (MtM total)", pnl_opt_total)}
+    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-bottom:4px">OPTIONS</td></tr>
+    <tr>
+      <td class="label" style="font-size:0.82rem">Mid / mid total
+        <span style="color:#484f58;font-size:0.72rem;display:block">(mark entrée − mark actuel) × spot</span>
+      </td>
+      <td class="val {color(midmid_total)}">{f(midmid_total,0,True)}$</td>
+    </tr>
+    <tr>
+      <td class="label" style="font-size:0.82rem">Coût B/A entrée total
+        <span style="color:#484f58;font-size:0.72rem;display:block">vendu au bid, non au mid</span>
+      </td>
+      <td class="val {color(ba_entry_total)}">{f(ba_entry_total,0,True)}$</td>
+    </tr>
+    <tr style="border-top:1px solid #21262d">
+      <td class="label"><b>= Option total (prix exec.)</b>
+        <span style="color:#484f58;font-size:0.72rem;display:block">(entry_bid − mark actuel) × spot</span>
+      </td>
+      <td class="val {color(pnl_opt_total)}"><b>{f(pnl_opt_total,0,True)}$</b></td>
+    </tr>
+    <tr><td colspan="2" style="padding-top:8px"></td></tr>
     {(lambda: row("Hedge perp (MtM + réalisé)",
         f'<span class="{color(pnl_hedge_usd)}">{f(pnl_hedge_usd,0,True)}$</span>'
         + (f'  <span style="color:#8b949e;font-size:0.75rem">'
@@ -491,12 +532,6 @@ def _pnl_global_card() -> str:
       <td class="val {color(pnl_open)} big">{f(pnl_open,0,True)}$</td>
     </tr>
     {row("% primes encaissées", f'<span class="{color(pnl_pct_prem)}">{f(pnl_pct_prem,1,True)}%</span>')}
-    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-top:10px;padding-bottom:4px">THETA</td></tr>
-    {row("Théorique cumulé", f'<span class="pos">+${f(theta_theory,0)}</span>  sur {f(days_held*24,1)}h')}
-    {row("Capturé (PnL opt / Theta théo)",
-         f'<span class="{cap_cl}">{f(vrp,0)}%</span>'
-         f'<span style="color:#484f58;font-size:0.75rem"> (100% = tout capturé)</span>'
-         if not math.isnan(vrp) else '<span class="neu">—</span>')}
     <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-top:10px;padding-bottom:4px">STRATÉGIE CUMUL</td></tr>
     {row("Réalisé (clôtures)", f'<span class="{color(pnl_hist_total)}">{f(pnl_hist_total,0,True)}$</span>'  + (f'  <span style="color:#8b949e;font-size:0.75rem">({len(hist)} pos.)</span>' if hist else ''))}
     {row("Latent (ouvert)",    f'<span class="{color(pnl_open)}">{f(pnl_open,0,True)}$</span>')}
