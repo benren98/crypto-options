@@ -547,7 +547,7 @@ def _scan_entry_card() -> str:
     <tr>
       <th style="text-align:left">Instrument</th>
       <th>Score</th><th>Strike</th><th>TTE</th><th>Delta</th>
-      <th>IV</th><th>IV/HV</th><th>Rang IV</th><th>Yield ann.</th><th>B/A</th><th>Mark</th>
+      <th>IV</th><th>IV/HV</th><th>Rang IV</th><th>Yield ann.</th><th>B/A</th><th>Prime mid (BTC)</th>
     </tr>
     {rows if rows else '<tr><td colspan="11" class="muted" style="text-align:center">Aucun candidat</td></tr>'}
   </table>

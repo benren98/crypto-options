@@ -722,7 +722,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
 
         candidates = fetch_scored_candidates(
             currency, spot,
-            ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
+            ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
         if candidates.empty:
             print("  Aucun candidat liquide trouve (filtre B/A). On reessaie plus tard.")
@@ -731,7 +731,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                 return
             # Si portfolio vide : fallback sans filtre B/A (on entre quand meme)
             candidates = fetch_scored_candidates(
-                currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
+                currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
                 ba_max_pct=999
             )
             if candidates.empty:
@@ -787,7 +787,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     used_btc_now = sum(float(p.get("contracts", 1)) for p in open_positions_now)
     if used_btc_now < MAX_PORTFOLIO_BTC and ctx["signal_ok"]:
         candidates = fetch_scored_candidates(
-            currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
+            currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
         # Exclure les instruments déjà en portefeuille
         candidates = candidates[~candidates["instrument_name"].isin(open_names)]
@@ -999,7 +999,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     # ── Sauvegarder scan_entry.json (top 5 opportunités pour le dashboard) ──────
     try:
         _scan_candidates = fetch_scored_candidates(
-            currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
+            currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
         _top5 = _scan_candidates.head(5).copy() if not _scan_candidates.empty else pd.DataFrame()
         _scan_out = {
@@ -1090,6 +1090,7 @@ def fetch_iv_range(currency: str = CURRENCY, days: int = 30) -> tuple[float, flo
 
 def fetch_scored_candidates(currency: str, spot: float,
                             hv_10d: float, iv_min: float, iv_max: float,
+                            curr_iv: float = 50.0,
                             tte_min: float = SCAN_TTE_MIN,
                             tte_max: float = SCAN_TTE_MAX,
                             delta_min: float = SCAN_DELTA_MIN,
@@ -1133,7 +1134,8 @@ def fetch_scored_candidates(currency: str, spot: float,
 
             # Score composite
             s_iv_hv = max(0.0, min(1.0, (iv / hv_10d - 1.0)))
-            s_rank  = max(0.0, min(1.0, (iv - iv_min) / max(iv_max - iv_min, 5)))
+            # rang IV : contexte marché (DVOL) dans sa plage 30j, commun à tous les candidats
+            s_rank  = max(0.0, min(1.0, (curr_iv - iv_min) / max(iv_max - iv_min, 5)))
             yield_a = mark / tte_yr
             s_yield = min(1.0, yield_a / 0.20)
             score   = round(0.40 * s_iv_hv + 0.30 * s_rank + 0.30 * s_yield, 3)
@@ -1260,9 +1262,9 @@ def scan_entry(currency: str = CURRENCY,
 
     print(f"\n  Scan des puts OTM en cours...")
     df = fetch_scored_candidates(currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
-                                  tte_min=tte_min, tte_max=tte_max)
+                                  ctx["curr_iv"], tte_min=tte_min, tte_max=tte_max)
     df_all = fetch_scored_candidates(currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
-                                      tte_min=tte_min, tte_max=tte_max, ba_max_pct=999)
+                                      ctx["curr_iv"], tte_min=tte_min, tte_max=tte_max, ba_max_pct=999)
 
     if df.empty:
         print("  Aucun candidat trouve (apres filtre B/A et delta).")

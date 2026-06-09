@@ -52,11 +52,13 @@ s_iv_hv = clamp(IV / HV_10j − 1.0, 0, 1)
 ```
 Vaut 0 si IV = HV (pas de prime), 1 si IV = 2× HV. Poids 40%.
 
-**Composante rang IV** — mesure le contexte IV sur 30 jours :
+**Composante rang IV** — mesure le contexte marché sur 30 jours :
 ```
-s_rank = (IV − IV_min30j) / (IV_max30j − IV_min30j)
+s_rank = (DVOL_actuel − DVOL_min30j) / (DVOL_max30j − DVOL_min30j)
 ```
-Vaut 0 si IV au plancher du mois, 1 si IV au plafond. Poids 30%.
+Utilise le DVOL index (vol ATM marché), commun à tous les candidats. Vaut 0 si IV au plancher du mois, 1 si IV au plafond. Poids 30%.
+
+Note : la vol implicite individuelle de chaque option (`mark_iv`) n'est pas utilisée ici car elle inclut le skew de volatilité (puts OTM ont toujours un `mark_iv` > DVOL), ce qui rendrait le rang 100% pour toutes les options.
 
 **Composante yield** — prime annualisée normalisée à 20% BTC/an :
 ```
