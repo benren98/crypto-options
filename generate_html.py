@@ -266,6 +266,8 @@ def _attr_card(p: dict, live: dict) -> str:
     gamma_e    = float(p.get("gamma_at_entry", 7e-5))
 
     curr_mark  = float(live.get("current_price_btc", 0))
+    curr_bid   = float(live.get("current_bid_btc",   curr_mark))
+    curr_ask   = float(live.get("current_ask_btc",   curr_mark))
     curr_iv    = float(live.get("current_iv_pct", entry_iv))
     d_live     = float(live.get("live_delta", 0))
     vega_live  = float(live.get("live_vega", 0))
@@ -275,7 +277,6 @@ def _attr_card(p: dict, live: dict) -> str:
 
     ds         = spot - entry_spot
     div        = curr_iv - entry_iv
-    delta_pct  = abs(d_live) * 100
     gamma_pts  = gamma_e * (spot * 0.01) * 100
 
     pnl_delta  = abs(d_live) * ds
@@ -284,15 +285,20 @@ def _attr_card(p: dict, live: dict) -> str:
     pnl_vega   = (-vega_live) * div
     mid_mid    = (entry_mark - curr_mark) * spot
     pnl_resid  = mid_mid - (pnl_delta + pnl_gamma + pnl_theta + pnl_vega)
-    ba_entry   = -(entry_mark - entry_p) * entry_spot
+
+    # Coût B/A entrée : on a vendu au bid, le mark était plus élevé
+    ba_entry   = -(entry_mark - entry_p) * entry_spot   # négatif = coût payé
+    # Coût B/A sortie estimé : pour racheter on paierait l'ask
+    ba_exit_est = -(curr_ask - curr_mark) * spot         # négatif = coût supplémentaire
+
     total_opt  = mid_mid + ba_entry
     tte        = float(live.get("tte_days", 0))
     cl_tte     = "warn" if tte <= 1 else "neu"
 
     return f"""<div class="card">
-  <h2>📐 Attribution PnL — {instr}</h2>
+  <h2>Attribution PnL — {instr}</h2>
   <div style="font-size:0.75rem;color:#8b949e;margin-bottom:10px">
-    ΔSpot {f(ds,0,True)}$&nbsp;·&nbsp;ΔIV {f(div,1,True)}pts&nbsp;·&nbsp;{f(days_held*24,1)}h tenu&nbsp;·&nbsp;TTE <span class="{cl_tte}">{f(tte,2)}j</span>
+    Spot {f(ds,0,True)}$&nbsp;·&nbsp;IV {f(div,1,True)}pts&nbsp;·&nbsp;{f(days_held*24,1)}h tenu&nbsp;·&nbsp;TTE <span class="{cl_tte}">{f(tte,2)}j</span>
   </div>
   <table class="tbl">
     <tr><th style="text-align:left">Composante</th><th>Valeur ($)</th><th>% PnL opt.</th></tr>
@@ -302,14 +308,29 @@ def _attr_card(p: dict, live: dict) -> str:
     {_attr_row("ν Vega",   pnl_vega,  pnl_opt)}
     {_attr_row("~ Résidu", pnl_resid, pnl_opt)}
     <tr style="border-top:1px solid #30363d">
-      <td>Mid / mid</td>
+      <td class="muted" style="font-size:0.78rem">= Mid / mid</td>
       <td class="{color(mid_mid)}">{f(mid_mid,0,True)}</td>
       <td class="muted">—</td>
     </tr>
+    <tr>
+      <td style="font-size:0.78rem">+ B/A entrée <span class="muted">(bid vs mark)</span></td>
+      <td class="{color(ba_entry)}">{f(ba_entry,0,True)}</td>
+      <td class="muted" style="font-size:0.78rem">{f(ba_entry/pnl_opt*100 if abs(pnl_opt)>0.01 else 0,0,True)}%</td>
+    </tr>
     <tr style="border-top:1px solid #30363d;font-weight:600">
-      <td>TOTAL OPTION</td>
+      <td>TOTAL OPTION (réalisable au bid)</td>
       <td class="{color(total_opt)}">{f(total_opt,0,True)}</td>
-      <td class="muted">100%</td>
+      <td class="muted">—</td>
+    </tr>
+    <tr style="border-top:1px solid #21262d">
+      <td style="font-size:0.78rem;color:#8b949e">− B/A sortie estimé <span class="muted">(ask vs mark)</span></td>
+      <td class="{color(ba_exit_est)}">{f(ba_exit_est,0,True)}</td>
+      <td class="muted">—</td>
+    </tr>
+    <tr style="font-weight:600">
+      <td>NET si rachat maintenant (ask)</td>
+      <td class="{color(total_opt+ba_exit_est)}">{f(total_opt+ba_exit_est,0,True)}</td>
+      <td class="muted">—</td>
     </tr>
   </table>
 </div>"""
