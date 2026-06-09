@@ -20,9 +20,9 @@
     }
   ],
   "hedge": {
-    "qty": -0.21717,
-    "avg_entry": 62232.16,
-    "rebalances": 5,
+    "qty": -0.3001,
+    "avg_entry": 61879.02,
+    "rebalances": 6,
     "realized_pnl_usd": -124.95,
     "history": [
       {
@@ -87,6 +87,21 @@
         "vwap_after": 62232.16,
         "drift": 0.21608,
         "note": "hedge initial pos2 BTC-26JUN26-58000-P"
+      },
+      {
+        "ts": "2026-06-09 16:26:20 UTC",
+        "side": "SELL",
+        "qty": -0.08293,
+        "spot": 60954.25,
+        "qty_before": -0.21717,
+        "qty_after": -0.3001,
+        "vwap_before": 62232.16,
+        "vwap_after": 61879.02,
+        "drift": -0.08293,
+        "realized_pnl_usd": 0.0,
+        "realized_cumul_usd": -124.95,
+        "delta_net_after_pct": -0.0,
+        "note": "short augment\u00e9 \u2014 VWAP recalcul\u00e9"
       }
     ]
   },
