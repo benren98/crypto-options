@@ -308,6 +308,7 @@ def _positions_table() -> str:
         cl_m    = "neg" if moneyness < 0 else "pos"
         rows += f"""<tr>
       <td class="left"><b>{instr}</b></td>
+      <td class="left muted" style="font-size:0.78rem">{to_ny(p.get("entry_ts","—"))}</td>
       <td>${strike:,} <span class="{cl_m}" style="font-size:0.75rem">({f(moneyness,1,True)}%)</span></td>
       <td>{expiry}</td>
       <td class="{cl_tte}"><b>{f(tte,2)}j</b></td>
@@ -325,6 +326,7 @@ def _positions_table() -> str:
   <table class="tbl">
     <tr>
       <th style="text-align:left">Instrument</th>
+      <th style="text-align:left">Entrée (NY)</th>
       <th>Strike (moneyness)</th>
       <th>Expiry</th>
       <th>TTE</th>
