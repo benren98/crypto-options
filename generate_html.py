@@ -543,7 +543,7 @@ def _scan_entry_card() -> str:
     <b style="color:#e6edf3">Méthodologie scoring</b> :
     Score = 40% IV/HV + 30% rang IV + 30% yield annualisé ·
     <b>Seuils d\'entrée</b> : score ≥ 0.58 · IV/HV ≥ 1.10 · B/A ≤ 12% ·
-    <b>Sizing</b> : round(score, 1) BTC · max 5 BTC portefeuille
+    <b>Sizing</b> : round(score, 1) BTC · max 3 BTC portefeuille
   </div>
 </div>"""
 

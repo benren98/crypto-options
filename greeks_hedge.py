@@ -55,8 +55,7 @@ RISK_FREE_RATE  = 0.05           # taux sans risque annualisé (approx)
 CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur Deribit)
 
 # ── Gestion de portefeuille ────────────────────────────────────────────────────
-MAX_POSITIONS      = 3     # nombre max de positions simultanées
-MAX_PORTFOLIO_BTC  = 5.0  # notionnel total max en BTC (somme des contracts)
+MAX_PORTFOLIO_BTC  = 3.0  # notionnel total max en BTC (somme des contracts)
 BA_MAX_PCT         = 12.0 # spread bid/ask max en % du mark pour entrer
 ENTRY_SCORE_MIN    = 0.58 # score minimum pour entrée opportuniste
 ENTRY_IV_HV_MIN    = 1.10 # ratio IV/HV minimum pour entrée opportuniste
@@ -785,7 +784,8 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     # ── Entrée opportuniste (positions < MAX) ──────────────────────────────────
     open_positions_now = state.get("positions", [])
     open_names = {p["instrument_name"] for p in open_positions_now}
-    if len(open_positions_now) < MAX_POSITIONS and ctx["signal_ok"]:
+    used_btc_now = sum(float(p.get("contracts", 1)) for p in open_positions_now)
+    if used_btc_now < MAX_PORTFOLIO_BTC and ctx["signal_ok"]:
         candidates = fetch_scored_candidates(
             currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
         )

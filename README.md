@@ -83,7 +83,7 @@ contracts = max(0.1, contracts)
 contracts = min(contracts, MAX_PORTFOLIO_BTC − used_btc)
 ```
 
-Plafond portefeuille : **5 BTC notionnel total**. Le sizing reflète la conviction : un score de 0.6 ouvre 0.6 BTC, un score de 1.0 ouvre 1.0 BTC (1 contrat Deribit = 1 BTC).
+Plafond portefeuille : **3 BTC notionnel total**. Le sizing reflète la conviction : un score de 0.6 ouvre 0.6 BTC, un score de 1.0 ouvre 1.0 BTC (1 contrat Deribit = 1 BTC).
 
 ---
 
@@ -93,8 +93,7 @@ Plafond portefeuille : **5 BTC notionnel total**. Le sizing reflète la convicti
 
 | Paramètre | Valeur |
 |---|---|
-| Positions simultanées max | 3 |
-| Notionnel total max | 5 BTC |
+| Notionnel total max | 3 BTC |
 
 ### Garantie "toujours en position"
 
@@ -205,8 +204,7 @@ Le résidu capture les effets d'ordre supérieur, les frictions et les erreurs d
 
 ```python
 # Portefeuille
-MAX_POSITIONS      = 3       # positions simultanées
-MAX_PORTFOLIO_BTC  = 5.0     # notionnel total max (BTC)
+MAX_PORTFOLIO_BTC  = 3.0     # notionnel total max (BTC)
 
 # Scan
 SCAN_TTE_MIN       = 5.0     # TTE min (jours)
