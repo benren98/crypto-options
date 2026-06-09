@@ -61,6 +61,10 @@ pd_file = Path("positions_detail.json")
 positions_detail = json.loads(pd_file.read_text()) if pd_file.exists() else []
 pd_map = {d.get("instrument"): d for d in positions_detail}
 
+# scan_entry : top 5 opportunités (depuis greeks_hedge.py --run)
+se_file = Path("scan_entry.json")
+scan_entry = json.loads(se_file.read_text()) if se_file.exists() else {}
+
 # Historique pour graphiques
 history_file = Path("pnl_history.json")
 pnl_history  = json.loads(history_file.read_text()) if history_file.exists() else []
@@ -306,6 +310,10 @@ def _positions_table() -> str:
         cl_iv   = "neg" if div > 0 else "pos"
         moneyness = (strike / spot - 1) * 100
         cl_m    = "neg" if moneyness < 0 else "pos"
+        entry_score   = p.get("entry_score")
+        entry_sizing  = p.get("entry_sizing_btc")
+        score_html    = f'<b>{f(entry_score,3)}</b>' if entry_score is not None else '<span class="muted">—</span>'
+        sizing_html   = f'{f(entry_sizing,1)} BTC' if entry_sizing is not None else '<span class="muted">—</span>'
         rows += f"""<tr>
       <td class="left"><b>{instr}</b></td>
       <td class="left muted" style="font-size:0.78rem">{to_ny(p.get("entry_ts","—"))}</td>
@@ -319,6 +327,8 @@ def _positions_table() -> str:
       <td style="font-size:0.75rem;color:#8b949e">{f(gamma,6)} / {f(abs(vega),2)}$</td>
       <td class="{cl_pnl}"><b>{f(pnl_opt,0,True)}$</b></td>
       <td class="{cl_pnl}">{f(pnl_pct,1,True)}%</td>
+      <td style="text-align:center">{score_html}</td>
+      <td style="text-align:center">{sizing_html}</td>
     </tr>"""
     return f"""<div class="card full">
   <h2>📍 Positions ouvertes — {len(positions_list)} position(s)</h2>
@@ -337,6 +347,8 @@ def _positions_table() -> str:
       <th>Gamma / Vega</th>
       <th>PnL option</th>
       <th>% prime</th>
+      <th>Score entrée</th>
+      <th>Sizing</th>
     </tr>
     {rows}
   </table>
@@ -477,6 +489,64 @@ def _hedge_history_card() -> str:
   </div>
 </div>"""
 
+# ── Opportunités d'entrée ─────────────────────────────────────────────────────
+def _scan_entry_card() -> str:
+    if not scan_entry:
+        return ""
+    ctx   = scan_entry.get("market_context", {})
+    top5  = scan_entry.get("top5", [])
+    ts_se = to_ny(scan_entry.get("ts", "—"))
+    sig   = ctx.get("signal_ok", False)
+    sig_cl = "pos" if sig else "neg"
+    sig_lbl = "Signal OK — conditions remplies" if sig else "Signal inactif — seuils non atteints"
+
+    rows = ""
+    for i, c in enumerate(top5):
+        sc   = float(c.get("score", 0))
+        sc_cl = "pos" if sc >= 0.58 else ("warn" if sc >= 0.45 else "neg")
+        ba   = float(c.get("ba_pct", 0))
+        ba_cl = "neg" if ba > 12 else "ok"
+        rows += f"""<tr {"class='hl'" if i==0 else ""}>
+      <td class="left"><b>{c.get("instrument_name","—")}</b></td>
+      <td class="{sc_cl}" style="font-weight:700">{f(sc,3)}</td>
+      <td>${int(c.get("strike",0)):,}</td>
+      <td>{f(c.get("tte_days",0),1)}j</td>
+      <td>{f(c.get("delta",0),3)}</td>
+      <td>{f(c.get("mark_iv",0),1)}%</td>
+      <td>{f(c.get("iv_hv_ratio",0),2)}x</td>
+      <td>{f(c.get("s_rank",0)*100,0)}%</td>
+      <td>{f(c.get("yield_ann_pct",0),1)}%/an</td>
+      <td class="{ba_cl}">{f(ba,1)}%</td>
+      <td>{f(c.get("mark_price",0),5)}</td>
+    </tr>"""
+
+    return f"""<div class="card full">
+  <h2>Opportunites d\'entree — scan du {ts_se}</h2>
+  <div style="display:flex;gap:20px;margin-bottom:12px;font-size:0.82rem;flex-wrap:wrap">
+    <span>HV10j <b>{f(ctx.get("hv_10d",0),1)}%</b></span>
+    <span>IV actuelle <b>{f(ctx.get("curr_iv",0),1)}%</b></span>
+    <span>IV/HV <b>{f(ctx.get("iv_hv_ratio",0),2)}x</b></span>
+    <span>Regime <b>{ctx.get("regime","—")}</b></span>
+    <span class="{sig_cl}"><b>{sig_lbl}</b></span>
+  </div>
+  <div style="overflow-x:auto">
+  <table class="tbl">
+    <tr>
+      <th style="text-align:left">Instrument</th>
+      <th>Score</th><th>Strike</th><th>TTE</th><th>Delta</th>
+      <th>IV</th><th>IV/HV</th><th>Rang IV</th><th>Yield ann.</th><th>B/A</th><th>Mark</th>
+    </tr>
+    {rows if rows else '<tr><td colspan="11" class="muted" style="text-align:center">Aucun candidat</td></tr>'}
+  </table>
+  </div>
+  <div style="margin-top:14px;font-size:0.78rem;color:#8b949e;border-top:1px solid #21262d;padding-top:10px">
+    <b style="color:#e6edf3">Méthodologie scoring</b> :
+    Score = 40% IV/HV + 30% rang IV + 30% yield annualisé ·
+    <b>Seuils d\'entrée</b> : score ≥ 0.58 · IV/HV ≥ 1.10 · B/A ≤ 12% ·
+    <b>Sizing</b> : round(score, 1) BTC · max 5 BTC portefeuille
+  </div>
+</div>"""
+
 # ── Alertes ────────────────────────────────────────────────────────────────────
 def _alerts_card() -> str:
     tte_min  = min((float(pd_map.get(p.get("instrument_name",""),{}).get("tte_days", 99)) for p in positions_list), default=99)
@@ -584,6 +654,7 @@ else:
             html += f'<div class="card"><h2>📐 {instr}</h2><p style="color:#8b949e;font-size:0.85rem">Données live non disponibles (prochain cycle Actions)</p></div>'
 
     html += "</div>\n<div class=\"grid\" style=\"margin-top:16px\">\n"
+    html += _scan_entry_card()
     html += _hedge_history_card()
     html += _alerts_card()
 

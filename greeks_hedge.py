@@ -55,14 +55,16 @@ RISK_FREE_RATE  = 0.05           # taux sans risque annualisé (approx)
 CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur Deribit)
 
 # ── Gestion de portefeuille ────────────────────────────────────────────────────
-MAX_POSITIONS    = 3      # nombre max de positions simultanées
-BA_MAX_PCT       = 12.0   # spread bid/ask max en % du mark pour entrer
-ENTRY_SCORE_MIN  = 0.58   # score minimum pour entrée opportuniste
-ENTRY_IV_HV_MIN  = 1.10   # ratio IV/HV minimum pour entrée opportuniste
-SCAN_TTE_MIN     = 5.0    # TTE min pour le scan (roll + opportuniste)
-SCAN_TTE_MAX     = 30.0   # TTE max pour le scan
-SCAN_DELTA_MIN   = -0.30  # delta min pour le scan
-SCAN_DELTA_MAX   = -0.10  # delta max pour le scan
+MAX_POSITIONS      = 3     # nombre max de positions simultanées
+MAX_PORTFOLIO_BTC  = 5.0  # notionnel total max en BTC (somme des contracts)
+BA_MAX_PCT         = 12.0 # spread bid/ask max en % du mark pour entrer
+ENTRY_SCORE_MIN    = 0.58 # score minimum pour entrée opportuniste
+ENTRY_IV_HV_MIN    = 1.10 # ratio IV/HV minimum pour entrée opportuniste
+SCAN_TTE_MIN       = 5.0  # TTE min pour le scan (roll + opportuniste)
+SCAN_TTE_MAX       = 30.0 # TTE max pour le scan
+SCAN_DELTA_MIN     = -0.30
+SCAN_DELTA_MAX     = -0.10
+# Sizing score-based : contracts = round(score, 1) BTC, max portfolio MAX_PORTFOLIO_BTC
 
 
 # ── Helpers API ───────────────────────────────────────────────────────────────
@@ -739,14 +741,16 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                 return
 
         best = candidates.iloc[0]
-        new_pos = open_position_from_candidate(best, spot)
+        used_btc = sum(float(p.get("contracts", 1)) for p in state.get("positions", []))
+        sizing = compute_sizing(float(best["score"]), used_btc)
+        new_pos = open_position_from_candidate(best, spot, contracts=sizing)
 
         # Ajouter au hedge partagé
         hd = state.setdefault("hedge", {})
         old_qty = float(hd.get("qty", 0.0))
         old_avg = float(hd.get("avg_entry", spot))
         delta_new_pos = abs(float(best["delta"]))
-        hedge_for_new = -delta_new_pos * CONTRACTS
+        hedge_for_new = -delta_new_pos * sizing
         new_qty = round(old_qty + hedge_for_new, 5)
         abs_old, abs_add, abs_new = abs(old_qty), abs(hedge_for_new), abs(new_qty)
         new_avg = (abs_old * old_avg + abs_add * spot) / abs_new if abs_new > 1e-8 else spot
@@ -789,13 +793,15 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         candidates = candidates[~candidates["instrument_name"].isin(open_names)]
         if not candidates.empty and candidates.iloc[0]["score"] >= ENTRY_SCORE_MIN:
             best2 = candidates.iloc[0]
-            new_pos2 = open_position_from_candidate(best2, spot)
+            used_btc2 = sum(float(p.get("contracts", 1)) for p in state.get("positions", []))
+            sizing2 = compute_sizing(float(best2["score"]), used_btc2)
+            new_pos2 = open_position_from_candidate(best2, spot, contracts=sizing2)
 
             hd = state.setdefault("hedge", {})
             old_qty = float(hd.get("qty", 0.0))
             old_avg = float(hd.get("avg_entry", spot))
             delta2  = abs(float(best2["delta"]))
-            hedge2  = -delta2 * CONTRACTS
+            hedge2  = -delta2 * sizing2
             new_qty = round(old_qty + hedge2, 5)
             abs_old, abs_add, abs_new = abs(old_qty), abs(hedge2), abs(new_qty)
             new_avg = (abs_old * old_avg + abs_add * spot) / abs_new if abs_new > 1e-8 else spot
@@ -990,6 +996,31 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                   f"exit={row.get('exit_price', 0):.5f}  "
                   f"pnl={'+' if row['pnl_usd']>=0 else ''}{row['pnl_usd']:.2f}$")
 
+    # ── Sauvegarder scan_entry.json (top 5 opportunités pour le dashboard) ──────
+    try:
+        _scan_candidates = fetch_scored_candidates(
+            currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
+        )
+        _top5 = _scan_candidates.head(5).copy() if not _scan_candidates.empty else pd.DataFrame()
+        _scan_out = {
+            "ts": now_dt(),
+            "market_context": {
+                "spot": round(spot, 2),
+                "hv_10d": round(ctx["hv_10d"], 2),
+                "iv_rank": round(ctx["iv_rank"], 3),
+                "iv_hv_ratio": round(ctx["iv_hv_ratio"], 3),
+                "curr_iv": round(ctx["curr_iv"], 2),
+                "regime": ctx["regime"],
+                "signal_ok": ctx["signal_ok"],
+            },
+            "top5": _top5.to_dict(orient="records") if not _top5.empty else [],
+        }
+        (Path(__file__).parent / "scan_entry.json").write_text(
+            json.dumps(_scan_out, indent=2, default=str)
+        )
+    except Exception as _e:
+        print(f"  [warn] scan_entry.json non sauvegardé: {_e}")
+
     # ── Sauvegarder + sync Gist ───────────────────────────────────────────────
     # Supprimer la clé compat "open" avant de sauvegarder (évite duplication)
     state.pop("open", None)
@@ -1180,11 +1211,21 @@ def get_market_context(currency: str = CURRENCY) -> dict:
     }
 
 
-def open_position_from_candidate(row: pd.Series, spot: float) -> dict:
+def compute_sizing(score: float, used_btc: float) -> float:
+    """Taille en BTC = score, arrondi à 0.1, plafonné par capacité restante."""
+    raw      = round(score, 1)
+    raw      = max(0.1, raw)          # minimum 0.1 BTC
+    capacity = max(0.0, MAX_PORTFOLIO_BTC - used_btc)
+    return round(min(raw, capacity), 1)
+
+
+def open_position_from_candidate(row: pd.Series, spot: float, contracts: float = 1.0) -> dict:
     """Crée un dict de position depuis une ligne du DataFrame des candidats."""
-    # Prix d'entrée = bid (on vend au bid)
     entry_price = float(row["bid_price"]) if row["bid_price"] > 0 else float(row["mark_price"])
-    return open_position(row, entry_price, CONTRACTS, spot)
+    pos = open_position(row, entry_price, contracts, spot)
+    pos["entry_score"]   = float(row["score"])
+    pos["entry_sizing_btc"] = contracts
+    return pos
 
 
 def scan_entry(currency: str = CURRENCY,
@@ -1261,6 +1302,28 @@ def scan_entry(currency: str = CURRENCY,
         print(f"     Prime ${best['premium_usd']:,.0f}  |  Yield ann. {best['yield_ann_pct']:.1f}%  |  IV {best['mark_iv']:.1f}%")
         print(f"     B/A spread {best['ba_pct']:.1f}%  |  OI {best['open_interest']:.0f} contrats")
     print_separator()
+
+    # Sauvegarder scan_entry.json pour le dashboard
+    try:
+        _scan_out = {
+            "ts": now_dt(),
+            "market_context": {
+                "spot": round(spot, 2),
+                "hv_10d": round(ctx["hv_10d"], 2),
+                "iv_rank": round(ctx["iv_rank"], 3),
+                "iv_hv_ratio": round(ctx["iv_hv_ratio"], 3),
+                "curr_iv": round(ctx["curr_iv"], 2),
+                "regime": ctx["regime"],
+                "signal_ok": ctx["signal_ok"],
+            },
+            "top5": df.head(5).to_dict(orient="records"),
+        }
+        (Path(__file__).parent / "scan_entry.json").write_text(
+            json.dumps(_scan_out, indent=2, default=str)
+        )
+        print(f"  scan_entry.json sauvegarde ({len(df.head(5))} candidats)")
+    except Exception as _e:
+        print(f"  [warn] scan_entry.json non sauvegarde: {_e}")
 
 
 def monitor_loop(interval_minutes: int = 30, currency: str = CURRENCY):
