@@ -496,10 +496,14 @@ def _pnl_global_card() -> str:
         for p in positions_list
     )
 
+    hedge_mtm      = pnl_hedge_usd - realized_hedge   # flottant sur le short restant
+    pnl_total_open = pnl_opt_total + hedge_mtm + funding
+    realized_total = pnl_hist_total + realized_hedge   # options clôturées + rebalancements hedge
+
     return f"""<div class="card total-card">
   <h2>PnL global ouvert</h2>
   <table>
-    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-bottom:4px">OPTIONS</td></tr>
+    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-bottom:4px">OPTIONS (positions ouvertes)</td></tr>
     <tr>
       <td class="label" style="font-size:0.82rem">Mid / mid total
         <span style="color:#484f58;font-size:0.72rem;display:block">(mark entrée − mark actuel) × spot</span>
@@ -513,32 +517,39 @@ def _pnl_global_card() -> str:
       <td class="val {color(ba_entry_total)}">{f(ba_entry_total,0,True)}$</td>
     </tr>
     <tr style="border-top:1px solid #21262d">
-      <td class="label"><b>= Option total (prix exec.)</b>
+      <td class="label"><b>= Option latent total</b>
         <span style="color:#484f58;font-size:0.72rem;display:block">(entry_bid − mark actuel) × spot</span>
       </td>
       <td class="val {color(pnl_opt_total)}"><b>{f(pnl_opt_total,0,True)}$</b></td>
     </tr>
-    <tr><td colspan="2" style="padding-top:8px"></td></tr>
-    {(lambda: row("Hedge perp (MtM + réalisé)",
-        f'<span class="{color(pnl_hedge_usd)}">{f(pnl_hedge_usd,0,True)}$</span>'
-        + (f'  <span style="color:#8b949e;font-size:0.75rem">'
-           f'MtM: {f(pnl_hedge_usd-realized_hedge,0,True)}$'
-           f'  · réalisé: {f(realized_hedge,0,True)}$</span>'
-           if abs(realized_hedge) > 0.01 else "")
-    ))()}
+    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-top:10px;padding-bottom:4px">HEDGE BTC-PERP (flottant)</td></tr>
+    <tr>
+      <td class="label" style="font-size:0.82rem">MtM short restant
+        <span style="color:#484f58;font-size:0.72rem;display:block">{f(hedge_qty,4)} BTC @ VWAP ${f(hedge_avg,0)} vs spot ${f(spot,0)}</span>
+      </td>
+      <td class="val {color(hedge_mtm)}">{f(hedge_mtm,0,True)}$</td>
+    </tr>
     {srow("Funding perp", funding)}
     <tr><td colspan="2"><hr style="border-color:#30363d;margin:6px 0"></td></tr>
     <tr>
-      <td class="label"><b>TOTAL</b></td>
-      <td class="val {color(pnl_opt_total + pnl_hedge_usd + funding)} big">{f(pnl_opt_total + pnl_hedge_usd + funding,0,True)}$</td>
+      <td class="label"><b>LATENT TOTAL</b>
+        <span style="color:#484f58;font-size:0.72rem;display:block">option + hedge MtM + funding</span>
+      </td>
+      <td class="val {color(pnl_total_open)} big">{f(pnl_total_open,0,True)}$</td>
     </tr>
-    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-top:10px;padding-bottom:4px">STRATÉGIE CUMUL</td></tr>
-    {row("Réalisé (clôtures)", f'<span class="{color(pnl_hist_total)}">{f(pnl_hist_total,0,True)}$</span>'  + (f'  <span style="color:#8b949e;font-size:0.75rem">({len(hist)} pos.)</span>' if hist else ''))}
-    {row("Latent (ouvert)",    f'<span class="{color(pnl_opt_total + pnl_hedge_usd + funding)}">{f(pnl_opt_total + pnl_hedge_usd + funding,0,True)}$</span>')}
+    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-top:12px;padding-bottom:4px">RÉALISÉ CUMULÉ</td></tr>
+    {row("Options clôturées", f'<span class="{color(pnl_hist_total)}">{f(pnl_hist_total,0,True)}$</span>' + (f'  <span style="color:#8b949e;font-size:0.75rem">({len(hist)} pos.)</span>' if hist else ''))}
+    {row("Rebalancements hedge", f'<span class="{color(realized_hedge)}">{f(realized_hedge,0,True)}$</span><span style="color:#484f58;font-size:0.72rem"> rachats/ventes partiels BTC-PERP</span>')}
+    <tr style="border-top:1px solid #30363d;font-weight:600">
+      <td class="label"><b>TOTAL RÉALISÉ</b></td>
+      <td class="val {color(realized_total)}">{f(realized_total,0,True)}$</td>
+    </tr>
     <tr><td colspan="2"><hr style="border-color:#30363d;margin:6px 0"></td></tr>
     <tr>
-      <td class="label"><b>TOTAL STRATÉGIE</b></td>
-      <td class="val {color(pnl_hist_total + pnl_opt_total + pnl_hedge_usd + funding)}">{f(pnl_hist_total + pnl_opt_total + pnl_hedge_usd + funding,0,True)}$</td>
+      <td class="label"><b>TOTAL STRATÉGIE</b>
+        <span style="color:#484f58;font-size:0.72rem;display:block">réalisé + latent</span>
+      </td>
+      <td class="val {color(realized_total + pnl_total_open)}">{f(realized_total + pnl_total_open,0,True)}$</td>
     </tr>
   </table>
 </div>"""
