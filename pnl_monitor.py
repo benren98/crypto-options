@@ -164,9 +164,10 @@ def compute_snapshot(position: dict) -> dict:
     tte_years = max(tte_days / 365, 1e-6)
 
     # ── PnL option (short put) ────────────────────────────────────────────────
-    # On a vendu à entry_p, valeur actuelle est curr_p
-    pnl_opt_btc = (entry_p - curr_p) * contracts
-    pnl_opt_usd = pnl_opt_btc * spot
+    # PnL USD : valeur encaissée au spot d'entrée − valeur actuelle au spot courant
+    # Ne pas multiplier la différence BTC par le spot actuel (gonfle la prime si spot monte)
+    pnl_opt_usd = (entry_p * entry_s - curr_p * spot) * contracts
+    pnl_opt_btc = pnl_opt_usd / spot if spot else 0.0
 
     # ── PnL hedge perp (short perp = hedge_qty négatif) ──────────────────────
     # hedge_qty < 0 = on a shorté |hedge_qty| BTC de perp
@@ -234,7 +235,7 @@ def compute_snapshot(position: dict) -> dict:
         "pnl_hedge_usd":      round(pnl_hedge_usd, 2),
         "funding_pnl_usd":    round(funding_pnl_usd, 4),
         "total_pnl_usd":      round(total_pnl_usd, 2),
-        "pnl_pct_of_premium": round(pnl_opt_usd / (entry_p * entry_s) * 100, 2),
+        "pnl_pct_of_premium": round(pnl_opt_usd / (entry_p * entry_s * contracts) * 100, 2),
         # Theta analysis
         "theta_theory_usd":   round(theta_theory_usd, 2),
         "theta_daily_now_usd":round(theta_deribit_usd, 2),
@@ -664,8 +665,10 @@ def compute_option_pnl(position: dict, spot: float) -> dict:
                                format="%Y-%m-%d %H:%M:%S", utc=True)
     days_held = (pd.Timestamp(now_utc()) - entry_dt).total_seconds() / 86400
 
-    pnl_opt_btc = (entry_p - curr_mark) * contracts
-    pnl_opt_usd = pnl_opt_btc * spot
+    # PnL USD : valeur à l'entrée au spot d'entrée − valeur actuelle au spot courant
+    # Ne pas multiplier la différence BTC par le spot actuel (gonfle la prime si spot monte)
+    pnl_opt_usd = (entry_p * entry_s - curr_mark * spot) * contracts
+    pnl_opt_btc = pnl_opt_usd / spot if spot else 0.0   # BTC équivalent indicatif
 
     # Greeks scaled by contracts (Deribit quotes per 1 BTC contract)
     scaled_delta = curr_delta * contracts
@@ -696,7 +699,7 @@ def compute_option_pnl(position: dict, spot: float) -> dict:
         "iv_change":          round(curr_iv - position["iv_at_entry"], 2),
         "pnl_option_btc":     round(pnl_opt_btc, 6),
         "pnl_option_usd":     round(pnl_opt_usd, 2),
-        "pnl_pct_of_premium": round(pnl_opt_usd / (entry_p * entry_s) * 100, 2),
+        "pnl_pct_of_premium": round(pnl_opt_usd / (entry_p * entry_s * contracts) * 100, 2),
         "theta_theory_usd":   round(theta_theory_usd, 2),
         "theta_daily_now_usd":round(theta_deribit_usd, 2),
         "vrp_capture_pct":    round(vrp_capture_pct, 1),
