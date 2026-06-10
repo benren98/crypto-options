@@ -62,9 +62,9 @@ ENTRY_IV_HV_MIN          = 1.10  # ratio IV/HV minimum pour entrée opportuniste
 ENTRY_SCORE_REENTRY_BOOST= 0.05  # amélioration score nécessaire pour re-entrer un instrument déjà tenu
 DELTA_MIN_SPACING        = 0.08  # espacement min |delta| entre positions sur la même expiry
 GAMMA_PENALTY_START      = 5.0   # gamma_pts en dessous duquel aucune pénalité
-GAMMA_SCORE_CAP          = 15.0  # gamma_pts au-delà duquel le score est réduit à 0
+GAMMA_SCORE_CAP          = 10.0  # gamma_pts au-delà duquel le score est réduit à 0
                                   # pénalité linéaire entre GAMMA_PENALTY_START et GAMMA_SCORE_CAP
-                                  # ex: gamma=5 → ×1.00 ; gamma=10 → ×0.50 ; gamma≥15 → éliminé
+                                  # ex: gamma=5 → ×1.00 ; gamma=7.5 → ×0.50 ; gamma≥10 → éliminé
 SCAN_TTE_MIN       = 1.0  # TTE min pour le scan (roll + opportuniste)
 SCAN_TTE_MAX       = 30.0 # TTE max pour le scan
 SCAN_DELTA_MIN     = -0.30
