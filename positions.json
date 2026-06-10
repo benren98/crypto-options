@@ -268,10 +268,10 @@
     }
   ],
   "hedge": {
-    "qty": -0.83539,
+    "qty": -0.57504,
     "avg_entry": 61602.77,
-    "rebalances": 15,
-    "realized_pnl_usd": -121.28,
+    "rebalances": 16,
+    "realized_pnl_usd": -293.22,
     "history": [
       {
         "ts": "2026-06-07 03:32:05 UTC",
@@ -465,6 +465,21 @@
         "vwap_after": 61602.77,
         "drift": 0.15342,
         "note": "entree opportuniste BTC-11JUN26-59000-P"
+      },
+      {
+        "ts": "2026-06-10 13:50:39 UTC",
+        "side": "BUY",
+        "qty": 0.26035,
+        "spot": 62263.18,
+        "qty_before": -0.83539,
+        "qty_after": -0.57504,
+        "vwap_before": 61602.77,
+        "vwap_after": 61602.77,
+        "drift": 0.26035,
+        "realized_pnl_usd": -171.94,
+        "realized_cumul_usd": -293.22,
+        "delta_net_after_pct": 0.0,
+        "note": "rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
       }
     ]
   },
