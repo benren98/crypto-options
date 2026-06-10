@@ -61,6 +61,9 @@ ENTRY_SCORE_MIN          = 0.58  # score minimum pour entrée opportuniste
 ENTRY_IV_HV_MIN          = 1.10  # ratio IV/HV minimum pour entrée opportuniste
 ENTRY_SCORE_REENTRY_BOOST= 0.05  # amélioration score nécessaire pour re-entrer un instrument déjà tenu
 DELTA_MIN_SPACING        = 0.08  # espacement min |delta| entre positions sur la même expiry
+GAMMA_SCORE_CAP          = 10.0  # gamma_pts au-delà duquel le score est réduit à 0
+                                  # pénalité : score × max(0, 1 - gamma_pts / GAMMA_SCORE_CAP)
+                                  # ex: gamma=5 → ×0.50 ; gamma=8 → ×0.20 ; gamma≥10 → éliminé
 SCAN_TTE_MIN       = 1.0  # TTE min pour le scan (roll + opportuniste)
 SCAN_TTE_MAX       = 30.0 # TTE max pour le scan
 SCAN_DELTA_MIN     = -0.30
@@ -1205,7 +1208,11 @@ def fetch_scored_candidates(currency: str, spot: float,
             s_rank  = max(0.0, min(1.0, (curr_iv - iv_min) / max(iv_max - iv_min, 5)))
             yield_a = bid / tte_yr if bid > 0 else mark / tte_yr  # bid=0 → illiquide, fallback mid
             s_yield = min(1.0, yield_a / 0.20)
-            score   = round(0.40 * s_iv_hv + 0.30 * s_rank + 0.30 * s_yield, 3)
+            score_raw = 0.40 * s_iv_hv + 0.30 * s_rank + 0.30 * s_yield
+            # Pénalité gamma : score × (1 − gamma_pts / GAMMA_SCORE_CAP), plancher 0
+            gamma_pts_val = greeks.get("gamma", 0) * spot * 0.01 * 100
+            gamma_factor  = max(0.0, 1.0 - gamma_pts_val / GAMMA_SCORE_CAP)
+            score   = round(score_raw * gamma_factor, 3)
 
             rows.append({
                 "instrument_name": inst["instrument_name"],
@@ -1224,10 +1231,12 @@ def fetch_scored_candidates(currency: str, spot: float,
                 "open_interest":   oi,
                 "moneyness":       round(moneyness, 1),
                 "premium_usd":     round(bid * spot if bid > 0 else mark * spot, 2),
-                "gamma_pts":       round(greeks.get("gamma", 0) * spot * 0.01 * 100, 2),
+                "gamma_pts":       round(gamma_pts_val, 2),
+                "gamma_factor":    round(gamma_factor, 3),
                 "yield_ann_pct":   round(yield_a * 100, 1),
                 "ba_pct":          round(ba_pct, 1),
                 "score":           score,
+                "score_raw":       round(score_raw, 3),
                 "s_iv_hv":         round(s_iv_hv, 3),
                 "s_rank":          round(s_rank, 3),
                 "s_yield":         round(s_yield, 3),

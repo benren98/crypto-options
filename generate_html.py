@@ -672,8 +672,12 @@ def _scan_entry_card() -> str:
         ba_cl   = "neg" if ba > 12 else "ok"
         ivhv    = float(c.get("iv_hv_ratio", 0))
         ivhv_cl = "pos" if ivhv >= 1.10 else "neg"
-        # Pour re-entrée : afficher delta score vs score initial
+        # Score pénalisé + score brut (avant pénalité gamma) si différent
+        score_raw = float(c.get("score_raw", sc))
         score_cell = f'{f(sc,3)}'
+        if abs(score_raw - sc) > 0.001:
+            score_cell += f' <span class="muted" style="font-size:0.75rem" title="Score brut avant pénalité gamma">({f(score_raw,3)})</span>'
+        # Pour re-entrée : afficher delta score vs score initial
         if held_sc is not None:
             delta_sc = sc - float(held_sc)
             dc = "pos" if delta_sc > 0.05 else ("warn" if delta_sc > 0 else "neg")
@@ -722,7 +726,8 @@ def _scan_entry_card() -> str:
     <b>Diversification</b> : espacement delta ≥ 0.08 entre positions de même expiry · 1 entrée max par cycle
   </div>
   <div style="margin-top:8px;font-size:0.78rem;color:#8b949e;border-top:1px solid #21262d;padding-top:8px">
-    Score = 40% × (IV<sub>option</sub>/HV − 1) + 30% × rang DVOL 30j + 30% × yield annualisé ·
+    Score = [40% × (IV<sub>bid</sub>/HV − 1) + 30% × rang DVOL 30j + 30% × yield bid] × <b>max(0, 1 − Γ/10)</b> ·
+    Score brut en gris = avant pénalité gamma ·
     <b>Seuils</b> : score ≥ 0.58 · IV/HV ≥ 1.10 · B/A ≤ 12% · DVOL ≥ 35% ·
     <b>Sizing</b> : round(score, 1) BTC · max 3 BTC
   </div>
