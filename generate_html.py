@@ -264,7 +264,10 @@ def _attr_card(p: dict, live: dict) -> str:
     entry_mark = float(p.get("entry_mark_price", entry_p))
     entry_iv   = float(p.get("iv_at_entry", 0))
     contracts  = float(p.get("contracts", 1))
-    gamma_e    = float(p.get("gamma_at_entry", 7e-5)) * contracts  # scaled by contracts
+    # gamma_raw: per 1 BTC contract (for display as rate — pts Δ per 1% spot move)
+    gamma_raw  = float(p.get("gamma_at_entry", 7e-5))
+    # gamma_e: scaled by contracts (for PnL calculations: pnl_gamma = ½γΔspot²)
+    gamma_e    = gamma_raw * contracts
 
     # mark/ask fallback to entry prices when live data not yet available
     curr_mark  = float(live.get("current_price_btc", entry_mark))
@@ -281,10 +284,11 @@ def _attr_card(p: dict, live: dict) -> str:
 
     ds         = spot - entry_spot
     div        = curr_iv - entry_iv
-    gamma_pts  = gamma_e * (spot * 0.01) * 100  # pts Δ / 1% move, already scaled
+    # gamma_pts displayed per unit notional (rate, not scaled by contracts)
+    gamma_pts  = gamma_raw * (spot * 0.01) * 100
 
     pnl_delta  = abs(d_live) * ds
-    pnl_gamma  = 0.5 * (-gamma_e) * ds ** 2
+    pnl_gamma  = 0.5 * (-gamma_e) * ds ** 2  # uses gamma_e (contracts-scaled) for correct $PnL
     pnl_theta  = theta_d * days_held
     pnl_vega   = (-vega_live) * div
     mid_mid    = (entry_mark - curr_mark) * spot
@@ -456,10 +460,13 @@ def _positions_table() -> str:
 # ── Tableau Greeks nets ────────────────────────────────────────────────────────
 def _greeks_card() -> str:
     net_delta  = float(s.get("live_delta", 0))
-    net_gamma  = float(s.get("live_gamma", 0))
+    net_gamma  = float(s.get("live_gamma", 0))  # Σ(gamma_i × contracts_i) from pnl_monitor
     net_vega   = float(s.get("live_vega",  0))
     net_theta  = float(s.get("theta_daily_now_usd", 0))
-    gamma_pts  = abs(net_gamma) * spot * 0.01 * 100
+    # gamma_pts = weighted average rate (pts Δ / 1% spot move) across positions
+    # = net_gamma / total_contracts — consistent with per-position display
+    _total_contracts = sum(float(p.get("contracts", 1)) for p in positions_list) or 1
+    gamma_pts  = abs(net_gamma) / _total_contracts * spot * 0.01 * 100
     delta_pct  = abs(net_delta) * 100
     reb_count  = hedge_data.get("rebalances", 0)
 
