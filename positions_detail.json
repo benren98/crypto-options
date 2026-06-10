@@ -1,24 +1,24 @@
 [
   {
     "instrument": "BTC-26JUN26-58000-P",
-    "tte_days": 16.367,
-    "days_held": 0.9047,
+    "tte_days": 16.2608,
+    "days_held": 1.0109,
     "entry_spot": 62835.18,
     "entry_price_btc": 0.014,
-    "current_price_btc": 0.0173,
-    "current_ask_btc": 0.0175,
+    "current_price_btc": 0.0176,
+    "current_ask_btc": 0.018,
     "current_bid_btc": 0.017,
-    "current_iv_pct": 49.22,
+    "current_iv_pct": 49.75,
     "entry_iv_pct": 50.37,
-    "iv_change": -1.15,
-    "pnl_option_btc": -0.0033,
-    "pnl_option_usd": -203.36,
-    "pnl_pct_of_premium": -23.12,
-    "theta_theory_usd": 52.7,
-    "theta_daily_now_usd": 63.69,
-    "vrp_capture_pct": -385.9,
-    "live_delta": -0.25976,
+    "iv_change": -0.62,
+    "pnl_option_btc": -0.0036,
+    "pnl_option_usd": -221.8,
+    "pnl_pct_of_premium": -25.21,
+    "theta_theory_usd": 58.89,
+    "theta_daily_now_usd": 64.88,
+    "vrp_capture_pct": -376.7,
+    "live_delta": -0.26231,
     "live_gamma": 5e-05,
-    "live_vega": 42.354
+    "live_vega": 42.4117
   }
 ]

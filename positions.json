@@ -17,12 +17,50 @@
       "contracts": 1,
       "entry_ts": "2026-06-09 01:28:42 UTC",
       "note": "Position fictive ouverte manuellement le 2026-06-09"
+    },
+    {
+      "instrument_name": "BTC-19JUN26-55000-P",
+      "strike": 55000.0,
+      "expiry_dt": "2026-06-19 08:00:00+00:00",
+      "tte_at_entry": 9.26,
+      "delta_at_entry": -0.10371,
+      "gamma_at_entry": 3e-05,
+      "vega_at_entry": 17.69108,
+      "theta_at_entry": -56.22986,
+      "iv_at_entry": 58.87,
+      "entry_price": 0.0046,
+      "entry_mark_price": 0.0048,
+      "entry_price_usd": 283.4,
+      "entry_spot": 61607.89,
+      "contracts": 0.6,
+      "entry_ts": "2026-06-10 01:45:02 UTC",
+      "hedge_qty": -0.06223,
+      "hedge_entry_spot": 61607.89,
+      "hedge_avg_entry": 61601.8,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-06-10 01:45:02 UTC",
+          "side": "SELL",
+          "qty": -0.06223,
+          "spot": 61607.89,
+          "perp_price": 61601.8,
+          "qty_before": 0.0,
+          "qty_after": -0.06223,
+          "vwap_before": 0.0,
+          "vwap_after": 61601.8,
+          "drift": 0.10371,
+          "note": "hedge initial (perp mark $61601.80 vs index $61607.89)"
+        }
+      ],
+      "entry_score": 0.634,
+      "entry_sizing_btc": 0.6
     }
   ],
   "hedge": {
-    "qty": -0.25022,
-    "avg_entry": 61879.02,
-    "rebalances": 7,
+    "qty": -0.31245,
+    "avg_entry": 61824.23,
+    "rebalances": 8,
     "realized_pnl_usd": -121.28,
     "history": [
       {
@@ -117,6 +155,18 @@
         "realized_cumul_usd": -121.28,
         "delta_net_after_pct": 0.0,
         "note": "rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
+      },
+      {
+        "ts": "2026-06-10 01:45:02 UTC",
+        "side": "SELL",
+        "qty": -0.06223,
+        "spot": 61607.89,
+        "qty_before": -0.25022,
+        "qty_after": -0.31245,
+        "vwap_before": 61879.02,
+        "vwap_after": 61824.23,
+        "drift": 0.10371,
+        "note": "entree opportuniste BTC-19JUN26-55000-P"
       }
     ]
   },
