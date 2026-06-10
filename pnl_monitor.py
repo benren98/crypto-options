@@ -196,10 +196,9 @@ def compute_snapshot(position: dict) -> dict:
     # Convention Deribit : funding_rate > 0 = longs paient courts -> short reçoit
 
     # ── Theta théorique encaissé ──────────────────────────────────────────────
-    # theta_at_entry en BTC/jour -> convertir en USD/jour puis multiplier par days_held
-    theta_entry_btc  = abs(position.get("theta_at_entry", 0))   # BTC/jour (BS brut)
-    theta_entry_usd  = theta_entry_btc * entry_s                 # USD/jour à l'entrée
-    theta_theory_usd = theta_entry_usd * days_held               # USD encaissé théorique
+    # theta_at_entry en USD/jour (convention Deribit, toutes les positions)
+    theta_entry_usd_day = abs(position.get("theta_at_entry", 0))
+    theta_theory_usd = theta_entry_usd_day * days_held           # USD encaissé théorique
 
     # Deribit donne theta en USD/jour directement (déjà normalisé)
     theta_deribit_usd = abs(curr_theta) if curr_theta else 0.0
@@ -673,9 +672,9 @@ def compute_option_pnl(position: dict, spot: float) -> dict:
     scaled_gamma = curr_gamma * contracts
     scaled_vega  = curr_vega  * contracts
 
-    # Theta theory: theta_at_entry is in BTC/day -> convert to USD/day, scale by contracts
-    theta_entry_btc = abs(position.get("theta_at_entry", 0))
-    theta_theory_usd = theta_entry_btc * entry_s * contracts * days_held
+    # Theta theory: theta_at_entry stored in USD/day (Deribit convention, all positions)
+    theta_entry_usd_day = abs(position.get("theta_at_entry", 0))
+    theta_theory_usd = theta_entry_usd_day * contracts * days_held
     # Deribit theta is USD/day per contract -> scale by contracts
     theta_deribit_usd = abs(curr_theta) * contracts if curr_theta else 0.0
 
