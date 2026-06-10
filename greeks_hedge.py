@@ -1070,7 +1070,12 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                 lambda n: _held_info[n]["score"] if n in _held_info else None
             )
 
+        # Top 7 par score, avec garantie d'au moins 1 candidat éligible visible
         _top7 = _scan_candidates.head(7).copy() if not _scan_candidates.empty else pd.DataFrame()
+        if not _top7.empty and "eligible" not in _top7["status"].values:
+            _eligible_extra = _scan_candidates[_scan_candidates["status"] == "eligible"]
+            if not _eligible_extra.empty:
+                _top7 = pd.concat([_top7, _eligible_extra.head(1)]).reset_index(drop=True)
         _scan_out = {
             "ts": now_dt(),
             "market_context": {
