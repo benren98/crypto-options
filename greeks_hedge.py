@@ -55,15 +55,20 @@ RISK_FREE_RATE  = 0.05           # taux sans risque annualisé (approx)
 CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur Deribit)
 
 # ── Gestion de portefeuille ────────────────────────────────────────────────────
-MAX_PORTFOLIO_BTC  = 3.0  # notionnel total max en BTC (somme des contracts)
-BA_MAX_PCT         = 12.0 # spread bid/ask max en % du mark pour entrer
-ENTRY_SCORE_MIN    = 0.58 # score minimum pour entrée opportuniste
-ENTRY_IV_HV_MIN    = 1.10 # ratio IV/HV minimum pour entrée opportuniste
+MAX_PORTFOLIO_BTC        = 3.0   # notionnel total max en BTC (somme des contracts)
+BA_MAX_PCT               = 12.0  # spread bid/ask max en % du mark pour entrer
+ENTRY_SCORE_MIN          = 0.58  # score minimum pour entrée opportuniste
+ENTRY_IV_HV_MIN          = 1.10  # ratio IV/HV minimum pour entrée opportuniste
+ENTRY_SCORE_REENTRY_BOOST= 0.05  # amélioration score nécessaire pour re-entrer un instrument déjà tenu
+DELTA_MIN_SPACING        = 0.08  # espacement min |delta| entre positions sur la même expiry
 SCAN_TTE_MIN       = 5.0  # TTE min pour le scan (roll + opportuniste)
 SCAN_TTE_MAX       = 30.0 # TTE max pour le scan
 SCAN_DELTA_MIN     = -0.30
 SCAN_DELTA_MAX     = -0.10
 # Sizing score-based : contracts = round(score, 1) BTC, max portfolio MAX_PORTFOLIO_BTC
+# Diversification : 1 seule entrée opportuniste par run_once()
+#   - espacement delta >= DELTA_MIN_SPACING entre positions de même expiry
+#   - re-entrée sur instrument déjà tenu si score > entry_score + ENTRY_SCORE_REENTRY_BOOST
 
 
 # ── Helpers API ───────────────────────────────────────────────────────────────
@@ -783,14 +788,41 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
 
     # ── Entrée opportuniste (positions < MAX) ──────────────────────────────────
     open_positions_now = state.get("positions", [])
-    open_names = {p["instrument_name"] for p in open_positions_now}
     used_btc_now = sum(float(p.get("contracts", 1)) for p in open_positions_now)
+
+    # Infos des positions tenues pour filtres de diversification et re-entrée
+    held_info = {
+        p["instrument_name"]: {
+            "expiry": str(p.get("expiry_dt", ""))[:10],
+            "delta":  float(p.get("delta_at_entry", 0)),
+            "score":  float(p.get("entry_score", ENTRY_SCORE_MIN)),
+        }
+        for p in open_positions_now
+    }
+
+    def _candidate_allowed(row) -> bool:
+        """Renvoie True si le candidat peut être entré (diversification + re-entrée)."""
+        name    = row["instrument_name"]
+        c_exp   = str(row.get("expiry_dt", ""))[:10]
+        c_delta = float(row.get("delta", 0))
+        c_score = float(row.get("score", 0))
+
+        # Re-entrée sur instrument déjà tenu : seulement si score nettement meilleur
+        if name in held_info:
+            return c_score > held_info[name]["score"] + ENTRY_SCORE_REENTRY_BOOST
+
+        # Diversification : exclure si trop proche d'une position tenue (même expiry + delta proche)
+        for h in held_info.values():
+            if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING:
+                return False
+        return True
+
     if used_btc_now < MAX_PORTFOLIO_BTC and ctx["signal_ok"]:
         candidates = fetch_scored_candidates(
             currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
-        # Exclure les instruments déjà en portefeuille
-        candidates = candidates[~candidates["instrument_name"].isin(open_names)]
+        # Appliquer les filtres (diversification + re-entrée)
+        candidates = candidates[candidates.apply(_candidate_allowed, axis=1)]
         if not candidates.empty and candidates.iloc[0]["score"] >= ENTRY_SCORE_MIN:
             best2 = candidates.iloc[0]
             used_btc2 = sum(float(p.get("contracts", 1)) for p in state.get("positions", []))
@@ -996,16 +1028,45 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                   f"exit={row.get('exit_price', 0):.5f}  "
                   f"pnl={'+' if row['pnl_usd']>=0 else ''}{row['pnl_usd']:.2f}$")
 
-    # ── Sauvegarder scan_entry.json (top 5 opportunités pour le dashboard) ──────
+    # ── Sauvegarder scan_entry.json (top opportunités pour le dashboard) ─────────
     try:
-        _open_names = {p["instrument_name"] for p in state.get("positions", [])}
+        _positions_now = state.get("positions", [])
+        _held_info = {
+            p["instrument_name"]: {
+                "expiry": str(p.get("expiry_dt", ""))[:10],
+                "delta":  float(p.get("delta_at_entry", 0)),
+                "score":  float(p.get("entry_score", ENTRY_SCORE_MIN)),
+            }
+            for p in _positions_now
+        }
         _scan_candidates = fetch_scored_candidates(
             currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
-        # Exclure les instruments déjà en portefeuille
-        if not _scan_candidates.empty and _open_names:
-            _scan_candidates = _scan_candidates[~_scan_candidates["instrument_name"].isin(_open_names)]
-        _top5 = _scan_candidates.head(5).copy() if not _scan_candidates.empty else pd.DataFrame()
+
+        def _scan_row_status(row):
+            """Retourne le statut du candidat pour le dashboard."""
+            name    = row["instrument_name"]
+            c_exp   = str(row.get("expiry_dt", ""))[:10]
+            c_delta = float(row.get("delta", 0))
+            c_score = float(row.get("score", 0))
+            if name in _held_info:
+                held_score = _held_info[name]["score"]
+                reentry_ok = c_score > held_score + ENTRY_SCORE_REENTRY_BOOST
+                return "held_reentry" if reentry_ok else "held"
+            for h in _held_info.values():
+                if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING:
+                    return "filtered"  # trop proche d'une position tenue
+            return "eligible"
+
+        if not _scan_candidates.empty:
+            _scan_candidates = _scan_candidates.copy()
+            _scan_candidates["status"] = _scan_candidates.apply(_scan_row_status, axis=1)
+            # Pour le score de re-entrée, ajouter le score d'entrée initial si tenu
+            _scan_candidates["held_entry_score"] = _scan_candidates["instrument_name"].map(
+                lambda n: _held_info[n]["score"] if n in _held_info else None
+            )
+
+        _top7 = _scan_candidates.head(7).copy() if not _scan_candidates.empty else pd.DataFrame()
         _scan_out = {
             "ts": now_dt(),
             "market_context": {
@@ -1017,7 +1078,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                 "regime": ctx["regime"],
                 "signal_ok": ctx["signal_ok"],
             },
-            "top5": _top5.to_dict(orient="records") if not _top5.empty else [],
+            "top7": _top7.to_dict(orient="records") if not _top7.empty else [],
         }
         (Path(__file__).parent / "scan_entry.json").write_text(
             json.dumps(_scan_out, indent=2, default=str)
