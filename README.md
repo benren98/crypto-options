@@ -1,161 +1,161 @@
 # VRP Monitor — Short Put BTC
 
-Système de monitoring et de gestion d'un portefeuille de puts vendus sur BTC (Deribit), avec delta-hedge automatique via BTC-PERPETUAL. Tournant en GitHub Actions toutes les heures, avec un dashboard GitHub Pages mis à jour en temps réel.
+Portfolio monitoring and management system for short BTC puts on Deribit, delta-hedged via BTC-PERPETUAL. Runs hourly via GitHub Actions with a live GitHub Pages dashboard.
 
 ---
 
 ## Architecture
 
 ```
-greeks_hedge.py     — moteur principal : scan, entrées, roll, hedge
-pnl_monitor.py      — calcul PnL et snapshot CSV par position
-generate_html.py    — génération du dashboard HTML
-positions.json      — état du portefeuille (source de vérité : GitHub Gist)
-positions_detail.json — données live par position (pnl_monitor → generate_html)
-scan_entry.json     — top 5 opportunités du dernier scan (greeks_hedge → generate_html)
+greeks_hedge.py       — core engine: scan, entries, roll, hedge
+pnl_monitor.py        — per-position PnL computation and CSV snapshots
+generate_html.py      — dashboard HTML generation
+positions.json        — portfolio state (source of truth: GitHub Gist)
+positions_detail.json — live per-position data (pnl_monitor → generate_html)
+scan_entry.json       — top 5 opportunities from last scan (greeks_hedge → generate_html)
 ```
 
-Le pipeline GitHub Actions tourne dans cet ordre : fetch Gist → pnl_monitor → greeks_hedge → generate_html → commit → push Gist.
+Pipeline order: fetch Gist → pnl_monitor → greeks_hedge → generate_html → commit → push Gist.
 
 ---
 
-## Stratégie
+## Strategy
 
-Vente de puts OTM sur BTC à maturité courte (5–30 jours), delta-hedgés via BTC-PERPETUAL short. L'edge est le **Volatility Risk Premium (VRP)** : la volatilité implicite (IV) est structurellement supérieure à la volatilité réalisée (HV), ce qui rend la vente d'options statistiquement rentable à long terme.
+Sell OTM BTC puts with short maturities (5–30 days), delta-hedged via a BTC-PERPETUAL short. The edge is the **Volatility Risk Premium (VRP)**: implied volatility (IV) is structurally higher than realised volatility (HV), making systematic option selling statistically profitable over time.
 
-**Risque principal** : un mouvement brutal à la baisse (crash, gap) où le gamma augmente rapidement et le delta s'emballe au-delà de la capacité de hedge.
+**Main risk**: a sharp downside move (crash, gap) where gamma spikes and delta moves faster than the hedge can follow.
 
 ---
 
-## Sélection des options
+## Option Selection
 
-### Univers de scan
+### Universe
 
-| Paramètre | Valeur |
+| Parameter | Value |
 |---|---|
-| Type | Puts OTM uniquement |
-| TTE | 5 – 30 jours |
-| Delta | −0.10 à −0.30 |
-| Spread B/A max | 12% du mark |
+| Type | OTM puts only |
+| DTE | 5 – 30 days |
+| Delta | −0.10 to −0.30 |
+| Max bid/ask spread | 12% of mark |
 
-### Score composite
+### Composite score
 
-Chaque option reçoit un score entre 0 et 1 calculé comme suit :
+Each option receives a score between 0 and 1:
 
 ```
-score = 0.40 × s_iv_hv + 0.30 × s_rank + 0.30 × s_yield
+score = 0.40 × s_iv_hv + 0.30 × s_rank + 0.50 × s_yield
 ```
 
-**Composante IV/HV** — capture la prime de risque de volatilité :
+**IV/HV component** — captures the volatility risk premium for this specific option:
 ```
-s_iv_hv = clamp(IV / HV_10j − 1.0, 0, 1)
+s_iv_hv = clamp(mark_IV / HV_10d − 1.0, 0, 1)
 ```
-Vaut 0 si IV = HV (pas de prime), 1 si IV = 2× HV. Poids 40%.
+0 when IV = HV (no premium), 1 when IV = 2× HV. Each option uses its own `mark_iv` (which includes the volatility skew). Weight: 40%.
 
-**Composante rang IV** — mesure le contexte marché sur 30 jours :
+**IV rank component** — measures where the market's overall vol level (DVOL) sits in its 30-day range:
 ```
-s_rank = (DVOL_actuel − DVOL_min30j) / (DVOL_max30j − DVOL_min30j)
+s_rank = (DVOL_current − DVOL_min30d) / (DVOL_max30d − DVOL_min30d)
 ```
-Utilise le DVOL index (vol ATM marché), commun à tous les candidats. Vaut 0 si IV au plancher du mois, 1 si IV au plafond. Poids 30%.
+This is the same value for all candidates in a given scan — it is a market context metric, not option-specific. Weight: 30%.
 
-Note : la vol implicite individuelle de chaque option (`mark_iv`) n'est pas utilisée ici car elle inclut le skew de volatilité (puts OTM ont toujours un `mark_iv` > DVOL), ce qui rendrait le rang 100% pour toutes les options.
+Note: individual option `mark_iv` is not used here because OTM puts always have a higher implied vol than DVOL due to the skew, which would push the rank to 100% for every option.
 
-**Composante yield** — prime annualisée normalisée à 20% BTC/an :
+**Yield component** — annualised premium normalised to 20% BTC/year:
 ```
-s_yield = min(1.0, (mark / TTE_années) / 0.20)
+s_yield = min(1.0, (mark / DTE_years) / 0.20)
 ```
-Vaut 1 si le yield annualisé atteint ou dépasse 20% BTC. Poids 30%.
+Reaches 1 when the annualised yield hits 20% BTC. Weight: 30%.
 
-### Seuils d'entrée opportuniste
+### Entry thresholds
 
-Toutes les conditions suivantes doivent être réunies simultanément :
+All conditions must be met simultaneously:
 
-| Condition | Seuil |
+| Condition | Threshold |
 |---|---|
-| Score composite | ≥ 0.58 |
-| Ratio IV/HV | ≥ 1.10 |
-| IV absolue | ≥ 35% |
-| Spread B/A | ≤ 12% du mark |
+| Composite score | ≥ 0.58 |
+| IV/HV ratio (per option) | ≥ 1.10 |
+| Bid/ask spread | ≤ 12% of mark |
+| Market condition | DVOL ≥ 35% |
 
 ### Sizing
 
-```
-contracts = round(score, 1)  # ex. score 0.72 → 0.7 BTC
+```python
+contracts = round(score, 1)   # e.g. score 0.72 → 0.7 BTC
 contracts = max(0.1, contracts)
 contracts = min(contracts, MAX_PORTFOLIO_BTC − used_btc)
 ```
 
-Plafond portefeuille : **3 BTC notionnel total**. Le sizing reflète la conviction : un score de 0.6 ouvre 0.6 BTC, un score de 1.0 ouvre 1.0 BTC (1 contrat Deribit = 1 BTC).
+Portfolio cap: **3 BTC notional total**. Sizing reflects conviction: a score of 0.6 opens 0.6 BTC, a score of 1.0 opens 1.0 BTC (1 Deribit contract = 1 BTC).
 
 ---
 
-## Gestion du portefeuille
+## Portfolio Management
 
-### Limites
+### Limits
 
-| Paramètre | Valeur |
+| Parameter | Value |
 |---|---|
-| Notionnel total max | 3 BTC |
+| Max total notional | 3 BTC |
 
-### Garantie "toujours en position"
+### "Always in a position" guarantee
 
-Si le portefeuille est vide (roll déclenché ou première ouverture), l'algo **ouvre obligatoirement** le meilleur candidat scoré, même si les conditions de signal ne sont pas réunies. En cas d'absence de candidat liquide (B/A > 12%), le filtre spread est levé pour garantir l'entrée.
+If the portfolio is empty (after a roll or on first run), the algo **always opens** the best scored candidate, even if market signal conditions are not met. If no liquid candidate is found (B/A > 12%), the spread filter is lifted to guarantee entry.
 
-### Entrées opportunistes
+### Opportunistic entries
 
-Quand le portefeuille est en dessous du max (< 3 positions), l'algo tente d'ouvrir une position supplémentaire à chaque run si le signal est actif et que le meilleur candidat non détenu atteint le score minimum.
+When total notional is below the cap (< 3 BTC), the algo attempts to open an additional position on each run if the market signal is active and the best candidate (not already held) meets the minimum score. The top-5 opportunities shown in the dashboard always exclude instruments already in the portfolio.
 
 ---
 
-## Logique de roll
+## Roll Logic
 
-### Fenêtre d'observation
+### Observation window
 
-Le roll entre dans sa fenêtre dès que **TTE ≤ 1 jour** (`ROLL_TRIGGER = 1.0`).
+A roll enters its window once **DTE ≤ 1 day** (`ROLL_TRIGGER = 1.0`).
 
-### Décision dans la fenêtre
+### Decision within the window
 
-Une fois dans la fenêtre, le roll n'est pas automatique : il dépend du **gamma en points de delta** :
+Once in the window, the roll is not automatic — it depends on **gamma in delta points**:
 
 ```
 gamma_pts = gamma × spot × 0.01 × 100
 ```
 
-Ce chiffre représente combien de points de delta (%) la position perd si le spot bouge de 1%.
+This represents how many delta points (%) the position loses if spot moves 1%.
 
-| Condition | Décision |
+| Condition | Decision |
 |---|---|
-| TTE > 1j | HOLD — pas encore dans la fenêtre |
-| TTE ≤ 1j ET gamma > 6 pts/1% | **ROLL** — put trop proche du strike, risque ATM |
-| TTE ≤ 1j ET gamma ≤ 6 pts/1% | **HOLD** — put suffisamment OTM, on laisse expirer |
+| DTE > 1d | HOLD — not yet in window |
+| DTE ≤ 1d AND gamma > 6 pts/1% | **ROLL** — put too close to strike, ATM risk |
+| DTE ≤ 1d AND gamma ≤ 6 pts/1% | **HOLD** — put sufficiently OTM, let it expire |
 
-**Seuil gamma roll : 6 pts de delta / 1% move.**
+**Gamma roll threshold: 6 delta points / 1% move.**
 
-Le raisonnement : si une option à 1 jour de maturité a encore un gamma élevé, c'est qu'elle est proche du strike (ATM ou légèrement OTM). Le risque d'un gap à la baisse dans les dernières heures est asymétrique. Si le gamma est faible, l'option est profondément OTM et va expirer sans valeur — on laisse tourner le theta.
+Rationale: if an option with 1 day left still has high gamma, it is near the strike (ATM or slightly OTM). The risk of a gap down in the final hours is asymmetric. Low gamma means the put is deep OTM and will expire worthless — theta is still working, no need to roll.
 
-### Expiration automatique
+### Automatic expiry
 
-Les positions dont la date d'expiry est dépassée sont automatiquement déplacées de `positions[]` vers `history[]` au début de chaque `run_once()` via `expire_positions()`.
+Positions whose expiry date has passed are automatically moved from `positions[]` to `history[]` at the start of each `run_once()` via `expire_positions()`.
 
 ---
 
-## Delta hedge
+## Delta Hedge
 
 ### Instrument
 
-BTC-PERPETUAL short. Le hedge vise à maintenir le delta net du portefeuille (options + hedge) proche de zéro.
+BTC-PERPETUAL short. The hedge targets a net delta of zero across the full portfolio (all open puts combined).
 
-### Calcul du delta cible
+### Target hedge quantity
 
 ```
-target_hedge_qty = −(delta_net_options × contracts)
+target_hedge_qty = −(net_delta_options × contracts)
 ```
 
-Le delta net des options est la somme des deltas de toutes les positions ouvertes. Comme les puts ont un delta négatif, le hedge est un short BTC-PERPETUAL.
+Net options delta is the sum of deltas across all open positions. Since puts have negative delta, the hedge is a BTC-PERPETUAL short.
 
-### Seuil de rebalancement — adaptatif selon l'IV
+### Rebalancing threshold — IV-adjusted
 
-Le seuil n'est pas fixe : il s'élargit quand l'IV monte (la volatilité réalisée est plus forte, rebalancer trop souvent coûte cher en frais de transaction).
+The threshold is not fixed: it widens when IV rises (higher realised vol means rebalancing too often is costly in transaction fees).
 
 ```
 threshold_pct = BASE_PCT × sqrt(IV_current / IV_ref)
@@ -163,84 +163,88 @@ threshold_pct = clamp(threshold_pct, 2%, 8%)
 threshold_btc = threshold_pct / 100
 ```
 
-| Paramètre | Valeur |
+| Parameter | Value |
 |---|---|
-| Bande de base (`BASE_PCT`) | 5% |
-| IV de référence (`IV_REF`) | 70% |
-| Borne basse du seuil | 2% |
-| Borne haute du seuil | 8% |
+| Base band (`BASE_PCT`) | 5% |
+| Reference IV (`IV_REF`) | 70% |
+| Lower bound | 2% |
+| Upper bound | 8% |
 
-**Exemples :**
-- IV = 70% → seuil = 5.0% (cas nominal)
-- IV = 30% → seuil ≈ 3.3% (vol basse, on rebalance plus souvent)
-- IV = 120% → seuil ≈ 6.5% (vol haute, on tolère plus de drift)
+**Examples:**
+- IV = 70% → threshold = 5.0% (nominal)
+- IV = 30% → threshold ≈ 3.3% (low vol, rebalance more often)
+- IV = 120% → threshold ≈ 6.5% (high vol, tolerate more drift)
 
-Le rebalancement est déclenché quand `|delta_drift| > threshold_btc`.
+Rebalancing triggers when `|delta_drift| > threshold_btc`.
 
-### VWAP du hedge
+### Hedge VWAP
 
-Le VWAP (prix d'entrée moyen pondéré) du hedge est mis à jour à chaque exécution :
-- **Short supplémentaire** : VWAP recalculé par moyenne pondérée
-- **Rachat partiel** : VWAP entrée inchangé, PnL réalisé comptabilisé sur la portion clôturée
-- **Clôture totale** : PnL réalisé sur toute la position
+The weighted average entry price of the hedge is updated on each execution:
+- **Additional short**: VWAP recalculated by weighted average
+- **Partial buy-back**: entry VWAP unchanged, realised P&L recorded on the closed portion
+- **Full close**: realised P&L on the entire position
 
 ---
 
 ## PnL Attribution
 
-Pour chaque position, le PnL option est décomposé en 5 contributions :
+For each position, the option P&L is decomposed into 5 contributions:
 
-| Composante | Formule |
+| Component | Formula |
 |---|---|
 | Δ Delta | `\|delta\| × ΔSpot` |
 | Γ Gamma | `0.5 × (−gamma) × ΔSpot²` |
-| Θ Theta | `theta_daily_usd × jours_tenus` |
+| Θ Theta | `theta_daily_usd × days_held` |
 | ν Vega | `(−vega) × ΔIV_pts` |
-| Résidu | `PnL_total − (delta + gamma + theta + vega)` |
+| Residual | `PnL_total − (delta + gamma + theta + vega)` |
 
-Le résidu capture les effets d'ordre supérieur, les frictions et les erreurs de modèle.
+The residual captures higher-order effects, frictions, and model error.
+
+The bid/ask costs are shown separately:
+- **Entry B/A cost**: sold at bid, not mid — locked in at trade entry
+- **Exit B/A cost (estimated)**: additional cost to buy back at ask right now
 
 ---
 
-## Paramètres globaux résumé
+## Global Parameters
 
 ```python
-# Portefeuille
-MAX_PORTFOLIO_BTC  = 3.0     # notionnel total max (BTC)
+# Portfolio
+MAX_PORTFOLIO_BTC  = 3.0     # max total notional (BTC)
 
 # Scan
-SCAN_TTE_MIN       = 5.0     # TTE min (jours)
-SCAN_TTE_MAX       = 30.0    # TTE max (jours)
-SCAN_DELTA_MIN     = -0.30   # delta min
-SCAN_DELTA_MAX     = -0.10   # delta max
-BA_MAX_PCT         = 12.0    # spread B/A max (% du mark)
+SCAN_TTE_MIN       = 5.0     # min DTE (days)
+SCAN_TTE_MAX       = 30.0    # max DTE (days)
+SCAN_DELTA_MIN     = -0.30   # min delta
+SCAN_DELTA_MAX     = -0.10   # max delta
+BA_MAX_PCT         = 12.0    # max bid/ask spread (% of mark)
 
-# Signal d'entrée
-ENTRY_SCORE_MIN    = 0.58    # score composite minimum
-ENTRY_IV_HV_MIN    = 1.10    # ratio IV/HV minimum
+# Entry signal
+ENTRY_SCORE_MIN    = 0.58    # minimum composite score
+ENTRY_IV_HV_MIN    = 1.10    # minimum IV/HV ratio (per option)
 
 # Roll
-ROLL_TRIGGER            = 1.0   # TTE (jours) pour entrer en fenêtre roll
-GAMMA_ROLL_THRESHOLD    = 6.0   # gamma_pts au-dessus duquel on rolle
+ROLL_TRIGGER            = 1.0   # DTE (days) to enter roll window
+GAMMA_ROLL_THRESHOLD    = 6.0   # gamma_pts above which we roll
 
 # Hedge
-HEDGE_THRESHOLD_BASE_PCT = 5.0  # bande de base (% delta)
-HEDGE_IV_REF             = 70.0 # IV de référence pour calibration
-# seuil effectif clampé entre 2% et 8%
+HEDGE_THRESHOLD_BASE_PCT = 5.0  # base rebalancing band (% delta)
+HEDGE_IV_REF             = 70.0 # reference IV for calibration
+# effective threshold clamped between 2% and 8%
 ```
 
 ---
 
 ## Dashboard
 
-Accessible sur la GitHub Page du repo. Mis à jour toutes les heures par GitHub Actions. Contient :
+Available on the repo's GitHub Page. Updated hourly by GitHub Actions. Contains:
 
-- **Header** : spot, PnL total, TTE min, drift hedge
-- **Positions ouvertes** : strike, TTE, prime, mark/ask, IV, greeks, PnL, score d'entrée, sizing
-- **Greeks nets** : delta/gamma/vega/theta cumulés + état hedge + barre de drift
-- **PnL global** : option + hedge (MtM + réalisé) + funding + cumul stratégie
-- **Attribution PnL** : décomposition delta/gamma/theta/vega/résidu par position
-- **Opportunités d'entrée** : top 5 candidats scorés du dernier scan avec contexte de marché et rappel des seuils
-- **Historique hedge** : toutes les exécutions BTC-PERPETUAL
-- **Alertes** : roll, rebalancement, spike IV, stop-loss
-- **Graphiques** : greeks et PnL dans le temps
+- **Header chips**: spot (with 1h/4h/1d moves), total P&L, min DTE, net delta + rebalancing threshold, last transaction
+- **Open positions**: strike, DTE, premium, mark/ask, IV, greeks, P&L, entry score, sizing
+- **Net greeks**: delta/gamma/vega/theta cumulated + hedge status + drift bar
+- **Global P&L**: option breakdown (mid/mid + B/A entry cost) + hedge floating MtM + realised section (closed options + hedge rebalances)
+- **PnL attribution per position**: delta/gamma/theta/vega/residual decomposition + B/A costs + theta/VRP capture
+- **Entry opportunities**: top 5 scored candidates (excluding held instruments) with market context and entry thresholds
+- **Hedge history**: all BTC-PERPETUAL executions
+- **Alerts**: roll, rebalancing, IV spike, stop-loss
+- **Charts**: greeks, P&L and spot over time with strike levels as horizontal lines

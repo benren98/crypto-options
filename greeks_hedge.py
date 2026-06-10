@@ -998,9 +998,13 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
 
     # ── Sauvegarder scan_entry.json (top 5 opportunités pour le dashboard) ──────
     try:
+        _open_names = {p["instrument_name"] for p in state.get("positions", [])}
         _scan_candidates = fetch_scored_candidates(
             currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
+        # Exclure les instruments déjà en portefeuille
+        if not _scan_candidates.empty and _open_names:
+            _scan_candidates = _scan_candidates[~_scan_candidates["instrument_name"].isin(_open_names)]
         _top5 = _scan_candidates.head(5).copy() if not _scan_candidates.empty else pd.DataFrame()
         _scan_out = {
             "ts": now_dt(),
@@ -1262,11 +1266,21 @@ def scan_entry(currency: str = CURRENCY,
     else:
         print(f"  -> IV trop basse, peu d'edge a vendre de la vol")
 
+    # Charger les instruments déjà en portefeuille pour les exclure du scan
+    try:
+        _state = load_positions()
+        _held = {p["instrument_name"] for p in _state.get("positions", [])}
+    except Exception:
+        _held = set()
+
     print(f"\n  Scan des puts OTM en cours...")
     df = fetch_scored_candidates(currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
                                   ctx["curr_iv"], tte_min=tte_min, tte_max=tte_max)
     df_all = fetch_scored_candidates(currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
                                       ctx["curr_iv"], tte_min=tte_min, tte_max=tte_max, ba_max_pct=999)
+    if _held:
+        df     = df[~df["instrument_name"].isin(_held)]
+        df_all = df_all[~df_all["instrument_name"].isin(_held)]
 
     if df.empty:
         print("  Aucun candidat trouve (apres filtre B/A et delta).")
