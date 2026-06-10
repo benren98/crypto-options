@@ -265,12 +265,13 @@ def _attr_card(p: dict, live: dict) -> str:
     entry_iv   = float(p.get("iv_at_entry", 0))
     gamma_e    = float(p.get("gamma_at_entry", 7e-5))
 
-    curr_mark  = float(live.get("current_price_btc", 0))
+    # mark/ask fallback to entry prices when live data not yet available
+    curr_mark  = float(live.get("current_price_btc", entry_mark))
     curr_bid   = float(live.get("current_bid_btc",   curr_mark))
     curr_ask   = float(live.get("current_ask_btc",   curr_mark))
     curr_iv    = float(live.get("current_iv_pct", entry_iv))
-    d_live     = float(live.get("live_delta", 0))
-    vega_live  = float(live.get("live_vega", 0))
+    d_live     = float(live.get("live_delta", p.get("delta_at_entry", 0)))
+    vega_live  = float(live.get("live_vega", p.get("vega_at_entry", 0)))
     days_held  = float(live.get("days_held", 0))
     theta_d       = float(live.get("theta_daily_now_usd", 0))
     theta_theory  = float(live.get("theta_theory_usd", 0))
@@ -294,7 +295,16 @@ def _attr_card(p: dict, live: dict) -> str:
     ba_exit_est = -(curr_ask - curr_mark) * spot         # négatif = coût supplémentaire
 
     total_opt  = mid_mid + ba_entry
-    tte        = float(live.get("tte_days", 0))
+    # TTE fallback: compute from expiry_dt when live data not yet available
+    _tte_live = live.get("tte_days")
+    if _tte_live is not None:
+        tte = float(_tte_live)
+    else:
+        try:
+            _exp_dt = datetime.fromisoformat(p.get("expiry_dt","").replace("+00:00","")).replace(tzinfo=timezone.utc)
+            tte = max(0.0, (_exp_dt - datetime.now(timezone.utc)).total_seconds() / 86400)
+        except Exception:
+            tte = 0.0
     cl_tte     = "warn" if tte <= 1 else "neu"
 
     return f"""<div class="card">
@@ -368,12 +378,23 @@ def _positions_table() -> str:
         live    = pd_map.get(instr, {})
         strike  = int(p.get("strike", 0))
         expiry  = (p.get("expiry_dt","") or "")[:10]
-        tte     = float(live.get("tte_days", 0))
+        # TTE fallback: compute from expiry_dt when live data not yet available
+        _tte_live = live.get("tte_days")
+        if _tte_live is not None:
+            tte = float(_tte_live)
+        else:
+            try:
+                _exp_dt = datetime.fromisoformat(p.get("expiry_dt","").replace("+00:00","")).replace(tzinfo=timezone.utc)
+                tte = max(0.0, (_exp_dt - datetime.now(timezone.utc)).total_seconds() / 86400)
+            except Exception:
+                tte = 0.0
         cl_tte  = "warn" if tte <= 1 else ("neu" if tte > 3 else "warn")
         entry_p = float(p.get("entry_price", 0))
         entry_s = float(p.get("entry_spot", spot))
-        curr_m  = float(live.get("current_price_btc", 0))
-        ask     = float(live.get("current_ask_btc", 0))
+        # mark/ask fallback to entry prices when live data not yet available
+        _entry_mark = float(p.get("entry_mark_price", entry_p))
+        curr_m  = float(live.get("current_price_btc", _entry_mark))
+        ask     = float(live.get("current_ask_btc", _entry_mark))
         iv_e    = float(p.get("iv_at_entry", 0))
         iv_c    = float(live.get("current_iv_pct", iv_e))
         div     = iv_c - iv_e
@@ -815,10 +836,7 @@ else:
     for p in positions_list:
         instr = p.get("instrument_name","")
         live  = pd_map.get(instr, {})
-        if live:
-            html += _attr_card(p, live)
-        else:
-            html += f'<div class="card"><h2>📐 {instr}</h2><p style="color:#8b949e;font-size:0.85rem">Données live non disponibles (prochain cycle Actions)</p></div>'
+        html += _attr_card(p, live)  # live={} fallback handled inside _attr_card
 
     html += "</div>\n<div class=\"grid\" style=\"margin-top:16px\">\n"
     html += _scan_entry_card()
