@@ -403,9 +403,10 @@ def _positions_table() -> str:
         iv_e    = float(p.get("iv_at_entry", 0))
         iv_c    = float(live.get("current_iv_pct", iv_e))
         div     = iv_c - iv_e
-        d_live  = float(live.get("live_delta", p.get("delta_at_entry", 0)))
-        gamma   = float(live.get("live_gamma", p.get("gamma_at_entry", 0)))
-        vega    = float(live.get("live_vega",  p.get("vega_at_entry",  0)))
+        _c      = float(p.get("contracts", 1))
+        d_live  = float(live.get("live_delta", p.get("delta_at_entry", 0) * _c))
+        gamma   = float(live.get("live_gamma", p.get("gamma_at_entry", 0) * _c))
+        vega    = float(live.get("live_vega",  p.get("vega_at_entry",  0) * _c))
         pnl_opt = float(live.get("pnl_option_usd", 0))
         pnl_pct = float(live.get("pnl_pct_of_premium", 0))
         cl_pnl  = color(pnl_opt)
@@ -467,7 +468,9 @@ def _greeks_card() -> str:
     # = net_gamma / total_contracts — consistent with per-position display
     _total_contracts = sum(float(p.get("contracts", 1)) for p in positions_list) or 1
     gamma_pts  = abs(net_gamma) / _total_contracts * spot * 0.01 * 100
-    delta_pct  = abs(net_delta) * 100
+    # delta_pct = weighted average across positions (= net_delta_BTC / total_contracts × 100)
+    # net_delta in BTC is the correct sum for hedging; % is the avg rate per BTC notional
+    delta_pct  = abs(net_delta) / _total_contracts * 100
     reb_count  = hedge_data.get("rebalances", 0)
 
     hh = hedge_data.get("history", [])
