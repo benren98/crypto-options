@@ -85,7 +85,7 @@ contracts = max(0.1, contracts)
 contracts = min(contracts, MAX_PORTFOLIO_BTC − used_btc)
 ```
 
-Portfolio cap: **3 BTC notional total**. Sizing reflects conviction: a score of 0.6 opens 0.6 BTC, a score of 1.0 opens 1.0 BTC (1 Deribit contract = 1 BTC).
+Portfolio cap: **5 BTC notional total**. Sizing reflects conviction: a score of 0.6 opens 0.6 BTC, a score of 1.0 opens 1.0 BTC (1 Deribit contract = 1 BTC).
 
 ---
 
@@ -95,7 +95,7 @@ Portfolio cap: **3 BTC notional total**. Sizing reflects conviction: a score of 
 
 | Parameter | Value |
 |---|---|
-| Max total notional | 3 BTC |
+| Max total notional | 5 BTC |
 
 ### "Always in a position" guarantee
 
@@ -103,7 +103,7 @@ If the portfolio is empty (after a roll or on first run), the algo **always open
 
 ### Opportunistic entries
 
-When total notional is below the cap (< 3 BTC), the algo attempts to open an additional position on each run if the market signal is active and the best candidate (not already held) meets the minimum score. The top-5 opportunities shown in the dashboard always exclude instruments already in the portfolio.
+When total notional is below the cap (< 5 BTC), the algo attempts to open an additional position on each run if the market signal is active and the best candidate (not already held) meets the minimum score. The top-5 opportunities shown in the dashboard always exclude instruments already in the portfolio.
 
 ---
 
@@ -210,7 +210,7 @@ The bid/ask costs are shown separately:
 
 ```python
 # Portfolio
-MAX_PORTFOLIO_BTC  = 3.0     # max total notional (BTC)
+MAX_PORTFOLIO_BTC  = 5.0     # max total notional (BTC)
 
 # Scan
 SCAN_TTE_MIN       = 1.0     # min DTE (days)

@@ -729,7 +729,7 @@ def _scan_entry_card() -> str:
     Score = [40% × (IV<sub>bid</sub>/HV − 1) + 30% × rang DVOL 30j + 30% × yield bid] × <b>max(0, 1 − Γ/10)</b> ·
     Score brut en gris = avant pénalité gamma ·
     <b>Seuils</b> : score ≥ 0.58 · IV/HV ≥ 1.10 · B/A ≤ 12% · DVOL ≥ 35% ·
-    <b>Sizing</b> : round(score, 1) BTC · max 3 BTC
+    <b>Sizing</b> : round(score, 1) BTC · max 5 BTC
   </div>
 </div>"""
 
@@ -859,7 +859,7 @@ else:
   <div class="chip">
     <span class="chip-label">Positions</span>
     <span class="chip-value">{len(positions_list)}</span>
-    <span class="chip-delta neu">Nominal <b>{f(sum(float(p.get("contracts",1)) for p in positions_list),1)} BTC</b> / {f(3.0,1)} BTC max</span>
+    <span class="chip-delta neu">Nominal <b>{f(sum(float(p.get("contracts",1)) for p in positions_list),1)} BTC</b> / {f(5.0,1)} BTC max</span>
     <span class="chip-delta neu">TTE min <span class="{_tte_cl}">{f(_tte_min,2)}j</span></span>
   </div>
   <div class="chip">

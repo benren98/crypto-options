@@ -55,15 +55,15 @@ RISK_FREE_RATE  = 0.05           # taux sans risque annualisé (approx)
 CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur Deribit)
 
 # ── Gestion de portefeuille ────────────────────────────────────────────────────
-MAX_PORTFOLIO_BTC        = 3.0   # notionnel total max en BTC (somme des contracts)
+MAX_PORTFOLIO_BTC        = 5.0   # notionnel total max en BTC (somme des contracts)
 BA_MAX_PCT               = 12.0  # spread bid/ask max en % du mark pour entrer
 ENTRY_SCORE_MIN          = 0.58  # score minimum pour entrée opportuniste
 ENTRY_IV_HV_MIN          = 1.10  # ratio IV/HV minimum pour entrée opportuniste
 ENTRY_SCORE_REENTRY_BOOST= 0.05  # amélioration score nécessaire pour re-entrer un instrument déjà tenu
 DELTA_MIN_SPACING        = 0.08  # espacement min |delta| entre positions sur la même expiry
-GAMMA_SCORE_CAP          = 10.0  # gamma_pts au-delà duquel le score est réduit à 0
+GAMMA_SCORE_CAP          = 15.0  # gamma_pts au-delà duquel le score est réduit à 0
                                   # pénalité : score × max(0, 1 - gamma_pts / GAMMA_SCORE_CAP)
-                                  # ex: gamma=5 → ×0.50 ; gamma=8 → ×0.20 ; gamma≥10 → éliminé
+                                  # ex: gamma=5 → ×0.67 ; gamma=10 → ×0.33 ; gamma≥15 → éliminé
 SCAN_TTE_MIN       = 1.0  # TTE min pour le scan (roll + opportuniste)
 SCAN_TTE_MAX       = 30.0 # TTE max pour le scan
 SCAN_DELTA_MIN     = -0.30
