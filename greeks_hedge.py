@@ -61,7 +61,7 @@ ENTRY_SCORE_MIN          = 0.58  # score minimum pour entrée opportuniste
 ENTRY_IV_HV_MIN          = 1.10  # ratio IV/HV minimum pour entrée opportuniste
 ENTRY_SCORE_REENTRY_BOOST= 0.05  # amélioration score nécessaire pour re-entrer un instrument déjà tenu
 DELTA_MIN_SPACING        = 0.08  # espacement min |delta| entre positions sur la même expiry
-SCAN_TTE_MIN       = 5.0  # TTE min pour le scan (roll + opportuniste)
+SCAN_TTE_MIN       = 1.0  # TTE min pour le scan (roll + opportuniste)
 SCAN_TTE_MAX       = 30.0 # TTE max pour le scan
 SCAN_DELTA_MIN     = -0.30
 SCAN_DELTA_MAX     = -0.10
@@ -319,7 +319,7 @@ def open_position(instrument: dict, entry_price: float,
         "gamma_at_entry":   instrument.get("gamma", 7e-5),
         "vega_at_entry":    instrument.get("vega", 0),
         "theta_at_entry":   instrument.get("theta", 0),
-        "iv_at_entry":      instrument["mark_iv"],
+        "iv_at_entry":      instrument.get("bid_iv") or instrument["mark_iv"],
         "entry_price":      entry_price,
         "entry_mark_price": instrument.get("mark_price", entry_price),
         "entry_price_usd":  round(entry_price * spot, 2),
@@ -1179,7 +1179,9 @@ def fetch_scored_candidates(currency: str, spot: float,
             t      = fetch_ticker_full(inst["instrument_name"])
             greeks = t.get("greeks") or {}
             delta  = greeks.get("delta")
-            iv     = t.get("mark_iv")
+            mark_iv = t.get("mark_iv") or 0.0
+            bid_iv  = t.get("bid_iv") or mark_iv   # IV implicite au bid (prix vendeur); fallback mid
+            iv     = mark_iv                        # gardé pour affichage
             mark   = t.get("mark_price") or 0
             bid    = t.get("best_bid_price") or 0
             ask    = t.get("best_ask_price") or 0
@@ -1197,11 +1199,11 @@ def fetch_scored_candidates(currency: str, spot: float,
             moneyness = (inst["strike"] / spot - 1) * 100
             tte_yr    = tte / 365
 
-            # Score composite
-            s_iv_hv = max(0.0, min(1.0, (iv / hv_10d - 1.0)))
+            # Score composite — utilise bid_iv et bid_price (prix réel de vente)
+            s_iv_hv = max(0.0, min(1.0, (bid_iv / hv_10d - 1.0)))
             # rang IV : contexte marché (DVOL) dans sa plage 30j, commun à tous les candidats
             s_rank  = max(0.0, min(1.0, (curr_iv - iv_min) / max(iv_max - iv_min, 5)))
-            yield_a = mark / tte_yr
+            yield_a = bid / tte_yr if bid > 0 else mark / tte_yr  # bid=0 → illiquide, fallback mid
             s_yield = min(1.0, yield_a / 0.20)
             score   = round(0.40 * s_iv_hv + 0.30 * s_rank + 0.30 * s_yield, 3)
 
@@ -1214,20 +1216,21 @@ def fetch_scored_candidates(currency: str, spot: float,
                 "gamma":           greeks.get("gamma", 0),
                 "vega":            greeks.get("vega", 0),
                 "theta":           greeks.get("theta", 0),
-                "mark_iv":         iv,
+                "mark_iv":         mark_iv,
+                "bid_iv":          bid_iv,
                 "mark_price":      mark,
                 "bid_price":       bid,
                 "ask_price":       ask,
                 "open_interest":   oi,
                 "moneyness":       round(moneyness, 1),
-                "premium_usd":     round(mark * spot, 2),
+                "premium_usd":     round(bid * spot if bid > 0 else mark * spot, 2),
                 "yield_ann_pct":   round(yield_a * 100, 1),
                 "ba_pct":          round(ba_pct, 1),
                 "score":           score,
                 "s_iv_hv":         round(s_iv_hv, 3),
                 "s_rank":          round(s_rank, 3),
                 "s_yield":         round(s_yield, 3),
-                "iv_hv_ratio":     round(iv / hv_10d, 3),
+                "iv_hv_ratio":     round(bid_iv / hv_10d, 3),
             })
         except Exception:
             continue
@@ -1361,7 +1364,7 @@ def scan_entry(currency: str = CURRENCY,
         print(f"  {i+1:<3} {r['instrument_name']:<30} "
               f"{r['tte_days']:>5.1f}j "
               f"{r['delta']:>+7.3f} "
-              f"{r['mark_iv']:>5.1f}% "
+              f"{r['bid_iv']:>5.1f}% "
               f"{r['moneyness']:>+6.1f}% "
               f"${r['premium_usd']:>7,.0f} "
               f"{r['yield_ann_pct']:>8.1f}% "

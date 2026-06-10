@@ -34,7 +34,7 @@ Sell OTM BTC puts with short maturities (5–30 days), delta-hedged via a BTC-PE
 | Parameter | Value |
 |---|---|
 | Type | OTM puts only |
-| DTE | 5 – 30 days |
+| DTE | 1 – 30 days |
 | Delta | −0.10 to −0.30 |
 | Max bid/ask spread | 12% of mark |
 
@@ -43,14 +43,14 @@ Sell OTM BTC puts with short maturities (5–30 days), delta-hedged via a BTC-PE
 Each option receives a score between 0 and 1:
 
 ```
-score = 0.40 × s_iv_hv + 0.30 × s_rank + 0.50 × s_yield
+score = 0.40 × s_iv_hv + 0.30 × s_rank + 0.30 × s_yield
 ```
 
 **IV/HV component** — captures the volatility risk premium for this specific option:
 ```
-s_iv_hv = clamp(mark_IV / HV_10d − 1.0, 0, 1)
+s_iv_hv = clamp(bid_IV / HV_10d − 1.0, 0, 1)
 ```
-0 when IV = HV (no premium), 1 when IV = 2× HV. Each option uses its own `mark_iv` (which includes the volatility skew). Weight: 40%.
+0 when bid IV = HV (no premium), 1 when bid IV = 2× HV. Uses `bid_iv` (IV implied by the bid price — the price we actually sell at), not mid IV. Weight: 40%.
 
 **IV rank component** — measures where the market's overall vol level (DVOL) sits in its 30-day range:
 ```
@@ -62,9 +62,9 @@ Note: individual option `mark_iv` is not used here because OTM puts always have 
 
 **Yield component** — annualised premium normalised to 20% BTC/year:
 ```
-s_yield = min(1.0, (mark / DTE_years) / 0.20)
+s_yield = min(1.0, (bid_price / DTE_years) / 0.20)
 ```
-Reaches 1 when the annualised yield hits 20% BTC. Weight: 30%.
+Uses `bid_price` (the price we actually receive when selling). Reaches 1 when the annualised yield hits 20% BTC. Weight: 30%.
 
 ### Entry thresholds
 
@@ -213,7 +213,7 @@ The bid/ask costs are shown separately:
 MAX_PORTFOLIO_BTC  = 3.0     # max total notional (BTC)
 
 # Scan
-SCAN_TTE_MIN       = 5.0     # min DTE (days)
+SCAN_TTE_MIN       = 1.0     # min DTE (days)
 SCAN_TTE_MAX       = 30.0    # max DTE (days)
 SCAN_DELTA_MIN     = -0.30   # min delta
 SCAN_DELTA_MAX     = -0.10   # max delta
