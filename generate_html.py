@@ -414,9 +414,11 @@ def _positions_table() -> str:
         iv_c    = float(live.get("current_iv_pct", iv_e))
         div     = iv_c - iv_e
         _c      = float(p.get("contracts", 1))
-        d_live  = float(live.get("live_delta", p.get("delta_at_entry", 0) * _c))
-        gamma   = float(live.get("live_gamma", p.get("gamma_at_entry", 0) * _c))
-        vega    = float(live.get("live_vega",  p.get("vega_at_entry",  0) * _c))
+        d_live     = float(live.get("live_delta", p.get("delta_at_entry", 0) * _c))
+        gamma      = float(live.get("live_gamma", p.get("gamma_at_entry", 0) * _c))
+        vega       = float(live.get("live_vega",  p.get("vega_at_entry",  0) * _c))
+        delta_pct  = d_live / _c * 100                       # % moyen par contrat
+        gamma_pts  = (gamma / _c) * spot * 0.01 * 100        # pts Δ / 1% spot, par contrat
         pnl_opt = float(live.get("pnl_option_usd", 0))
         pnl_pct = float(live.get("pnl_pct_of_premium", 0))
         cl_pnl  = color(pnl_opt)
@@ -436,8 +438,8 @@ def _positions_table() -> str:
       <td>{f(entry_p,5)} <span class="muted" style="font-size:0.75rem">(${f(entry_p*entry_s,0)})</span></td>
       <td>{f(curr_m,5)} <span class="muted" style="font-size:0.75rem">(ask {f(ask,5)})</span></td>
       <td>{f(iv_e,1)}% → <b>{f(iv_c,1)}%</b> <span class="{cl_iv}" style="font-size:0.75rem">({f(div,1,True)}pts)</span></td>
-      <td>{f(d_live,4)}</td>
-      <td style="font-size:0.75rem;color:#8b949e">{f(gamma,6)} / {f(abs(vega),2)}$</td>
+      <td>{f(d_live,4)} <span class="muted" style="font-size:0.75rem">({f(delta_pct,1)}%)</span></td>
+      <td>{f(gamma,6)} <span class="muted" style="font-size:0.75rem">({f(gamma_pts,2)} pts)</span> / <span style="font-size:0.75rem;color:#8b949e">{f(abs(vega),2)}$</span></td>
       <td class="{cl_pnl}"><b>{f(pnl_opt,0,True)}$</b></td>
       <td class="{cl_pnl}">{f(pnl_pct,1,True)}%</td>
       <td style="text-align:center">{score_html}</td>
