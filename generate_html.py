@@ -679,12 +679,15 @@ def _scan_entry_card() -> str:
             dc = "pos" if delta_sc > 0.05 else ("warn" if delta_sc > 0 else "neg")
             score_cell += f' <span class="{dc}" style="font-size:0.75rem">({f(delta_sc,3,True)})</span>'
         row_style = "opacity:0.5" if status == "filtered" else ""
+        gpts    = float(c.get("gamma_pts", 0))
+        gpts_cl = "neg" if gpts > 5 else ("warn" if gpts > 2.5 else "ok")
         rows += f"""<tr {"class='hl'" if (i==0 and status=="eligible") else ""} style="{row_style}">
       <td class="left"><span title="{s_lbl}">{s_icon}</span> <b>{c.get("instrument_name","—")}</b></td>
       <td class="{sc_cl}" style="font-weight:700">{score_cell}</td>
       <td>${int(c.get("strike",0)):,}</td>
       <td>{f(c.get("tte_days",0),1)}j</td>
       <td>{f(c.get("delta",0),3)}</td>
+      <td class="{gpts_cl}">{f(gpts,2)}</td>
       <td>{f(c.get("mark_iv",0),1)}%</td>
       <td class="{ivhv_cl}">{f(ivhv,2)}x</td>
       <td>{f(c.get("yield_ann_pct",0),1)}%/an</td>
@@ -707,10 +710,11 @@ def _scan_entry_card() -> str:
       <th style="text-align:left">Instrument</th>
       <th>Score <span style="font-weight:400;font-size:0.75rem;color:#484f58">(Δ vs entrée)</span></th>
       <th>Strike</th><th>TTE</th><th>Delta</th>
+      <th title="Δ delta points par 1% move du spot (par contrat)">Γ pts/1%</th>
       <th>IV option</th><th>IV/HV <span style="font-weight:400;color:#484f58">(≥1.10)</span></th>
       <th>Yield ann.</th><th>B/A <span style="font-weight:400;color:#484f58">(≤12%)</span></th><th>Prime mid ($)</th>
     </tr>
-    {rows if rows else '<tr><td colspan="10" class="muted" style="text-align:center">Aucun candidat</td></tr>'}
+    {rows if rows else '<tr><td colspan="11" class="muted" style="text-align:center">Aucun candidat</td></tr>'}
   </table>
   </div>
   <div style="margin-top:10px;font-size:0.78rem;color:#8b949e">
