@@ -326,6 +326,7 @@ def _attr_card(p: dict, live: dict) -> str:
   <h2>Attribution PnL — {instr}</h2>
   <div style="font-size:0.75rem;color:#8b949e;margin-bottom:10px">
     Spot {f(ds,0,True)}$&nbsp;·&nbsp;IV {f(div,1,True)}pts&nbsp;·&nbsp;{f(days_held*24,1)}h tenu&nbsp;·&nbsp;TTE <span class="{cl_tte}">{f(tte,2)}j</span>
+    &nbsp;·&nbsp;Prime encaissée <span style="color:#3fb950;font-weight:600">+{f(entry_p * entry_spot * contracts, 0)}$</span> <span style="color:#484f58">({f(contracts,1)} BTC × {f(entry_p,5)} BTC × ${f(entry_spot,0)})</span>
   </div>
   <table class="tbl">
     <tr><th style="text-align:left">Composante</th><th>Valeur ($)</th><th>% PnL opt.</th></tr>
