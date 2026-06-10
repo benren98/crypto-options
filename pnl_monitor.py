@@ -668,9 +668,16 @@ def compute_option_pnl(position: dict, spot: float) -> dict:
     pnl_opt_btc = (entry_p - curr_mark) * contracts
     pnl_opt_usd = pnl_opt_btc * spot
 
+    # Greeks scaled by contracts (Deribit quotes per 1 BTC contract)
+    scaled_delta = curr_delta * contracts
+    scaled_gamma = curr_gamma * contracts
+    scaled_vega  = curr_vega  * contracts
+
+    # Theta theory: theta_at_entry is in BTC/day -> convert to USD/day, scale by contracts
     theta_entry_btc = abs(position.get("theta_at_entry", 0))
-    theta_theory_usd = theta_entry_btc * entry_s * days_held
-    theta_deribit_usd = abs(curr_theta) if curr_theta else 0.0
+    theta_theory_usd = theta_entry_btc * entry_s * contracts * days_held
+    # Deribit theta is USD/day per contract -> scale by contracts
+    theta_deribit_usd = abs(curr_theta) * contracts if curr_theta else 0.0
 
     vrp_capture_pct = (pnl_opt_usd / theta_theory_usd * 100
                        if theta_theory_usd > 0.5 and days_held > 0.25
@@ -694,9 +701,9 @@ def compute_option_pnl(position: dict, spot: float) -> dict:
         "theta_theory_usd":   round(theta_theory_usd, 2),
         "theta_daily_now_usd":round(theta_deribit_usd, 2),
         "vrp_capture_pct":    round(vrp_capture_pct, 1),
-        "live_delta":         round(curr_delta, 5),
-        "live_gamma":         round(curr_gamma, 7),
-        "live_vega":          round(curr_vega,  4),
+        "live_delta":         round(scaled_delta, 5),
+        "live_gamma":         round(scaled_gamma, 7),
+        "live_vega":          round(scaled_vega,  4),
     }
 
 
