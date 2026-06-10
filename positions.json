@@ -113,12 +113,50 @@
       ],
       "entry_score": 0.615,
       "entry_sizing_btc": 0.6
+    },
+    {
+      "instrument_name": "BTC-19JUN26-58000-P",
+      "strike": 58000.0,
+      "expiry_dt": "2026-06-19 08:00:00+00:00",
+      "tte_at_entry": 9.23,
+      "delta_at_entry": -0.23,
+      "gamma_at_entry": 6e-05,
+      "vega_at_entry": 29.67927,
+      "theta_at_entry": -84.36503,
+      "iv_at_entry": 52.46,
+      "entry_price": 0.0115,
+      "entry_mark_price": 0.0116,
+      "entry_price_usd": 706.45,
+      "entry_spot": 61430.29,
+      "contracts": 0.2,
+      "entry_ts": "2026-06-10 02:31:48 UTC",
+      "hedge_qty": -0.046,
+      "hedge_entry_spot": 61430.29,
+      "hedge_avg_entry": 61420.11,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-06-10 02:31:48 UTC",
+          "side": "SELL",
+          "qty": -0.046,
+          "spot": 61430.29,
+          "perp_price": 61420.11,
+          "qty_before": 0.0,
+          "qty_after": -0.046,
+          "vwap_before": 0.0,
+          "vwap_after": 61420.11,
+          "drift": 0.23,
+          "note": "hedge initial (perp mark $61420.11 vs index $61430.29)"
+        }
+      ],
+      "entry_score": 0.606,
+      "entry_sizing_btc": 0.2
     }
   ],
   "hedge": {
-    "qty": -0.48284,
-    "avg_entry": 61731.78,
-    "rebalances": 10,
+    "qty": -0.52884,
+    "avg_entry": 61705.56,
+    "rebalances": 11,
     "realized_pnl_usd": -121.28,
     "history": [
       {
@@ -170,7 +208,7 @@
         "drift": 0.06982,
         "realized_pnl_usd": -124.95,
         "realized_cumul_usd": -124.95,
-        "note": "rachat partiel \\u00e2\\u20ac\\u201d VWAP entr\\u00c3\\u00a9e inchang\\u00c3\\u00a9"
+        "note": "rachat partiel \\\\u00e2\\\\u20ac\\\\u201d VWAP entr\\\\u00c3\\\\u00a9e inchang\\\\u00c3\\\\u00a9"
       },
       {
         "ts": "2026-06-09 01:28:42 UTC",
@@ -197,7 +235,7 @@
         "realized_pnl_usd": 0.0,
         "realized_cumul_usd": -124.95,
         "delta_net_after_pct": -0.0,
-        "note": "short augment\\u00e9 \\u2014 VWAP recalcul\\u00e9"
+        "note": "short augment\\\\u00e9 \\\\u2014 VWAP recalcul\\\\u00e9"
       },
       {
         "ts": "2026-06-09 19:08:09 UTC",
@@ -212,7 +250,7 @@
         "realized_pnl_usd": 3.67,
         "realized_cumul_usd": -121.28,
         "delta_net_after_pct": 0.0,
-        "note": "rachat partiel \\u2014 VWAP entr\\u00e9e inchang\\u00e9"
+        "note": "rachat partiel \\\\u2014 VWAP entr\\\\u00e9e inchang\\\\u00e9"
       },
       {
         "ts": "2026-06-10 01:45:02 UTC",
@@ -250,6 +288,18 @@
         "vwap_after": 61731.78,
         "drift": 0.15068,
         "note": "entree opportuniste BTC-26JUN26-55000-P"
+      },
+      {
+        "ts": "2026-06-10 02:31:48 UTC",
+        "side": "SELL",
+        "qty": -0.046,
+        "spot": 61430.29,
+        "qty_before": -0.48284,
+        "qty_after": -0.52884,
+        "vwap_before": 61731.78,
+        "vwap_after": 61705.56,
+        "drift": 0.23,
+        "note": "entree opportuniste BTC-19JUN26-58000-P"
       }
     ]
   },
