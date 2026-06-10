@@ -263,15 +263,16 @@ def _attr_card(p: dict, live: dict) -> str:
     entry_p    = float(p.get("entry_price", 0))
     entry_mark = float(p.get("entry_mark_price", entry_p))
     entry_iv   = float(p.get("iv_at_entry", 0))
-    gamma_e    = float(p.get("gamma_at_entry", 7e-5))
+    contracts  = float(p.get("contracts", 1))
+    gamma_e    = float(p.get("gamma_at_entry", 7e-5)) * contracts  # scaled by contracts
 
     # mark/ask fallback to entry prices when live data not yet available
     curr_mark  = float(live.get("current_price_btc", entry_mark))
     curr_bid   = float(live.get("current_bid_btc",   curr_mark))
     curr_ask   = float(live.get("current_ask_btc",   curr_mark))
     curr_iv    = float(live.get("current_iv_pct", entry_iv))
-    d_live     = float(live.get("live_delta", p.get("delta_at_entry", 0)))
-    vega_live  = float(live.get("live_vega", p.get("vega_at_entry", 0)))
+    d_live     = float(live.get("live_delta", p.get("delta_at_entry", 0) * contracts))
+    vega_live  = float(live.get("live_vega", p.get("vega_at_entry", 0) * contracts))
     days_held  = float(live.get("days_held", 0))
     theta_d       = float(live.get("theta_daily_now_usd", 0))
     theta_theory  = float(live.get("theta_theory_usd", 0))
@@ -280,7 +281,7 @@ def _attr_card(p: dict, live: dict) -> str:
 
     ds         = spot - entry_spot
     div        = curr_iv - entry_iv
-    gamma_pts  = gamma_e * (spot * 0.01) * 100
+    gamma_pts  = gamma_e * (spot * 0.01) * 100  # pts Δ / 1% move, already scaled
 
     pnl_delta  = abs(d_live) * ds
     pnl_gamma  = 0.5 * (-gamma_e) * ds ** 2
