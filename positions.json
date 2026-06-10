@@ -55,12 +55,32 @@
       ],
       "entry_score": 0.634,
       "entry_sizing_btc": 0.6
+    },
+    {
+      "instrument_name": "BTC-19JUN26-56000-P",
+      "strike": 56000.0,
+      "expiry_dt": "2026-06-19 08:00:00+00:00",
+      "tte_at_entry": 9.26,
+      "delta_at_entry": -0.1333,
+      "gamma_at_entry": 4e-05,
+      "vega_at_entry": 21.13415,
+      "theta_at_entry": -64.5475,
+      "iv_at_entry": 56.57,
+      "entry_price": 0.006,
+      "entry_mark_price": 0.0063,
+      "entry_price_usd": 369.65,
+      "entry_spot": 61607.89,
+      "contracts": 0.6,
+      "entry_ts": "2026-06-10 01:46:00 UTC",
+      "entry_score": 0.631,
+      "entry_sizing_btc": 0.6,
+      "note": "Position fictive ouverte manuellement le 2026-06-10"
     }
   ],
   "hedge": {
-    "qty": -0.31245,
-    "avg_entry": 61824.23,
-    "rebalances": 8,
+    "qty": -0.39243,
+    "avg_entry": 61778.9,
+    "rebalances": 9,
     "realized_pnl_usd": -121.28,
     "history": [
       {
@@ -167,6 +187,19 @@
         "vwap_after": 61824.23,
         "drift": 0.10371,
         "note": "entree opportuniste BTC-19JUN26-55000-P"
+      },
+      {
+        "ts": "2026-06-10 01:46:00 UTC",
+        "side": "SELL",
+        "qty": -0.07998,
+        "spot": 61607.89,
+        "perp_price": 61601.8,
+        "qty_before": -0.31245,
+        "qty_after": -0.39243,
+        "vwap_before": 61824.23,
+        "vwap_after": 61778.9,
+        "drift": 0.1333,
+        "note": "entree opportuniste BTC-19JUN26-56000-P"
       }
     ]
   },
@@ -197,5 +230,5 @@
       "pnl_usd": 407.63
     }
   ],
-  "last_updated": "2026-06-09 02:48:55 UTC"
+  "last_updated": "2026-06-10 01:46:00 UTC"
 }
