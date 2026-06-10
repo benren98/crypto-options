@@ -61,9 +61,10 @@ ENTRY_SCORE_MIN          = 0.58  # score minimum pour entrée opportuniste
 ENTRY_IV_HV_MIN          = 1.10  # ratio IV/HV minimum pour entrée opportuniste
 ENTRY_SCORE_REENTRY_BOOST= 0.05  # amélioration score nécessaire pour re-entrer un instrument déjà tenu
 DELTA_MIN_SPACING        = 0.08  # espacement min |delta| entre positions sur la même expiry
+GAMMA_PENALTY_START      = 5.0   # gamma_pts en dessous duquel aucune pénalité
 GAMMA_SCORE_CAP          = 15.0  # gamma_pts au-delà duquel le score est réduit à 0
-                                  # pénalité : score × max(0, 1 - gamma_pts / GAMMA_SCORE_CAP)
-                                  # ex: gamma=5 → ×0.67 ; gamma=10 → ×0.33 ; gamma≥15 → éliminé
+                                  # pénalité linéaire entre GAMMA_PENALTY_START et GAMMA_SCORE_CAP
+                                  # ex: gamma=5 → ×1.00 ; gamma=10 → ×0.50 ; gamma≥15 → éliminé
 SCAN_TTE_MIN       = 1.0  # TTE min pour le scan (roll + opportuniste)
 SCAN_TTE_MAX       = 30.0 # TTE max pour le scan
 SCAN_DELTA_MIN     = -0.30
@@ -1209,9 +1210,10 @@ def fetch_scored_candidates(currency: str, spot: float,
             yield_a = bid / tte_yr if bid > 0 else mark / tte_yr  # bid=0 → illiquide, fallback mid
             s_yield = min(1.0, yield_a / 0.20)
             score_raw = 0.40 * s_iv_hv + 0.30 * s_rank + 0.30 * s_yield
-            # Pénalité gamma : score × (1 − gamma_pts / GAMMA_SCORE_CAP), plancher 0
+            # Pénalité gamma : linéaire entre GAMMA_PENALTY_START (×1.0) et GAMMA_SCORE_CAP (×0.0)
             gamma_pts_val = greeks.get("gamma", 0) * spot * 0.01 * 100
-            gamma_factor  = max(0.0, 1.0 - gamma_pts_val / GAMMA_SCORE_CAP)
+            gamma_excess  = max(0.0, gamma_pts_val - GAMMA_PENALTY_START)
+            gamma_factor  = max(0.0, 1.0 - gamma_excess / (GAMMA_SCORE_CAP - GAMMA_PENALTY_START))
             score   = round(score_raw * gamma_factor, 3)
 
             rows.append({
