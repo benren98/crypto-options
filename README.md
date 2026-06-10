@@ -12,7 +12,7 @@ pnl_monitor.py        — per-position PnL computation and CSV snapshots
 generate_html.py      — dashboard HTML generation
 positions.json        — portfolio state (source of truth: GitHub Gist)
 positions_detail.json — live per-position data (pnl_monitor → generate_html)
-scan_entry.json       — top 5 opportunities from last scan (greeks_hedge → generate_html)
+scan_entry.json       — top 7 opportunities from last scan (greeks_hedge → generate_html)
 ```
 
 Pipeline order: fetch Gist → pnl_monitor → greeks_hedge → generate_html → commit → push Gist.
@@ -21,7 +21,7 @@ Pipeline order: fetch Gist → pnl_monitor → greeks_hedge → generate_html �
 
 ## Strategy
 
-Sell OTM BTC puts with short maturities (5–30 days), delta-hedged via a BTC-PERPETUAL short. The edge is the **Volatility Risk Premium (VRP)**: implied volatility (IV) is structurally higher than realised volatility (HV), making systematic option selling statistically profitable over time.
+Sell OTM BTC puts with short maturities (1–30 days), delta-hedged via a BTC-PERPETUAL short. The edge is the **Volatility Risk Premium (VRP)**: implied volatility (IV) is structurally higher than realised volatility (HV), making systematic option selling statistically profitable over time.
 
 **Main risk**: a sharp downside move (crash, gap) where gamma spikes and delta moves faster than the hedge can follow.
 
@@ -43,7 +43,8 @@ Sell OTM BTC puts with short maturities (5–30 days), delta-hedged via a BTC-PE
 Each option receives a score between 0 and 1:
 
 ```
-score = 0.40 × s_iv_hv + 0.30 × s_rank + 0.30 × s_yield
+score_raw = 0.40 × s_iv_hv + 0.30 × s_rank + 0.30 × s_yield
+score     = score_raw × gamma_factor
 ```
 
 **IV/HV component** — captures the volatility risk premium for this specific option:
@@ -52,13 +53,11 @@ s_iv_hv = clamp(bid_IV / HV_10d − 1.0, 0, 1)
 ```
 0 when bid IV = HV (no premium), 1 when bid IV = 2× HV. Uses `bid_iv` (IV implied by the bid price — the price we actually sell at), not mid IV. Weight: 40%.
 
-**IV rank component** — measures where the market's overall vol level (DVOL) sits in its 30-day range:
+**IV rank component** — measures where the market's overall vol level (DVOL index) sits in its 30-day range:
 ```
 s_rank = (DVOL_current − DVOL_min30d) / (DVOL_max30d − DVOL_min30d)
 ```
-This is the same value for all candidates in a given scan — it is a market context metric, not option-specific. Weight: 30%.
-
-Note: individual option `mark_iv` is not used here because OTM puts always have a higher implied vol than DVOL due to the skew, which would push the rank to 100% for every option.
+`DVOL_current` is fetched live from the Deribit volatility index (same source as the 30-day range), not from an ATM option mark IV. This is the same value for all candidates in a given scan — it is a market context metric, not option-specific. Weight: 30%.
 
 **Yield component** — annualised premium normalised to 20% BTC/year:
 ```
@@ -66,14 +65,25 @@ s_yield = min(1.0, (bid_price / DTE_years) / 0.20)
 ```
 Uses `bid_price` (the price we actually receive when selling). Reaches 1 when the annualised yield hits 20% BTC. Weight: 30%.
 
+**Gamma penalty** — discounts the raw score for high-gamma options:
+```
+gamma_pts    = gamma × spot × 0.01 × 100          (delta points per 1% spot move)
+gamma_excess = max(0, gamma_pts − GAMMA_PENALTY_START)
+gamma_factor = max(0, 1 − gamma_excess / (GAMMA_SCORE_CAP − GAMMA_PENALTY_START))
+score        = score_raw × gamma_factor
+```
+No penalty below `GAMMA_PENALTY_START = 5 pts`. Linear discount from 5 pts (×1.0) to `GAMMA_SCORE_CAP = 10 pts` (×0.0, eliminated). This penalises short-dated or near-ATM options whose high gamma represents an outsized risk relative to the premium collected.
+
+Examples: gamma = 5 pts → ×1.00 · gamma = 7.5 pts → ×0.50 · gamma ≥ 10 pts → eliminated.
+
 ### Entry thresholds
 
-All conditions must be met simultaneously:
+All conditions must be met simultaneously for opportunistic entries:
 
 | Condition | Threshold |
 |---|---|
-| Composite score | ≥ 0.58 |
-| IV/HV ratio (per option) | ≥ 1.10 |
+| Composite score (after gamma penalty) | ≥ 0.58 |
+| IV/HV ratio (per option, bid IV) | ≥ 1.10 |
 | Bid/ask spread | ≤ 12% of mark |
 | Market condition | DVOL ≥ 35% |
 
@@ -99,11 +109,17 @@ Portfolio cap: **5 BTC notional total**. Sizing reflects conviction: a score of 
 
 ### "Always in a position" guarantee
 
-If the portfolio is empty (after a roll or on first run), the algo **always opens** the best scored candidate, even if market signal conditions are not met. If no liquid candidate is found (B/A > 12%), the spread filter is lifted to guarantee entry.
+If the portfolio is empty (after a roll or on first run), the algo **always opens** the best scored candidate, even if market signal conditions are not met. If no liquid candidate is found (B/A > 12%), the spread filter is lifted to guarantee entry. Sizing still follows `round(score, 1)` with a 0.1 BTC minimum.
 
 ### Opportunistic entries
 
-When total notional is below the cap (< 5 BTC), the algo attempts to open an additional position on each run if the market signal is active and the best candidate (not already held) meets the minimum score. The top-5 opportunities shown in the dashboard always exclude instruments already in the portfolio.
+When total notional is below the cap (< 5 BTC), the algo attempts to open one additional position per run if the market signal is active and the best eligible candidate meets the minimum score.
+
+**Diversification constraint**: on a given expiry, a new position is only allowed if `|delta_new − delta_existing| ≥ DELTA_MIN_SPACING (0.08)`. This prevents clustering of positions with similar strikes on the same expiry.
+
+**Re-entry**: an instrument already held can be opened again if its current score exceeds its entry score by at least `ENTRY_SCORE_REENTRY_BOOST (0.05)`. This allows increasing conviction when IV rises further after the initial entry.
+
+Only one opportunistic entry is made per pipeline run.
 
 ---
 
@@ -210,26 +226,34 @@ The bid/ask costs are shown separately:
 
 ```python
 # Portfolio
-MAX_PORTFOLIO_BTC  = 5.0     # max total notional (BTC)
+MAX_PORTFOLIO_BTC        = 5.0   # max total notional (BTC)
 
 # Scan
-SCAN_TTE_MIN       = 1.0     # min DTE (days)
-SCAN_TTE_MAX       = 30.0    # max DTE (days)
-SCAN_DELTA_MIN     = -0.30   # min delta
-SCAN_DELTA_MAX     = -0.10   # max delta
-BA_MAX_PCT         = 12.0    # max bid/ask spread (% of mark)
+SCAN_TTE_MIN             = 1.0   # min DTE (days)
+SCAN_TTE_MAX             = 30.0  # max DTE (days)
+SCAN_DELTA_MIN           = -0.30 # min delta
+SCAN_DELTA_MAX           = -0.10 # max delta
+BA_MAX_PCT               = 12.0  # max bid/ask spread (% of mark)
 
 # Entry signal
-ENTRY_SCORE_MIN    = 0.58    # minimum composite score
-ENTRY_IV_HV_MIN    = 1.10    # minimum IV/HV ratio (per option)
+ENTRY_SCORE_MIN          = 0.58  # minimum composite score (after gamma penalty)
+ENTRY_IV_HV_MIN          = 1.10  # minimum bid IV/HV ratio (per option)
+
+# Gamma penalty on score
+GAMMA_PENALTY_START      = 5.0   # gamma_pts below which no penalty applies
+GAMMA_SCORE_CAP          = 10.0  # gamma_pts at which score reaches 0
+
+# Diversification & re-entry
+DELTA_MIN_SPACING        = 0.08  # min |delta| gap between positions on same expiry
+ENTRY_SCORE_REENTRY_BOOST= 0.05  # score improvement needed to re-enter a held instrument
 
 # Roll
-ROLL_TRIGGER            = 1.0   # DTE (days) to enter roll window
-GAMMA_ROLL_THRESHOLD    = 6.0   # gamma_pts above which we roll
+ROLL_TRIGGER             = 1.0   # DTE (days) to enter roll window
+GAMMA_ROLL_THRESHOLD     = 6.0   # gamma_pts above which we roll
 
 # Hedge
-HEDGE_THRESHOLD_BASE_PCT = 5.0  # base rebalancing band (% delta)
-HEDGE_IV_REF             = 70.0 # reference IV for calibration
+HEDGE_THRESHOLD_BASE_PCT = 5.0   # base rebalancing band (% delta)
+HEDGE_IV_REF             = 70.0  # reference IV for calibration
 # effective threshold clamped between 2% and 8%
 ```
 
@@ -239,12 +263,12 @@ HEDGE_IV_REF             = 70.0 # reference IV for calibration
 
 Available on the repo's GitHub Page. Updated hourly by GitHub Actions. Contains:
 
-- **Header chips**: spot (with 1h/4h/1d moves), total P&L, min DTE, net delta + rebalancing threshold, last transaction
-- **Open positions**: strike, DTE, premium, mark/ask, IV, greeks, P&L, entry score, sizing
-- **Net greeks**: delta/gamma/vega/theta cumulated + hedge status + drift bar
+- **Header chips**: spot (with 1h/4h/1d moves), total P&L, min DTE, net delta + rebalancing threshold, total notional BTC, last transaction
+- **Open positions**: strike, DTE, premium, mark/ask, IV, delta (BTC + %), gamma (BTC + pts/1%), vega, P&L, entry score, sizing
+- **Net greeks**: delta/gamma (weighted averages) / vega/theta cumulated + hedge status + drift bar
 - **Global P&L**: option breakdown (mid/mid + B/A entry cost) + hedge floating MtM + realised section (closed options + hedge rebalances)
 - **PnL attribution per position**: delta/gamma/theta/vega/residual decomposition + B/A costs + theta/VRP capture
-- **Entry opportunities**: top 5 scored candidates (excluding held instruments) with market context and entry thresholds
+- **Entry opportunities**: top 7 scored candidates with score (+ raw score before gamma penalty), gamma pts/1%, bid premium/BTC, status flags (eligible / held / re-entry / filtered), market context and entry thresholds
 - **Hedge history**: all BTC-PERPETUAL executions
 - **Alerts**: roll, rebalancing, IV spike, stop-loss
-- **Charts**: greeks, P&L and spot over time with strike levels as horizontal lines
+- **Charts**: greeks (delta % and gamma pts as weighted averages), P&L and spot over time with strike levels as horizontal lines
