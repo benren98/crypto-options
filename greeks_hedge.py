@@ -1257,16 +1257,18 @@ def get_market_context(currency: str = CURRENCY) -> dict:
     hv_10d         = fetch_hv(currency, days=10)
     iv_min, iv_max = fetch_iv_range(currency, days=30)
 
-    # IV courante : option ATM ~7j
+    # IV courante : DVOL index live (même source que iv_min/iv_max → rang cohérent)
     try:
-        instruments = get("get_instruments", {"currency": currency, "kind": "option", "expired": "false"})
-        now_t = now_ms()
-        atm = sorted(
-            [i for i in instruments if i["instrument_name"].endswith("-P")
-             and 3 < (i["expiration_timestamp"] - now_t) / 86_400_000 < 14],
-            key=lambda i: abs(i["strike"] - fetch_spot(currency))
-        )
-        curr_iv = fetch_ticker_full(atm[0]["instrument_name"]).get("mark_iv", 60) if atm else 60.0
+        end_ts   = now_ms()
+        start_ts = end_ts - 2 * 3600 * 1000   # 2h de données suffisent pour le dernier point
+        dvol_data = get("get_volatility_index_data", {
+            "currency":        currency,
+            "start_timestamp": start_ts,
+            "end_timestamp":   end_ts,
+            "resolution":      "60",            # bougies 1 min
+        })
+        dvol_pts = [r[4] for r in dvol_data.get("data", []) if r[4]]
+        curr_iv  = dvol_pts[-1] if dvol_pts else 60.0
     except Exception:
         curr_iv = 60.0
 
