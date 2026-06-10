@@ -509,7 +509,11 @@ def _pnl_global_card() -> str:
 
     # Décomposition option : mid/mid total + coût B/A entrée total
     midmid_total = sum(
-        (float(p.get("entry_mark_price", p.get("entry_price", 0))) - float(pd_map.get(p.get("instrument_name",""),{}).get("current_price_btc", 0))) * spot
+        (float(p.get("entry_mark_price", p.get("entry_price", 0))) -
+         float(pd_map.get(p.get("instrument_name",""),{}).get(
+             "current_price_btc",
+             float(p.get("entry_mark_price", p.get("entry_price", 0)))  # fallback: 0 PnL si pas encore de données live
+         ))) * spot
         for p in positions_list
     )
     ba_entry_total = sum(
