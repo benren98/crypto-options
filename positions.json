@@ -151,12 +151,50 @@
       ],
       "entry_score": 0.606,
       "entry_sizing_btc": 0.2
+    },
+    {
+      "instrument_name": "BTC-12JUN26-58000-P",
+      "strike": 58000.0,
+      "expiry_dt": "2026-06-12 08:00:00+00:00",
+      "tte_at_entry": 2.18,
+      "delta_at_entry": -0.13233,
+      "gamma_at_entry": 7e-05,
+      "vega_at_entry": 10.17453,
+      "theta_at_entry": -159.42707,
+      "iv_at_entry": 67.78,
+      "entry_price": 0.0035,
+      "entry_mark_price": 0.0036,
+      "entry_price_usd": 215.01,
+      "entry_spot": 61430.73,
+      "contracts": 0.8,
+      "entry_ts": "2026-06-10 03:37:07 UTC",
+      "hedge_qty": -0.10586,
+      "hedge_entry_spot": 61430.73,
+      "hedge_avg_entry": 61418.31,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-06-10 03:37:07 UTC",
+          "side": "SELL",
+          "qty": -0.10586,
+          "spot": 61430.73,
+          "perp_price": 61418.31,
+          "qty_before": 0.0,
+          "qty_after": -0.10586,
+          "vwap_before": 0.0,
+          "vwap_after": 61418.31,
+          "drift": 0.13233,
+          "note": "hedge initial (perp mark $61418.31 vs index $61430.73)"
+        }
+      ],
+      "entry_score": 0.761,
+      "entry_sizing_btc": 0.8
     }
   ],
   "hedge": {
-    "qty": -0.58155,
-    "avg_entry": 61662.6,
-    "rebalances": 12,
+    "qty": -0.68741,
+    "avg_entry": 61627.25,
+    "rebalances": 13,
     "realized_pnl_usd": -121.28,
     "history": [
       {
@@ -315,6 +353,18 @@
         "realized_cumul_usd": -121.28,
         "delta_net_after_pct": 0.0,
         "note": "short augment\u00e9 \u2014 VWAP recalcul\u00e9"
+      },
+      {
+        "ts": "2026-06-10 03:37:07 UTC",
+        "side": "SELL",
+        "qty": -0.10586,
+        "spot": 61430.73,
+        "qty_before": -0.58155,
+        "qty_after": -0.68741,
+        "vwap_before": 61662.6,
+        "vwap_after": 61627.25,
+        "drift": 0.13233,
+        "note": "entree opportuniste BTC-12JUN26-58000-P"
       }
     ]
   },
