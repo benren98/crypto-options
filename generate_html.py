@@ -822,6 +822,7 @@ else:
   <div class="chip">
     <span class="chip-label">Positions</span>
     <span class="chip-value">{len(positions_list)}</span>
+    <span class="chip-delta neu">Nominal <b>{f(sum(float(p.get("contracts",1)) for p in positions_list),1)} BTC</b> / {f(3.0,1)} BTC max</span>
     <span class="chip-delta neu">TTE min <span class="{_tte_cl}">{f(_tte_min,2)}j</span></span>
   </div>
   <div class="chip">
