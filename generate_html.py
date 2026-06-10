@@ -692,7 +692,7 @@ def _scan_entry_card() -> str:
       <td class="{ivhv_cl}">{f(ivhv,2)}x</td>
       <td>{f(c.get("yield_ann_pct",0),1)}%/an</td>
       <td class="{ba_cl}">{f(ba,1)}%</td>
-      <td>${f(float(c.get("mark_price",0)) * _se_spot, 0)}</td>
+      <td>${f(float(c.get("premium_usd", float(c.get("mark_price",0)) * _se_spot)), 0)}</td>
     </tr>"""
 
     return f"""<div class="card full">
@@ -712,7 +712,7 @@ def _scan_entry_card() -> str:
       <th>Strike</th><th>TTE</th><th>Delta</th>
       <th title="Δ delta points par 1% move du spot (par contrat)">Γ pts/1%</th>
       <th>IV option</th><th>IV/HV <span style="font-weight:400;color:#484f58">(≥1.10)</span></th>
-      <th>Yield ann.</th><th>B/A <span style="font-weight:400;color:#484f58">(≤12%)</span></th><th>Prime mid ($)</th>
+      <th>Yield ann.</th><th>B/A <span style="font-weight:400;color:#484f58">(≤12%)</span></th><th title="Prime au bid pour 1 BTC (1 contrat Deribit)">Prime bid / 1 BTC</th>
     </tr>
     {rows if rows else '<tr><td colspan="11" class="muted" style="text-align:center">Aucun candidat</td></tr>'}
   </table>
