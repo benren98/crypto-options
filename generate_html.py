@@ -608,12 +608,16 @@ def _scan_entry_card() -> str:
     iv_rank_pct = float(ctx.get("iv_rank", 0)) * 100
     iv_rank_cl  = "pos" if iv_rank_pct >= 60 else ("warn" if iv_rank_pct >= 30 else "neg")
 
+    hv = float(ctx.get("hv_10d", 1))
+
     rows = ""
     for i, c in enumerate(top5):
-        sc   = float(c.get("score", 0))
-        sc_cl = "pos" if sc >= 0.58 else ("warn" if sc >= 0.45 else "neg")
-        ba   = float(c.get("ba_pct", 0))
-        ba_cl = "neg" if ba > 12 else "ok"
+        sc      = float(c.get("score", 0))
+        sc_cl   = "pos" if sc >= 0.58 else ("warn" if sc >= 0.45 else "neg")
+        ba      = float(c.get("ba_pct", 0))
+        ba_cl   = "neg" if ba > 12 else "ok"
+        ivhv    = float(c.get("iv_hv_ratio", 0))
+        ivhv_cl = "pos" if ivhv >= 1.10 else "neg"
         rows += f"""<tr {"class='hl'" if i==0 else ""}>
       <td class="left"><b>{c.get("instrument_name","—")}</b></td>
       <td class="{sc_cl}" style="font-weight:700">{f(sc,3)}</td>
@@ -621,7 +625,7 @@ def _scan_entry_card() -> str:
       <td>{f(c.get("tte_days",0),1)}j</td>
       <td>{f(c.get("delta",0),3)}</td>
       <td>{f(c.get("mark_iv",0),1)}%</td>
-      <td>{f(c.get("iv_hv_ratio",0),2)}x</td>
+      <td class="{ivhv_cl}">{f(ivhv,2)}x</td>
       <td>{f(c.get("yield_ann_pct",0),1)}%/an</td>
       <td class="{ba_cl}">{f(ba,1)}%</td>
       <td>${f(float(c.get("mark_price",0)) * _se_spot, 0)}</td>
@@ -630,19 +634,18 @@ def _scan_entry_card() -> str:
     return f"""<div class="card full">
   <h2>Opportunites d\'entree — scan du {ts_se}</h2>
   <div style="display:flex;gap:20px;margin-bottom:12px;font-size:0.82rem;flex-wrap:wrap;align-items:center">
-    <span>HV10j <b>{f(ctx.get("hv_10d",0),1)}%</b></span>
-    <span>IV (DVOL) <b>{f(ctx.get("curr_iv",0),1)}%</b></span>
-    <span>Rang IV 30j <b class="{iv_rank_cl}">{f(iv_rank_pct,0)}%</b></span>
-    <span>IV/HV <b>{f(ctx.get("iv_hv_ratio",0),2)}x</b></span>
-    <span>Regime <b>{ctx.get("regime","—")}</b></span>
-    <span class="{sig_cl}"><b>{sig_lbl}</b></span>
+    <span>HV 10j <b>{f(ctx.get("hv_10d",0),1)}%</b></span>
+    <span>DVOL <b>{f(ctx.get("curr_iv",0),1)}%</b></span>
+    <span>Rang DVOL 30j <b class="{iv_rank_cl}">{f(iv_rank_pct,0)}%</b></span>
+    <span>Régime <b>{ctx.get("regime","—")}</b></span>
+    <span class="{sig_cl}"><b>{"Signal OK — DVOL ≥ 35%" if sig else "Signal inactif — DVOL < 35%"}</b></span>
   </div>
   <div style="overflow-x:auto">
   <table class="tbl">
     <tr>
       <th style="text-align:left">Instrument</th>
       <th>Score</th><th>Strike</th><th>TTE</th><th>Delta</th>
-      <th>IV option</th><th>IV/HV</th><th>Yield ann.</th><th>B/A</th><th>Prime mid ($)</th>
+      <th>IV option</th><th>IV/HV <span style="font-weight:400;color:#484f58">(seuil ≥1.10)</span></th><th>Yield ann.</th><th>B/A <span style="font-weight:400;color:#484f58">(≤12%)</span></th><th>Prime mid ($)</th>
     </tr>
     {rows if rows else '<tr><td colspan="10" class="muted" style="text-align:center">Aucun candidat</td></tr>'}
   </table>
@@ -650,8 +653,9 @@ def _scan_entry_card() -> str:
   <div style="margin-top:14px;font-size:0.78rem;color:#8b949e;border-top:1px solid #21262d;padding-top:10px">
     <b style="color:#e6edf3">Méthodologie scoring</b> :
     Score = 40% × (IV<sub>option</sub>/HV − 1) + 30% × rang DVOL 30j + 30% × yield annualisé ·
-    Rang IV = position du DVOL courant dans sa plage 30j (commun à toutes les options) ·
-    <b>Seuils d\'entrée</b> : score ≥ 0.58 · IV/HV ≥ 1.10 · B/A ≤ 12% ·
+    Rang DVOL = position du DVOL courant dans sa plage 30j (commun à toutes les options) ·
+    <b>Seuils d\'entrée par option</b> : score ≥ 0.58 · IV/HV ≥ 1.10 · B/A ≤ 12% ·
+    <b>Condition marché</b> : DVOL ≥ 35% ·
     <b>Sizing</b> : round(score, 1) BTC · max 3 BTC portefeuille
   </div>
 </div>"""

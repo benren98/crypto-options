@@ -1209,7 +1209,9 @@ def get_market_context(currency: str = CURRENCY) -> dict:
         "iv_hv_ratio": iv_hv_ratio,
         "regime":      regime,
         "rec_delta":   rec_delta,
-        "signal_ok":   iv_hv_ratio >= ENTRY_IV_HV_MIN and curr_iv >= 35,
+        # signal_ok = conditions marché globales (DVOL suffisant)
+        # Le filtre IV/HV est par option via le score (s_iv_hv), pas ici
+        "signal_ok":   curr_iv >= 35,
     }
 
 
