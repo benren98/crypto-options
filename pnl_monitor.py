@@ -885,16 +885,20 @@ def run_once(plot: bool = False, report: bool = False):
         except Exception:
             history = []
 
-    # Delta net = sum des deltas options (position vendeur = -delta)
-    net_delta_abs = abs(float(snap.get("live_delta", 0)))
-    gamma_pts = float(snap.get("live_gamma", 0)) * float(snap.get("spot", 0)) * 0.01 * 100
+    # Delta % et gamma pts = moyennes pondérées (÷ total_contracts), pas des sommes
+    total_contracts = sum(float(p.get("contracts", 1)) for p in positions) or 1.0
+    net_delta_abs   = abs(float(snap.get("live_delta", 0)))
+    net_gamma       = float(snap.get("live_gamma", 0))
+    _spot_snap      = float(snap.get("spot", 0))
+    delta_pct_avg   = net_delta_abs / total_contracts * 100          # % moyen par contrat
+    gamma_pts_avg   = net_gamma / total_contracts * _spot_snap * 0.01 * 100  # pts Δ/1% par contrat
     hist_point = {
         "ts":            snap["timestamp"],
         "spot":          snap["spot"],
         "tte_days":      snap["tte_days"],
-        "delta_pct":     round(net_delta_abs * 100, 3),
+        "delta_pct":     round(delta_pct_avg, 3),
         "net_delta_pct": round(float(snap.get("hedge_delta_drift", 0)) * 100, 3),
-        "gamma_pts":     round(gamma_pts, 4),
+        "gamma_pts":     round(gamma_pts_avg, 4),
         "iv_pct":        snap.get("current_iv_pct"),
         "pnl_option":    snap.get("pnl_option_usd"),
         "pnl_hedge":     snap.get("pnl_hedge_usd"),
