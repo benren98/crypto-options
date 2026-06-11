@@ -1262,20 +1262,49 @@ def get_market_context(currency: str = CURRENCY) -> dict:
     hv_10d         = fetch_hv(currency, days=10)
     iv_min, iv_max = fetch_iv_range(currency, days=30)
 
-    # IV courante : DVOL index live (même source que iv_min/iv_max → rang cohérent)
+    # IV courante + move 1j : DVOL index live sur 26h pour avoir curr et prev_1d
+    curr_iv     = 60.0
+    dvol_1d_chg = None
     try:
         end_ts   = now_ms()
-        start_ts = end_ts - 2 * 3600 * 1000   # 2h de données suffisent pour le dernier point
+        start_ts = end_ts - 26 * 3600 * 1000   # 26h → couvre curr + point d'il y a ~24h
         dvol_data = get("get_volatility_index_data", {
             "currency":        currency,
             "start_timestamp": start_ts,
             "end_timestamp":   end_ts,
-            "resolution":      "60",            # bougies 1 min
+            "resolution":      "60",
         })
-        dvol_pts = [r[4] for r in dvol_data.get("data", []) if r[4]]
-        curr_iv  = dvol_pts[-1] if dvol_pts else 60.0
+        dvol_rows = [(r[0], r[4]) for r in dvol_data.get("data", []) if r[4]]
+        if dvol_rows:
+            curr_iv = dvol_rows[-1][1]
+            # point le plus proche de 24h en arrière
+            target_ms = end_ts - 24 * 3600 * 1000
+            prev_row  = min(dvol_rows[:-1], key=lambda r: abs(r[0] - target_ms), default=None)
+            if prev_row and abs(prev_row[0] - target_ms) < 3 * 3600 * 1000:
+                dvol_1d_chg = round(curr_iv - prev_row[1], 2)
     except Exception:
-        curr_iv = 60.0
+        pass
+
+    # HV 10j d'il y a 1j (fenêtre décalée) pour le move 1j
+    hv_1d_chg = None
+    try:
+        end_ts_hv   = now_ms()
+        start_ts_hv = end_ts_hv - 16 * 24 * 3600 * 1000
+        cd = get("get_tradingview_chart_data", {
+            "instrument_name": f"{currency}-PERPETUAL",
+            "start_timestamp": start_ts_hv,
+            "end_timestamp":   end_ts_hv,
+            "resolution":      "1D",
+        })
+        closes = cd.get("close", [])
+        if len(closes) >= 12:
+            # HV sur fenêtre j-11 à j-1 (= HV 10j d'hier)
+            win_prev = closes[-12:-1]
+            rets_prev = [math.log(win_prev[j] / win_prev[j-1]) for j in range(1, len(win_prev))]
+            hv_prev   = math.sqrt(sum(r**2 for r in rets_prev) / len(rets_prev)) * math.sqrt(365) * 100
+            hv_1d_chg = round(hv_10d - hv_prev, 2)
+    except Exception:
+        pass
 
     iv_rank   = max(0.0, min(1.0, (curr_iv - iv_min) / max(iv_max - iv_min, 5)))
     iv_hv_ratio = curr_iv / hv_10d if hv_10d > 0 else 1.0
@@ -1289,15 +1318,15 @@ def get_market_context(currency: str = CURRENCY) -> dict:
 
     return {
         "hv_10d":      hv_10d,
+        "hv_1d_chg":   hv_1d_chg,
         "iv_min":      iv_min,
         "iv_max":      iv_max,
         "curr_iv":     curr_iv,
+        "dvol_1d_chg": dvol_1d_chg,
         "iv_rank":     iv_rank,
         "iv_hv_ratio": iv_hv_ratio,
         "regime":      regime,
         "rec_delta":   rec_delta,
-        # signal_ok = conditions marché globales (DVOL suffisant)
-        # Le filtre IV/HV est par option via le score (s_iv_hv), pas ici
         "signal_ok":   curr_iv >= 35,
     }
 

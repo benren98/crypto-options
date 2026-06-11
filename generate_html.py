@@ -779,45 +779,24 @@ _move4h_html = _move_line("4h", _move4h_abs, _move4h_pct)
 _move1d_html = _move_line("1j", _move1d_abs, _move1d_pct)
 
 # ── DVOL / HV moves ────────────────────────────────────────────────────────────
-def _vol_move_1d(field: str, curr_val: float):
-    """Move 1j pour un champ de pnl_history (dvol ou hv_10d)."""
-    if not pnl_history or curr_val == 0:
-        return None, None
-    now_utc = datetime.now(timezone.utc)
-    target_dt = now_utc - timedelta(hours=24)
-    best, best_diff = None, None
-    for p in pnl_history[:-1]:
-        dt = _parse_ts(p.get("ts"))
-        if dt is None:
-            continue
-        diff = abs((dt - target_dt).total_seconds())
-        if best_diff is None or diff < best_diff:
-            best, best_diff = p, diff
-    if best is None or best_diff is None or best_diff > 3 * 3600:
-        return None, None
-    ref = float(best.get(field) or 0)
-    if ref == 0:
-        return None, None
-    mv = curr_val - ref
-    return mv, mv / ref * 100
-
 # Valeurs DVOL/HV actuelles depuis scan_entry.json (même source que scan card)
 _ctx_mc    = scan_entry.get("market_context", {}) if scan_entry else {}
 _dvol_curr = float(_ctx_mc.get("curr_iv", 0))
 _hv_curr   = float(_ctx_mc.get("hv_10d", 0))
 
-_dvol_1d_abs, _dvol_1d_pct = _vol_move_1d("dvol",   _dvol_curr)
-_hv_1d_abs,   _hv_1d_pct   = _vol_move_1d("hv_10d", _hv_curr)
+# Move 1j DVOL/HV : lus directement depuis scan_entry (calculés par greeks_hedge depuis l'API)
+_dvol_1d_chg = _ctx_mc.get("dvol_1d_chg")   # pp absolus (ex: -1.4)
+_hv_1d_chg   = _ctx_mc.get("hv_1d_chg")
 
-def _vol_chip_delta(move_abs, move_pct):
+def _vol_chip_delta(move_abs):
     if move_abs is None:
         return ""
-    cl = "pos" if move_pct >= 0 else "neg"
-    sign = "+" if move_pct >= 0 else ""
-    return f'<span class="chip-delta {cl}">1j {sign}{move_pct:.1f}pp ({sign}{move_abs:.1f}%)</span>'
+    cl = "pos" if move_abs >= 0 else "neg"
+    sign = "+" if move_abs >= 0 else ""
+    return f'<span class="chip-delta {cl}">1j {sign}{move_abs:.1f}pp</span>'
 
-_dvol_1d_html = _vol_chip_delta(_dvol_1d_abs, _dvol_1d_pct)
-_hv_1d_html   = _vol_chip_delta(_hv_1d_abs,   _hv_1d_pct)
+_dvol_1d_html = _vol_chip_delta(_dvol_1d_chg)
+_hv_1d_html   = _vol_chip_delta(_hv_1d_chg)
 
 # ── PnL 1j ─────────────────────────────────────────────────────────────────────
 def _pnl_move_1d():
