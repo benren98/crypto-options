@@ -1058,6 +1058,8 @@ new Chart(document.getElementById("chartGreeks"), {{
       yAxisID:"yD", tension:0.3, pointRadius:PT_R, borderWidth:2, borderDash:[4,2] }},
     {{ label:"Gamma (pts/1%)", data:{gamma_js}, borderColor:"#f85149", backgroundColor:"transparent",
       yAxisID:"yG", tension:0.3, pointRadius:PT_R, borderWidth:2, borderDash:[5,3] }},
+    {{ label:"Spot BTC ($)", data:{spot_js}, borderColor:"rgba(210,153,34,0.7)", backgroundColor:"transparent",
+      yAxisID:"yS", tension:0.3, pointRadius:0, borderWidth:2, borderDash:[2,4] }},
   ]}},
   options:{{ responsive:true, maintainAspectRatio:false,
     interaction:{{mode:"index",intersect:false}},
@@ -1066,6 +1068,7 @@ new Chart(document.getElementById("chartGreeks"), {{
       x:{{ticks:{{color:"#484f58",maxTicksLimit:14,maxRotation:30,font:{{size:10}}}},grid:{{color:"#21262d"}}}},
       yD:{{type:"linear",position:"left",ticks:{{color:"#58a6ff",font:{{size:10}},callback:v=>v.toFixed(1)+"%"}},grid:{{color:"#21262d"}}}},
       yG:{{type:"linear",position:"right",ticks:{{color:"#f85149",font:{{size:10}},callback:v=>v.toFixed(2)}},grid:{{drawOnChartArea:false}}}},
+      yS:{{type:"linear",position:"right",ticks:{{color:"#d29922",font:{{size:10}},callback:v=>"$"+Math.round(v/1000)+"k"}},grid:{{drawOnChartArea:false}}}},
     }}
   }}
 }});
@@ -1079,6 +1082,8 @@ new Chart(document.getElementById("chartPnl"), {{
       yAxisID:"yP", tension:0.3, pointRadius:PT_R, borderWidth:2, borderDash:[5,3] }},
     {{ label:"PnL Total ($)", data:{pnl_tot_js}, borderColor:"#e6edf3", backgroundColor:"rgba(230,237,243,0.04)",
       yAxisID:"yP", tension:0.3, pointRadius:PT_R, borderWidth:2.5, fill:true }},
+    {{ label:"Spot BTC ($)", data:{spot_js}, borderColor:"rgba(210,153,34,0.7)", backgroundColor:"transparent",
+      yAxisID:"yS2", tension:0.3, pointRadius:0, borderWidth:2, borderDash:[2,4] }},
   ]}},
   options:{{ responsive:true, maintainAspectRatio:false,
     interaction:{{mode:"index",intersect:false}},
@@ -1086,6 +1091,7 @@ new Chart(document.getElementById("chartPnl"), {{
     scales:{{
       x:{{ticks:{{color:"#484f58",maxTicksLimit:14,maxRotation:30,font:{{size:10}}}},grid:{{color:"#21262d"}}}},
       yP:{{type:"linear",position:"left",ticks:{{color:"#8b949e",font:{{size:10}},callback:v=>(v>=0?"+":"")+v.toFixed(0)+"$"}},grid:{{color:"#21262d"}}}},
+      yS2:{{type:"linear",position:"right",ticks:{{color:"#d29922",font:{{size:10}},callback:v=>"$"+Math.round(v/1000)+"k"}},grid:{{drawOnChartArea:false}}}},
     }}
   }}
 }});
