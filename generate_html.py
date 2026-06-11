@@ -778,6 +778,71 @@ def _move_line(label, move_abs, move_pct):
 _move4h_html = _move_line("4h", _move4h_abs, _move4h_pct)
 _move1d_html = _move_line("1j", _move1d_abs, _move1d_pct)
 
+# ── DVOL / HV moves ────────────────────────────────────────────────────────────
+def _vol_move_1d(field: str, curr_val: float):
+    """Move 1j pour un champ de pnl_history (dvol ou hv_10d)."""
+    if not pnl_history or curr_val == 0:
+        return None, None
+    now_utc = datetime.now(timezone.utc)
+    target_dt = now_utc - timedelta(hours=24)
+    best, best_diff = None, None
+    for p in pnl_history[:-1]:
+        dt = _parse_ts(p.get("ts"))
+        if dt is None:
+            continue
+        diff = abs((dt - target_dt).total_seconds())
+        if best_diff is None or diff < best_diff:
+            best, best_diff = p, diff
+    if best is None or best_diff is None or best_diff > 3 * 3600:
+        return None, None
+    ref = float(best.get(field) or 0)
+    if ref == 0:
+        return None, None
+    mv = curr_val - ref
+    return mv, mv / ref * 100
+
+# Valeurs DVOL/HV actuelles depuis scan_entry.json (même source que scan card)
+_ctx_mc    = scan_entry.get("market_context", {}) if scan_entry else {}
+_dvol_curr = float(_ctx_mc.get("curr_iv", 0))
+_hv_curr   = float(_ctx_mc.get("hv_10d", 0))
+
+_dvol_1d_abs, _dvol_1d_pct = _vol_move_1d("dvol",   _dvol_curr)
+_hv_1d_abs,   _hv_1d_pct   = _vol_move_1d("hv_10d", _hv_curr)
+
+def _vol_chip_delta(move_abs, move_pct):
+    if move_abs is None:
+        return ""
+    cl = "pos" if move_pct >= 0 else "neg"
+    sign = "+" if move_pct >= 0 else ""
+    return f'<span class="chip-delta {cl}">1j {sign}{move_pct:.1f}pp ({sign}{move_abs:.1f}%)</span>'
+
+_dvol_1d_html = _vol_chip_delta(_dvol_1d_abs, _dvol_1d_pct)
+_hv_1d_html   = _vol_chip_delta(_hv_1d_abs,   _hv_1d_pct)
+
+# ── PnL 1j ─────────────────────────────────────────────────────────────────────
+def _pnl_move_1d():
+    if not pnl_history:
+        return None
+    now_utc = datetime.now(timezone.utc)
+    target_dt = now_utc - timedelta(hours=24)
+    best, best_diff = None, None
+    for p in pnl_history[:-1]:
+        dt = _parse_ts(p.get("ts"))
+        if dt is None:
+            continue
+        diff = abs((dt - target_dt).total_seconds())
+        if best_diff is None or diff < best_diff:
+            best, best_diff = p, diff
+    if best is None or best_diff is None or best_diff > 3 * 3600:
+        return None
+    ref = float(best.get("pnl_total") or 0)
+    return _curr_pnl - ref
+
+_pnl_1d = _pnl_move_1d()
+_pnl_1d_html = (
+    f'<span class="chip-delta {"pos" if (_pnl_1d or 0) >= 0 else "neg"}">{f(_pnl_1d, 0, True)}$ sur 1j</span>'
+) if _pnl_1d is not None else ""
+
 # ── Dernière transaction (hedge rebalancement, roll, nouvelle position) ─────────
 def _last_tx_html() -> str:
     events = []
@@ -858,6 +923,17 @@ else:
     <span class="chip-label">PnL total</span>
     <span class="chip-value {_pnl_cl}">{f(_curr_pnl,0,True)}$</span>
     {_pnl_delta_html}
+    {_pnl_1d_html}
+  </div>
+  <div class="chip">
+    <span class="chip-label">DVOL (index)</span>
+    <span class="chip-value">{"—" if _dvol_curr == 0 else f"{_dvol_curr:.1f}%"}</span>
+    {_dvol_1d_html}
+  </div>
+  <div class="chip">
+    <span class="chip-label">HV 10j</span>
+    <span class="chip-value">{"—" if _hv_curr == 0 else f"{_hv_curr:.1f}%"}</span>
+    {_hv_1d_html}
   </div>
   <div class="chip">
     <span class="chip-label">Positions</span>
@@ -952,11 +1028,10 @@ if pnl_history:
     spot_js      = _json.dumps(spot_data)
     n_pts        = len(pnl_history)
 
-    # Strikes des positions ouvertes — lignes horizontales sur l'axe spot
+    # Strikes — datasets pour le graphique dédié spot+strikes uniquement
     _strike_colors = ["#f85149", "#d29922", "#a371f7", "#58a6ff", "#3fb950"]
-    _strike_datasets_greeks = ""
-    _strike_datasets_pnl    = ""
-    for _i, _p in enumerate(_all_pos := positions_list + hist):
+    _strike_datasets_spot = ""
+    for _i, _p in enumerate(positions_list + hist):
         _strike = _p.get("strike")
         if not _strike:
             continue
@@ -964,26 +1039,28 @@ if pnl_history:
         _label = f"Strike {int(_strike):,} ({_instr.split('-')[2] if '-' in _instr else _instr})"
         _is_closed = _p in hist
         _col = _strike_colors[_i % len(_strike_colors)]
-        _dash = "[6,4]" if _is_closed else "[4,2]"
+        _dash = "[6,4]" if _is_closed else "[]"
         _data_js = _json.dumps([_strike] * n_pts)
-        _strike_datasets_greeks += f"""
+        _strike_datasets_spot += f"""
     {{ label:{_json.dumps(_label)}, data:{_data_js}, borderColor:"{_col}", backgroundColor:"transparent",
-      yAxisID:"yS", tension:0, pointRadius:0, borderWidth:1.5, borderDash:{_dash} }},"""
-        _strike_datasets_pnl += f"""
-    {{ label:{_json.dumps(_label)}, data:{_data_js}, borderColor:"{_col}", backgroundColor:"transparent",
-      yAxisID:"yS2", tension:0, pointRadius:0, borderWidth:1.5, borderDash:{_dash} }},"""
+      tension:0, pointRadius:0, borderWidth:1.5, borderDash:{_dash} }},"""
 
     html += f"""
 <div class="chart-section">
 
 <div class="chart-card">
-  <h2>📈 Greeks &amp; Spot — {n_pts} snapshots</h2>
+  <h2>&#x1F4C8; Greeks — {n_pts} snapshots</h2>
   <div class="chart-wrap"><canvas id="chartGreeks"></canvas></div>
 </div>
 
 <div class="chart-card">
-  <h2>💰 PnL &amp; Spot — dans le temps</h2>
+  <h2>&#x1F4B0; PnL — dans le temps</h2>
   <div class="chart-wrap"><canvas id="chartPnl"></canvas></div>
+</div>
+
+<div class="chart-card">
+  <h2>&#x20BF; Spot BTC &amp; Strikes</h2>
+  <div class="chart-wrap"><canvas id="chartSpot"></canvas></div>
 </div>
 
 </div>
@@ -1002,8 +1079,6 @@ new Chart(document.getElementById("chartGreeks"), {{
       yAxisID:"yD", tension:0.3, pointRadius:PT_R, borderWidth:2, borderDash:[4,2] }},
     {{ label:"Gamma (pts/1%)", data:{gamma_js}, borderColor:"#f85149", backgroundColor:"transparent",
       yAxisID:"yG", tension:0.3, pointRadius:PT_R, borderWidth:2, borderDash:[5,3] }},
-    {{ label:"Spot BTC ($)", data:{spot_js}, borderColor:"rgba(210,153,34,0.7)", backgroundColor:"transparent",
-      yAxisID:"yS", tension:0.3, pointRadius:0, borderWidth:2, borderDash:[2,4] }},{_strike_datasets_greeks}
   ]}},
   options:{{ responsive:true, maintainAspectRatio:false,
     interaction:{{mode:"index",intersect:false}},
@@ -1012,7 +1087,6 @@ new Chart(document.getElementById("chartGreeks"), {{
       x:{{ticks:{{color:"#484f58",maxTicksLimit:14,maxRotation:30,font:{{size:10}}}},grid:{{color:"#21262d"}}}},
       yD:{{type:"linear",position:"left",ticks:{{color:"#58a6ff",font:{{size:10}},callback:v=>v.toFixed(1)+"%"}},grid:{{color:"#21262d"}}}},
       yG:{{type:"linear",position:"right",ticks:{{color:"#f85149",font:{{size:10}},callback:v=>v.toFixed(2)}},grid:{{drawOnChartArea:false}}}},
-      yS:{{type:"linear",position:"right",ticks:{{color:"#d29922",font:{{size:10}},callback:v=>"$"+Math.round(v/1000)+"k"}},grid:{{drawOnChartArea:false}}}},
     }}
   }}
 }});
@@ -1026,8 +1100,6 @@ new Chart(document.getElementById("chartPnl"), {{
       yAxisID:"yP", tension:0.3, pointRadius:PT_R, borderWidth:2, borderDash:[5,3] }},
     {{ label:"PnL Total ($)", data:{pnl_tot_js}, borderColor:"#e6edf3", backgroundColor:"rgba(230,237,243,0.04)",
       yAxisID:"yP", tension:0.3, pointRadius:PT_R, borderWidth:2.5, fill:true }},
-    {{ label:"Spot BTC ($)", data:{spot_js}, borderColor:"rgba(210,153,34,0.7)", backgroundColor:"transparent",
-      yAxisID:"yS2", tension:0.3, pointRadius:0, borderWidth:2, borderDash:[2,4] }},{_strike_datasets_pnl}
   ]}},
   options:{{ responsive:true, maintainAspectRatio:false,
     interaction:{{mode:"index",intersect:false}},
@@ -1035,7 +1107,22 @@ new Chart(document.getElementById("chartPnl"), {{
     scales:{{
       x:{{ticks:{{color:"#484f58",maxTicksLimit:14,maxRotation:30,font:{{size:10}}}},grid:{{color:"#21262d"}}}},
       yP:{{type:"linear",position:"left",ticks:{{color:"#8b949e",font:{{size:10}},callback:v=>(v>=0?"+":"")+v.toFixed(0)+"$"}},grid:{{color:"#21262d"}}}},
-      yS2:{{type:"linear",position:"right",ticks:{{color:"#d29922",font:{{size:10}},callback:v=>"$"+Math.round(v/1000)+"k"}},grid:{{drawOnChartArea:false}}}},
+    }}
+  }}
+}});
+
+new Chart(document.getElementById("chartSpot"), {{
+  type:"line",
+  data:{{ labels:LABELS, datasets:[
+    {{ label:"Spot BTC ($)", data:{spot_js}, borderColor:"#d29922", backgroundColor:"rgba(210,153,34,0.06)",
+      tension:0.3, pointRadius:PT_R, borderWidth:2.5, fill:true }},{_strike_datasets_spot}
+  ]}},
+  options:{{ responsive:true, maintainAspectRatio:false,
+    interaction:{{mode:"index",intersect:false}},
+    plugins:{{ legend:{{labels:{{color:"#8b949e",font:{{size:11}}}}}}, tooltip:{{...TT}} }},
+    scales:{{
+      x:{{ticks:{{color:"#484f58",maxTicksLimit:14,maxRotation:30,font:{{size:10}}}},grid:{{color:"#21262d"}}}},
+      y:{{type:"linear",position:"left",ticks:{{color:"#d29922",font:{{size:10}},callback:v=>"$"+Math.round(v/1000)+"k"}},grid:{{color:"#21262d"}}}},
     }}
   }}
 }});
