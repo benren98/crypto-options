@@ -67,9 +67,9 @@ s_yield   = min(1.0, (yield_ann × z) / 0.30)
 **Skew component** — how rich the sold strike is relative to the ATM of the same expiry:
 ```
 atm_IV = mark IV of the put whose strike is closest to spot (same expiry)
-s_skew = clamp((bid_IV / atm_IV − 1) / 0.25, 0, 1)
+s_skew = clamp((bid_IV / atm_IV − 1) / 0.20, 0, 1)
 ```
-Reaches 1 when the put trades 25% richer than ATM. Between two puts with equal overall scores, this favours the one the market overpays the most relative to the centre of the smile — exactly the premium the strategy sells. Weight: 30%.
+Reaches 1 when the put trades 20% richer than ATM. Between two puts with equal overall scores, this favours the one the market overpays the most relative to the centre of the smile — exactly the premium the strategy sells. Weight: 30%.
 
 **Gamma penalty** — discounts the raw score for high-gamma options:
 ```

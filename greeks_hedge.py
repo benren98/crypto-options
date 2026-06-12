@@ -1268,7 +1268,7 @@ def fetch_scored_candidates(currency: str, spot: float,
         # 2) Skew : richesse du strike vs ATM de la même échéance
         atm_iv  = atm_iv_by_exp.get(r["expiry_ts"], curr_iv) or curr_iv
         skew    = bid_iv / atm_iv - 1.0
-        s_skew  = max(0.0, min(1.0, skew / 0.25))   # 1.0 quand le put paie 25% de plus que l'ATM
+        s_skew  = max(0.0, min(1.0, skew / 0.20))   # 1.0 quand le put paie 20% de plus que l'ATM
 
         # 3) Yield ajusté au risque : yield annualisé × distance au strike en vols réalisées
         #    z = OTM% / (HV × √TTE) — un yield élevé proche du strike vaut moins
