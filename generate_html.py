@@ -607,18 +607,22 @@ def _pnl_global_card() -> str:
 </div>"""
 
 # ── Tableau hedge history ──────────────────────────────────────────────────────
+HEDGE_HISTORY_DAYS = 3   # exécutions affichées par défaut (le reste est repliable)
+
 def _hedge_history_card() -> str:
     hh = hedge_data.get("history", [])
     if not hh:
         return ""
-    rows = ""
-    for h in hh:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=HEDGE_HISTORY_DAYS)
+
+    def _row(h, hidden=False):
         side    = h.get("side","?")
         side_cl = "neg" if side == "SELL" else "pos"
         rpnl    = h.get("realized_pnl_usd")
         rpnl_h  = (f'<span class="{color(rpnl)}">{f(rpnl,0,True)}$</span>'
                    if rpnl is not None else '<span style="color:#484f58">—</span>')
-        rows += f"""<tr>
+        cls = ' class="hh-old" style="display:none"' if hidden else ""
+        return f"""<tr{cls}>
       <td class="left muted" style="font-size:0.78rem">{to_ny(h.get("ts",""))}</td>
       <td class="{side_cl}"><b>{side}</b></td>
       <td class="{side_cl}">{f(h.get("qty",0),5,True)} BTC</td>
@@ -630,8 +634,27 @@ def _hedge_history_card() -> str:
       <td>{rpnl_h}</td>
       <td class="muted" style="font-size:0.75rem">{h.get("note","")}</td>
     </tr>"""
+
+    # Tri antichrono, split récent (≤ 3j) / ancien
+    hh_sorted = sorted(hh, key=lambda h: (_parse_ts(h.get("ts")) or datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
+    recent = [h for h in hh_sorted if (_parse_ts(h.get("ts")) or cutoff) >= cutoff]
+    older  = [h for h in hh_sorted if h not in recent]
+    # Toujours montrer au moins les 3 dernières exécutions même si > 3j
+    if len(recent) < 3:
+        promote = older[:3 - len(recent)]
+        recent += promote
+        older   = older[len(promote):]
+
+    rows = "".join(_row(h) for h in recent) + "".join(_row(h, hidden=True) for h in older)
+    toggle = ""
+    if older:
+        toggle = f"""<div style="margin-top:8px">
+    <a href="#" id="hh-toggle" style="color:#58a6ff;font-size:0.8rem;text-decoration:none"
+       onclick="event.preventDefault();var o=document.querySelectorAll('.hh-old');var show=o[0].style.display==='none';o.forEach(r=>r.style.display=show?'':'none');this.textContent=show?'▲ Réduire ({HEDGE_HISTORY_DAYS} derniers jours)':'▼ Voir tout ({len(older)} exécutions plus anciennes)';">▼ Voir tout ({len(older)} exécutions plus anciennes)</a>
+  </div>"""
+
     return f"""<div class="card full">
-  <h2>🔄 Historique hedge — {len(hh)} exécution(s)  <span style="font-weight:400;color:#484f58">VWAP actuel ${f(hedge_avg,2)} · Qty {f(hedge_qty,5)} BTC</span></h2>
+  <h2>🔄 Historique hedge — {len(recent)} récente(s) / {len(hh)} au total  <span style="font-weight:400;color:#484f58">VWAP actuel ${f(hedge_avg,2)} · Qty {f(hedge_qty,5)} BTC</span></h2>
   <div style="overflow-x:auto">
   <table class="tbl">
     <tr>
@@ -644,6 +667,7 @@ def _hedge_history_card() -> str:
     {rows}
   </table>
   </div>
+  {toggle}
 </div>"""
 
 # ── Opportunités d'entrée ─────────────────────────────────────────────────────
