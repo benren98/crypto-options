@@ -82,6 +82,29 @@ No penalty below `GAMMA_PENALTY_START = 5 pts`. Linear discount from 5 pts (×1.
 
 Examples: gamma = 5 pts → ×1.00 · gamma = 7.5 pts → ×0.50 · gamma ≥ 10 pts → eliminated.
 
+### Score calibration — empirical basis (data as of 2026-06-12)
+
+Each component's normalisation constant was calibrated against live Deribit data so the component actually spans its 0–1 range in the regimes we trade. Reference snapshots below — re-run the analysis scripts (`yield_range.py`, `ivhv_range.py`, `dvol_range.py`, `hv_range.py`) to recalibrate later.
+
+**s_iv_hv — no explicit normalisation (cap at ratio 2.0×).** DVOL / HV_blend daily over 30 days (May–June 2026):
+
+| Percentile | Ratio | Resulting s_iv_hv |
+|---|---|---|
+| Min | 0.91× | 0.00 |
+| Median | 1.18× | 0.18 |
+| P90 | 1.66× | 0.66 |
+| Max (2026-05-13) | 1.81× | 0.81 |
+
+The component spans 0 → 0.8 within a single month even with the blended HV, so no rescaling is needed. Per-option values run ~0.10–0.15 higher than this table because candidates use `bid_iv` which includes the put-skew premium on top of the ATM-level DVOL. `s_iv_hv = 0` across the board (as in early June 2026) is not a scale defect — it correctly signals a negative VRP regime (market realising more than implieds pay) where the strategy should not sell.
+
+**s_yield — normalised at 30% annualised.** Distribution of raw annualised yields across 54 scannable OTM puts (3–25% OTM, 1–30 DTE, June 2026): min 0.5%, P25 6.4%, median 18.7%, P75 40.3%, P90 57.5%, max 113.5%. The original 20% norm saturated half the universe at 1.0 (non-discriminating); 60% (~P90) was considered but compressed existing scores too much; 30% was chosen as the compromise. Note the component is applied to `yield × z`, not raw yield, which pulls high-yield/near-strike candidates back down.
+
+**s_skew — normalised at 20%.** Observed skew richness vs same-expiry ATM in the 4–13% OTM hunting zone (June 2026): 4.4% (3.7% OTM) → 18.9% (13.1% OTM). The 20% norm means the component spreads ~0.2–0.95 across the zone without saturating in normal regimes, while panic regimes (skew can reach 30–50%) saturate at 1.0 — correctly flagging "exceptionally rich skew, sell it".
+
+**Gamma penalty thresholds (5 → 10 pts).** In the hunting zone, far-OTM medium-dated puts run 1–3 pts; near-ATM or short-dated puts run 5–10+ pts. The 5-pt start avoids penalising normal candidates; the 10-pt elimination kills only the genuinely dangerous gamma profiles.
+
+**Entry threshold 0.45.** Calibrated so the implicit demand matches the previous scoring version: with a typical base of ~0.30 from the yield and skew components, crossing 0.45 requires `s_iv_hv ≈ 0.35–0.40`, i.e. **IV/HV ≈ 1.35–1.40** — the same implicit bar the old 0.58 threshold imposed before the DVOL rank was moved out of the score.
+
 ### Entry thresholds
 
 All conditions must be met simultaneously for opportunistic entries:
