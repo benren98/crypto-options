@@ -57,7 +57,7 @@ CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur 
 # ── Gestion de portefeuille ────────────────────────────────────────────────────
 MAX_PORTFOLIO_BTC        = 5.0   # notionnel total max en BTC (somme des contracts)
 BA_MAX_PCT               = 12.0  # spread bid/ask max en % du mark pour entrer
-ENTRY_SCORE_MIN          = 0.58  # score minimum pour entrée opportuniste
+ENTRY_SCORE_MIN          = 0.45  # score minimum pour entrée opportuniste (recalibré scoring v2 : ≈ IV/HV ≥ 1.35 implicite)
 ENTRY_IV_HV_MIN          = 1.10  # ratio IV/HV minimum pour entrée opportuniste
 ENTRY_SCORE_REENTRY_BOOST= 0.10  # amélioration score nécessaire pour re-entrer un instrument déjà tenu
 DELTA_MIN_SPACING        = 0.08  # espacement min |delta| entre positions sur la même expiry

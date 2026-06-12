@@ -670,7 +670,7 @@ def _scan_entry_card() -> str:
         status  = c.get("status", "eligible")
         held_sc = c.get("held_entry_score")
         s_icon, s_cl, s_lbl = STATUS_LABEL.get(status, ("", "neu", status))
-        sc_cl   = "pos" if sc >= 0.58 else ("warn" if sc >= 0.45 else "neg")
+        sc_cl   = "pos" if sc >= 0.45 else ("warn" if sc >= 0.35 else "neg")
         ba      = float(c.get("ba_pct", 0))
         ba_cl   = "neg" if ba > 12 else "ok"
         ivhv    = float(c.get("iv_hv_ratio", 0))
@@ -731,7 +731,7 @@ def _scan_entry_card() -> str:
   <div style="margin-top:8px;font-size:0.78rem;color:#8b949e;border-top:1px solid #21262d;padding-top:8px">
     Score = [40% × (IV<sub>bid</sub>/HV<sub>blend</sub> − 1) + 30% × yield ajusté risque + 30% × skew vs ATM] × pénalité gamma ·
     HV<sub>blend</sub> = ½HV10j + ½HV30j · yield ajusté = yield ann. × z où z = OTM% / (HV×√TTE) · Score brut en gris = avant pénalité gamma ·
-    <b>Seuils</b> : score ≥ 0.58 · B/A ≤ 12% · DVOL ≥ 35% ·
+    <b>Seuils</b> : score ≥ 0.45 · B/A ≤ 12% · DVOL ≥ 35% ·
     <b>Sizing</b> : round(score × (0.5 + 0.5 × rang DVOL 30j), 1) BTC · max 5 BTC
   </div>
 </div>"""

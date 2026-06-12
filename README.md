@@ -88,7 +88,7 @@ All conditions must be met simultaneously for opportunistic entries:
 
 | Condition | Threshold |
 |---|---|
-| Composite score (after gamma penalty) | ≥ 0.58 |
+| Composite score (after gamma penalty) | ≥ 0.45 |
 | IV/HV ratio (per option, bid IV) | ≥ 1.10 |
 | Bid/ask spread | ≤ 12% of mark |
 | Market condition | DVOL ≥ 35% |
@@ -245,7 +245,7 @@ SCAN_DELTA_MAX           = -0.10 # max delta
 BA_MAX_PCT               = 12.0  # max bid/ask spread (% of mark)
 
 # Entry signal
-ENTRY_SCORE_MIN          = 0.58  # minimum composite score (after gamma penalty)
+ENTRY_SCORE_MIN          = 0.45  # minimum composite score (after gamma penalty) — recalibrated for score v2 (rank moved to sizing), implicitly demands IV/HV ≈ 1.35
 ENTRY_IV_HV_MIN          = 1.10  # minimum bid IV/HV ratio (per option)
 
 # Gamma penalty on score
