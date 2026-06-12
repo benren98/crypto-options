@@ -688,6 +688,11 @@ def _scan_entry_card() -> str:
         row_style = "opacity:0.5" if status == "filtered" else ""
         gpts    = float(c.get("gamma_pts", 0))
         gpts_cl = "neg" if gpts > 5 else ("warn" if gpts > 2.5 else "ok")
+        skew    = float(c.get("skew_pct", 0))
+        s_skew  = float(c.get("s_skew", 0))
+        skew_cl = "pos" if s_skew >= 0.5 else ("warn" if s_skew >= 0.25 else "neu")
+        zsc     = float(c.get("z_score", 0))
+        zsc_cl  = "pos" if zsc >= 1.0 else ("warn" if zsc >= 0.6 else "neg")
         rows += f"""<tr {"class='hl'" if (i==0 and status=="eligible") else ""} style="{row_style}">
       <td class="left"><span title="{s_lbl}">{s_icon}</span> <b>{c.get("instrument_name","—")}</b></td>
       <td class="{sc_cl}" style="font-weight:700">{score_cell}</td>
@@ -697,6 +702,8 @@ def _scan_entry_card() -> str:
       <td class="{gpts_cl}">{f(gpts,2)}</td>
       <td>{f(c.get("mark_iv",0),1)}%</td>
       <td class="{ivhv_cl}">{f(ivhv,2)}x</td>
+      <td class="{skew_cl}">{f(skew,1,True)}%</td>
+      <td class="{zsc_cl}">{f(zsc,2)}</td>
       <td>{f(c.get("yield_ann_pct",0),1)}%/an</td>
       <td class="{ba_cl}">{f(ba,1)}%</td>
       <td>${f(float(c.get("premium_usd", float(c.get("mark_price",0)) * _se_spot)), 0)}</td>
@@ -706,6 +713,7 @@ def _scan_entry_card() -> str:
   <h2>Opportunites d\'entree — scan du {ts_se}</h2>
   <div style="display:flex;gap:20px;margin-bottom:12px;font-size:0.82rem;flex-wrap:wrap;align-items:center">
     <span>HV 10j <b>{f(ctx.get("hv_10d",0),1)}%</b></span>
+    <span title="½ HV10j + ½ HV30j — référence du score IV/HV">HV blend <b>{f(ctx.get("hv_blend",0),1)}%</b></span>
     <span>DVOL <b>{f(ctx.get("curr_iv",0),1)}%</b></span>
     <span>Rang DVOL 30j <b class="{iv_rank_cl}">{f(iv_rank_pct,0)}%</b></span>
     <span>Régime <b>{ctx.get("regime","—")}</b></span>
@@ -719,9 +727,11 @@ def _scan_entry_card() -> str:
       <th>Strike</th><th>TTE</th><th>Delta</th>
       <th title="Δ delta points par 1% move du spot (par contrat)">Γ pts/1%</th>
       <th>IV option</th><th>IV/HV <span style="font-weight:400;color:#484f58">(≥1.10)</span></th>
+      <th title="Richesse de l'IV bid vs ATM de la même échéance (norme : 25% → s_skew = 1.0)">Skew vs ATM</th>
+      <th title="Distance au strike en écarts-types de vol réalisée : OTM% / (HV×√TTE)">z</th>
       <th>Yield ann.</th><th>B/A <span style="font-weight:400;color:#484f58">(≤12%)</span></th><th title="Prime au bid pour 1 BTC (1 contrat Deribit)">Prime bid / 1 BTC</th>
     </tr>
-    {rows if rows else '<tr><td colspan="11" class="muted" style="text-align:center">Aucun candidat</td></tr>'}
+    {rows if rows else '<tr><td colspan="13" class="muted" style="text-align:center">Aucun candidat</td></tr>'}
   </table>
   </div>
   <div style="margin-top:10px;font-size:0.78rem;color:#8b949e">
