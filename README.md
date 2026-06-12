@@ -43,27 +43,33 @@ Sell OTM BTC puts with short maturities (1–30 days), delta-hedged via a BTC-PE
 Each option receives a score between 0 and 1:
 
 ```
-score_raw = 0.40 × s_iv_hv + 0.30 × s_rank + 0.30 × s_yield
+score_raw = 0.40 × s_iv_hv + 0.30 × s_yield + 0.30 × s_skew
 score     = score_raw × gamma_factor
 ```
 
+All three components are option-specific (the DVOL rank, identical for every candidate in a scan, was moved out of the score and into the sizing multiplier — see Sizing).
+
 **IV/HV component** — captures the volatility risk premium for this specific option:
 ```
-s_iv_hv = clamp(bid_IV / HV_10d − 1.0, 0, 1)
+HV_blend = 0.5 × HV_10d + 0.5 × HV_30d
+s_iv_hv  = clamp(bid_IV / HV_blend − 1.0, 0, 1)
 ```
-0 when bid IV = HV (no premium), 1 when bid IV = 2× HV. Uses `bid_iv` (IV implied by the bid price — the price we actually sell at), not mid IV. Weight: 40%.
+0 when bid IV = HV (no premium), 1 when bid IV = 2× HV. Uses `bid_iv` (IV implied by the bid price — the price we actually sell at), not mid IV. The blended HV keeps the responsiveness of the 10-day window while damping the cliff effect of a single large day entering/leaving it (HV_10d ranged 20–57% within one month). Weight: 40%.
 
-**IV rank component** — measures where the market's overall vol level (DVOL index) sits in its 30-day range:
+**Risk-adjusted yield component** — annualised premium scaled by the strike's distance in realised vols:
 ```
-s_rank = (DVOL_current − DVOL_min30d) / (DVOL_max30d − DVOL_min30d)
+yield_ann = bid_price / DTE_years
+z         = OTM% / (HV_blend × √DTE_years)
+s_yield   = min(1.0, (yield_ann × z) / 0.30)
 ```
-`DVOL_current` is fetched live from the Deribit volatility index (same source as the 30-day range), not from an ATM option mark IV. This is the same value for all candidates in a given scan — it is a market context metric, not option-specific. Weight: 30%.
+`z` is the distance to the strike expressed in realised-vol standard deviations: a high yield close to the strike is worth less than a moderate yield far from it. Uses `bid_price` (the price we actually receive when selling). Weight: 30%.
 
-**Yield component** — annualised premium normalised to 30% BTC/year:
+**Skew component** — how rich the sold strike is relative to the ATM of the same expiry:
 ```
-s_yield = min(1.0, (bid_price / DTE_years) / 0.30)
+atm_IV = mark IV of the put whose strike is closest to spot (same expiry)
+s_skew = clamp((bid_IV / atm_IV − 1) / 0.25, 0, 1)
 ```
-Uses `bid_price` (the price we actually receive when selling). Reaches 1 when the annualised yield hits 30% BTC — the previous 20% cap saturated for half the scannable universe (median yield ≈ 19%), making the component non-discriminating. Weight: 30%.
+Reaches 1 when the put trades 25% richer than ATM. Between two puts with equal overall scores, this favours the one the market overpays the most relative to the centre of the smile — exactly the premium the strategy sells. Weight: 30%.
 
 **Gamma penalty** — discounts the raw score for high-gamma options:
 ```
@@ -89,8 +95,11 @@ All conditions must be met simultaneously for opportunistic entries:
 
 ### Sizing
 
+The DVOL 30-day rank acts as an aggressiveness multiplier: full size when vol is at the top of its 30-day range, half size at the bottom.
+
 ```python
-contracts = round(score, 1)   # e.g. score 0.72 → 0.7 BTC
+rank_mult = 0.5 + 0.5 × iv_rank          # iv_rank = DVOL position in 30d range [0..1]
+contracts = round(score × rank_mult, 1)  # e.g. score 0.72, rank 0.8 → 0.6 BTC
 contracts = max(0.1, contracts)
 contracts = min(contracts, MAX_PORTFOLIO_BTC − used_btc)
 ```

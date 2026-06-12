@@ -731,7 +731,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
 
         candidates = fetch_scored_candidates(
             currency, spot,
-            ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
+            ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
         if candidates.empty:
             print("  Aucun candidat liquide trouve (filtre B/A). On reessaie plus tard.")
@@ -740,7 +740,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                 return
             # Si portfolio vide : fallback sans filtre B/A (on entre quand meme)
             candidates = fetch_scored_candidates(
-                currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
+                currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
                 ba_max_pct=999
             )
             if candidates.empty:
@@ -750,7 +750,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
 
         best = candidates.iloc[0]
         used_btc = sum(float(p.get("contracts", 1)) for p in state.get("positions", []))
-        sizing = compute_sizing(float(best["score"]), used_btc)
+        sizing = compute_sizing(float(best["score"]), used_btc, ctx["iv_rank"])
         new_pos = open_position_from_candidate(best, spot, contracts=sizing)
 
         # Ajouter au hedge partagé
@@ -823,14 +823,14 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
 
     if used_btc_now < MAX_PORTFOLIO_BTC and ctx["signal_ok"]:
         candidates = fetch_scored_candidates(
-            currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
+            currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
         # Appliquer les filtres (diversification + re-entrée)
         candidates = candidates[candidates.apply(_candidate_allowed, axis=1)]
         if not candidates.empty and candidates.iloc[0]["score"] >= ENTRY_SCORE_MIN:
             best2 = candidates.iloc[0]
             used_btc2 = sum(float(p.get("contracts", 1)) for p in state.get("positions", []))
-            sizing2 = compute_sizing(float(best2["score"]), used_btc2)
+            sizing2 = compute_sizing(float(best2["score"]), used_btc2, ctx["iv_rank"])
             new_pos2 = open_position_from_candidate(best2, spot, contracts=sizing2)
 
             hd = state.setdefault("hedge", {})
@@ -1044,7 +1044,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             for p in _positions_now
         }
         _scan_candidates = fetch_scored_candidates(
-            currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
+            currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
 
         def _scan_row_status(row):
@@ -1081,6 +1081,8 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             "market_context": {
                 "spot": round(spot, 2),
                 "hv_10d": round(ctx["hv_10d"], 2),
+                "hv_30d": round(ctx["hv_30d"], 2),
+                "hv_blend": round(ctx["hv_blend"], 2),
                 "hv_1d_chg": ctx.get("hv_1d_chg"),
                 "iv_rank": round(ctx["iv_rank"], 3),
                 "iv_hv_ratio": round(ctx["iv_hv_ratio"], 3),
@@ -1165,7 +1167,7 @@ def fetch_iv_range(currency: str = CURRENCY, days: int = 30) -> tuple[float, flo
 
 
 def fetch_scored_candidates(currency: str, spot: float,
-                            hv_10d: float, iv_min: float, iv_max: float,
+                            hv_ref: float, iv_min: float, iv_max: float,
                             curr_iv: float = 50.0,
                             tte_min: float = SCAN_TTE_MIN,
                             tte_max: float = SCAN_TTE_MAX,
@@ -1174,6 +1176,7 @@ def fetch_scored_candidates(currency: str, spot: float,
                             ba_max_pct: float = BA_MAX_PCT) -> pd.DataFrame:
     """
     Scanne les puts OTM, calcule le score composite, filtre le spread B/A.
+    hv_ref = HV blend (0.5×10j + 0.5×30j) servant de référence vol réalisée.
     Retourne un DataFrame trié par score décroissant.
     """
     instruments = get("get_instruments", {"currency": currency, "kind": "option", "expired": "false"})
@@ -1207,25 +1210,10 @@ def fetch_scored_candidates(currency: str, spot: float,
             if ba_pct > ba_max_pct:
                 continue
 
-            moneyness = (inst["strike"] / spot - 1) * 100
-            tte_yr    = tte / 365
-
-            # Score composite — utilise bid_iv et bid_price (prix réel de vente)
-            s_iv_hv = max(0.0, min(1.0, (bid_iv / hv_10d - 1.0)))
-            # rang IV : contexte marché (DVOL) dans sa plage 30j, commun à tous les candidats
-            s_rank  = max(0.0, min(1.0, (curr_iv - iv_min) / max(iv_max - iv_min, 5)))
-            yield_a = bid / tte_yr if bid > 0 else mark / tte_yr  # bid=0 → illiquide, fallback mid
-            s_yield = min(1.0, yield_a / 0.30)   # normalisé à 30% ann.
-            score_raw = 0.40 * s_iv_hv + 0.30 * s_rank + 0.30 * s_yield
-            # Pénalité gamma : linéaire entre GAMMA_PENALTY_START (×1.0) et GAMMA_SCORE_CAP (×0.0)
-            gamma_pts_val = greeks.get("gamma", 0) * spot * 0.01 * 100
-            gamma_excess  = max(0.0, gamma_pts_val - GAMMA_PENALTY_START)
-            gamma_factor  = max(0.0, 1.0 - gamma_excess / (GAMMA_SCORE_CAP - GAMMA_PENALTY_START))
-            score   = round(score_raw * gamma_factor, 3)
-
             rows.append({
                 "instrument_name": inst["instrument_name"],
                 "strike":          inst["strike"],
+                "expiry_ts":       inst["expiration_timestamp"],
                 "expiry_dt":       pd.to_datetime(inst["expiration_timestamp"], unit="ms", utc=True),
                 "tte_days":        round(tte, 2),
                 "delta":           delta,
@@ -1238,30 +1226,91 @@ def fetch_scored_candidates(currency: str, spot: float,
                 "bid_price":       bid,
                 "ask_price":       ask,
                 "open_interest":   oi,
-                "moneyness":       round(moneyness, 1),
-                "premium_usd":     round(bid * spot if bid > 0 else mark * spot, 2),
-                "gamma_pts":       round(gamma_pts_val, 2),
-                "gamma_factor":    round(gamma_factor, 3),
-                "yield_ann_pct":   round(yield_a * 100, 1),
+                "moneyness":       round((inst["strike"] / spot - 1) * 100, 1),
                 "ba_pct":          round(ba_pct, 1),
-                "score":           score,
-                "score_raw":       round(score_raw, 3),
-                "s_iv_hv":         round(s_iv_hv, 3),
-                "s_rank":          round(s_rank, 3),
-                "s_yield":         round(s_yield, 3),
-                "iv_hv_ratio":     round(bid_iv / hv_10d, 3),
             })
         except Exception:
             continue
 
     if not rows:
         return pd.DataFrame()
+
+    # ── IV ATM par échéance (référence skew) ──────────────────────────────────
+    # Pour chaque expiry candidate, fetch l'IV du put dont le strike est le plus
+    # proche du spot → mesure la richesse du strike vendu vs le centre du smile.
+    atm_iv_by_exp: dict = {}
+    cand_expiries = {r["expiry_ts"] for r in rows}
+    for exp_ts in cand_expiries:
+        puts_exp = [i for i in instruments
+                    if i["instrument_name"].endswith("-P") and i["expiration_timestamp"] == exp_ts]
+        if not puts_exp:
+            continue
+        atm_inst = min(puts_exp, key=lambda i: abs(i["strike"] - spot))
+        try:
+            atm_t = fetch_ticker_full(atm_inst["instrument_name"])
+            atm_iv_by_exp[exp_ts] = atm_t.get("mark_iv") or curr_iv
+        except Exception:
+            atm_iv_by_exp[exp_ts] = curr_iv
+
+    # ── Scoring ────────────────────────────────────────────────────────────────
+    # rang DVOL 30j : sorti du score (commun à tous les candidats), utilisé par
+    # compute_sizing comme multiplicateur d'agressivité. Conservé en colonne.
+    s_rank = max(0.0, min(1.0, (curr_iv - iv_min) / max(iv_max - iv_min, 5)))
+    for r in rows:
+        tte_yr  = r["tte_days"] / 365
+        bid_iv  = r["bid_iv"]
+        bid     = r["bid_price"]
+        mark    = r["mark_price"]
+
+        # 1) VRP : IV au bid vs vol réalisée (HV blend 10j/30j)
+        s_iv_hv = max(0.0, min(1.0, (bid_iv / hv_ref - 1.0)))
+
+        # 2) Skew : richesse du strike vs ATM de la même échéance
+        atm_iv  = atm_iv_by_exp.get(r["expiry_ts"], curr_iv) or curr_iv
+        skew    = bid_iv / atm_iv - 1.0
+        s_skew  = max(0.0, min(1.0, skew / 0.25))   # 1.0 quand le put paie 25% de plus que l'ATM
+
+        # 3) Yield ajusté au risque : yield annualisé × distance au strike en vols réalisées
+        #    z = OTM% / (HV × √TTE) — un yield élevé proche du strike vaut moins
+        #    qu'un yield moyen loin du strike
+        yield_a = bid / tte_yr if bid > 0 else mark / tte_yr
+        otm_frac = abs(r["moneyness"]) / 100
+        z_score  = otm_frac / max(hv_ref / 100 * math.sqrt(tte_yr), 1e-9)
+        s_yield  = min(1.0, (yield_a * z_score) / 0.30)
+
+        score_raw = 0.40 * s_iv_hv + 0.30 * s_yield + 0.30 * s_skew
+        # Pénalité gamma : linéaire entre GAMMA_PENALTY_START (×1.0) et GAMMA_SCORE_CAP (×0.0)
+        gamma_pts_val = r["gamma"] * spot * 0.01 * 100
+        gamma_excess  = max(0.0, gamma_pts_val - GAMMA_PENALTY_START)
+        gamma_factor  = max(0.0, 1.0 - gamma_excess / (GAMMA_SCORE_CAP - GAMMA_PENALTY_START))
+
+        r.update({
+            "premium_usd":   round(bid * spot if bid > 0 else mark * spot, 2),
+            "gamma_pts":     round(gamma_pts_val, 2),
+            "gamma_factor":  round(gamma_factor, 3),
+            "yield_ann_pct": round(yield_a * 100, 1),
+            "atm_iv":        round(atm_iv, 1),
+            "skew_pct":      round(skew * 100, 1),
+            "z_score":       round(z_score, 2),
+            "score":         round(score_raw * gamma_factor, 3),
+            "score_raw":     round(score_raw, 3),
+            "s_iv_hv":       round(s_iv_hv, 3),
+            "s_skew":        round(s_skew, 3),
+            "s_rank":        round(s_rank, 3),
+            "s_yield":       round(s_yield, 3),
+            "iv_hv_ratio":   round(bid_iv / hv_ref, 3),
+        })
+
     return pd.DataFrame(rows).sort_values("score", ascending=False).reset_index(drop=True)
 
 
 def get_market_context(currency: str = CURRENCY) -> dict:
-    """Retourne HV 10j, IV range 30j, IV courante et régime de vol."""
+    """Retourne HV 10j/30j/blend, IV range 30j, IV courante et régime de vol."""
     hv_10d         = fetch_hv(currency, days=10)
+    hv_30d         = fetch_hv(currency, days=30)
+    # Blend 50/50 : garde la réactivité du 10j en amortissant l'effet falaise
+    # (un seul gros jour qui entre/sort de la fenêtre 10j faisait basculer tous les scores)
+    hv_blend       = round(0.5 * hv_10d + 0.5 * hv_30d, 2)
     iv_min, iv_max = fetch_iv_range(currency, days=30)
 
     # IV courante + move 1j : DVOL index live sur 26h pour avoir curr et prev_1d
@@ -1309,7 +1358,7 @@ def get_market_context(currency: str = CURRENCY) -> dict:
         pass
 
     iv_rank   = max(0.0, min(1.0, (curr_iv - iv_min) / max(iv_max - iv_min, 5)))
-    iv_hv_ratio = curr_iv / hv_10d if hv_10d > 0 else 1.0
+    iv_hv_ratio = curr_iv / hv_blend if hv_blend > 0 else 1.0
 
     if curr_iv > 80:
         regime, rec_delta = "HIGH", -0.15
@@ -1320,6 +1369,8 @@ def get_market_context(currency: str = CURRENCY) -> dict:
 
     return {
         "hv_10d":      hv_10d,
+        "hv_30d":      hv_30d,
+        "hv_blend":    hv_blend,
         "hv_1d_chg":   hv_1d_chg,
         "iv_min":      iv_min,
         "iv_max":      iv_max,
@@ -1333,9 +1384,15 @@ def get_market_context(currency: str = CURRENCY) -> dict:
     }
 
 
-def compute_sizing(score: float, used_btc: float) -> float:
-    """Taille en BTC = score, arrondi à 0.1, plafonné par capacité restante."""
-    raw      = round(score, 1)
+def compute_sizing(score: float, used_btc: float, iv_rank: float = 1.0) -> float:
+    """
+    Taille en BTC = score × (0.5 + 0.5 × rang DVOL 30j), arrondi à 0.1.
+    Le rang DVOL est sorti du score (il était identique pour tous les candidats
+    d'un même scan) : le score mesure la qualité de l'option, le rang module
+    l'agressivité du sizing (×0.5 en bas de range, ×1.0 en haut).
+    """
+    rank_mult = 0.5 + 0.5 * max(0.0, min(1.0, iv_rank))
+    raw      = round(score * rank_mult, 1)
     raw      = max(0.1, raw)          # minimum 0.1 BTC
     capacity = max(0.0, MAX_PORTFOLIO_BTC - used_btc)
     return round(min(raw, capacity), 1)
@@ -1388,9 +1445,9 @@ def scan_entry(currency: str = CURRENCY,
         _held = set()
 
     print(f"\n  Scan des puts OTM en cours...")
-    df = fetch_scored_candidates(currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
+    df = fetch_scored_candidates(currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"],
                                   ctx["curr_iv"], tte_min=tte_min, tte_max=tte_max)
-    df_all = fetch_scored_candidates(currency, spot, ctx["hv_10d"], ctx["iv_min"], ctx["iv_max"],
+    df_all = fetch_scored_candidates(currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"],
                                       ctx["curr_iv"], tte_min=tte_min, tte_max=tte_max, ba_max_pct=999)
     if _held:
         df     = df[~df["instrument_name"].isin(_held)]
@@ -1406,7 +1463,7 @@ def scan_entry(currency: str = CURRENCY,
     print_section(f"TOP {min(top_n, len(df))} CANDIDATS (sur {len(df_all)} scannees, {n_rejected} rejetees B/A>{BA_MAX_PCT:.0f}%)")
     print(f"  {'#':<3} {'Instrument':<30} {'TTE':>5} {'Delta':>7} {'IV':>6} "
           f"{'Money':>7} {'Prime$':>8} {'Yield/an':>9} {'B/A%':>6} "
-          f"{'SCORE':>7}  IV/HV  Rank  Yield")
+          f"{'SCORE':>7}  IV/HV  Skew  Yield")
     print(f"  {'-'*115}")
 
     for i, r in df.head(top_n).iterrows():
@@ -1419,7 +1476,7 @@ def scan_entry(currency: str = CURRENCY,
               f"${r['premium_usd']:>7,.0f} "
               f"{r['yield_ann_pct']:>8.1f}% "
               f"{r['ba_pct']:>5.1f}% "
-              f"  {r['score']:.3f}  {r['s_iv_hv']:.2f}   {r['s_rank']:.2f}  {r['s_yield']:.2f}  [{bar}]")
+              f"  {r['score']:.3f}  {r['s_iv_hv']:.2f}   {r['s_skew']:.2f}  {r['s_yield']:.2f}  [{bar}]")
 
     best = df.iloc[0]
     signal_ok = best["score"] >= ENTRY_SCORE_MIN and ctx["signal_ok"]
@@ -1442,6 +1499,8 @@ def scan_entry(currency: str = CURRENCY,
             "market_context": {
                 "spot": round(spot, 2),
                 "hv_10d": round(ctx["hv_10d"], 2),
+                "hv_30d": round(ctx["hv_30d"], 2),
+                "hv_blend": round(ctx["hv_blend"], 2),
                 "hv_1d_chg": ctx.get("hv_1d_chg"),
                 "iv_rank": round(ctx["iv_rank"], 3),
                 "iv_hv_ratio": round(ctx["iv_hv_ratio"], 3),
