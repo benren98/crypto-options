@@ -301,13 +301,14 @@ def _attr_card(p: dict, live: dict) -> str:
     pnl_gamma  = 0.5 * (-gamma_e) * ds ** 2  # uses gamma_e (contracts-scaled) for correct $PnL
     pnl_theta  = theta_d * days_held
     pnl_vega   = (-vega_live) * div
-    mid_mid    = (entry_mark - curr_mark) * spot
+    # Même formule que pnl_monitor : jambe d'entrée au spot d'entrée, jambe actuelle au spot actuel
+    mid_mid    = (entry_mark * entry_spot - curr_mark * spot) * contracts
     pnl_resid  = mid_mid - (pnl_delta + pnl_gamma + pnl_theta + pnl_vega)
 
     # Coût B/A entrée : on a vendu au bid, le mark était plus élevé
-    ba_entry   = -(entry_mark - entry_p) * entry_spot   # négatif = coût payé
+    ba_entry   = -(entry_mark - entry_p) * entry_spot * contracts   # négatif = coût payé
     # Coût B/A sortie estimé : pour racheter on paierait l'ask
-    ba_exit_est = -(curr_ask - curr_mark) * spot         # négatif = coût supplémentaire
+    ba_exit_est = -(curr_ask - curr_mark) * spot * contracts        # négatif = coût supplémentaire
 
     total_opt  = mid_mid + ba_entry
     # TTE fallback: compute from expiry_dt when live data not yet available
@@ -529,19 +530,21 @@ def _pnl_global_card() -> str:
     # pour rester cohérent avec positions_list après expiry/roll
     pnl_opt_total = sum(float(pd_map.get(p.get("instrument_name",""),{}).get("pnl_option_usd", 0)) for p in positions_list)
     funding       = float(s.get("funding_pnl_usd", 0))
-    total_prem    = sum(float(p.get("entry_price",0))*float(p.get("entry_spot",spot)) for p in positions_list)
+    total_prem    = sum(float(p.get("entry_price",0)) * float(p.get("entry_spot",spot)) * float(p.get("contracts",1)) for p in positions_list)
 
     # Décomposition option : mid/mid total + coût B/A entrée total
+    # Même formule que pnl_monitor : (mark entrée × spot entrée − mark actuel × spot actuel) × contracts
     midmid_total = sum(
-        (float(p.get("entry_mark_price", p.get("entry_price", 0))) -
+        (float(p.get("entry_mark_price", p.get("entry_price", 0))) * float(p.get("entry_spot", spot)) -
          float(pd_map.get(p.get("instrument_name",""),{}).get(
              "current_price_btc",
              float(p.get("entry_mark_price", p.get("entry_price", 0)))  # fallback: 0 PnL si pas encore de données live
-         ))) * spot
+         )) * spot) * float(p.get("contracts", 1))
         for p in positions_list
     )
     ba_entry_total = sum(
-        -(float(p.get("entry_mark_price", p.get("entry_price", 0))) - float(p.get("entry_price", 0))) * float(p.get("entry_spot", spot))
+        -(float(p.get("entry_mark_price", p.get("entry_price", 0))) - float(p.get("entry_price", 0)))
+        * float(p.get("entry_spot", spot)) * float(p.get("contracts", 1))
         for p in positions_list
     )
 
@@ -555,7 +558,7 @@ def _pnl_global_card() -> str:
     <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-bottom:4px">OPTIONS (positions ouvertes)</td></tr>
     <tr>
       <td class="label" style="font-size:0.82rem">Mid / mid total
-        <span style="color:#484f58;font-size:0.72rem;display:block">(mark entrée − mark actuel) × spot</span>
+        <span style="color:#484f58;font-size:0.72rem;display:block">(mark entrée × spot entrée − mark actuel × spot) × contrats</span>
       </td>
       <td class="val {color(midmid_total)}">{f(midmid_total,0,True)}$</td>
     </tr>
@@ -567,7 +570,7 @@ def _pnl_global_card() -> str:
     </tr>
     <tr style="border-top:1px solid #21262d">
       <td class="label"><b>= Option latent total</b>
-        <span style="color:#484f58;font-size:0.72rem;display:block">(entry_bid − mark actuel) × spot</span>
+        <span style="color:#484f58;font-size:0.72rem;display:block">(bid entrée × spot entrée − mark actuel × spot) × contrats</span>
       </td>
       <td class="val {color(pnl_opt_total)}"><b>{f(pnl_opt_total,0,True)}$</b></td>
     </tr>
