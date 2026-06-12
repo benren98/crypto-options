@@ -1215,7 +1215,7 @@ def fetch_scored_candidates(currency: str, spot: float,
             # rang IV : contexte marché (DVOL) dans sa plage 30j, commun à tous les candidats
             s_rank  = max(0.0, min(1.0, (curr_iv - iv_min) / max(iv_max - iv_min, 5)))
             yield_a = bid / tte_yr if bid > 0 else mark / tte_yr  # bid=0 → illiquide, fallback mid
-            s_yield = min(1.0, yield_a / 0.20)
+            s_yield = min(1.0, yield_a / 0.60)   # normalisé à 60% ann. (~P90 des puts OTM scannés)
             score_raw = 0.40 * s_iv_hv + 0.30 * s_rank + 0.30 * s_yield
             # Pénalité gamma : linéaire entre GAMMA_PENALTY_START (×1.0) et GAMMA_SCORE_CAP (×0.0)
             gamma_pts_val = greeks.get("gamma", 0) * spot * 0.01 * 100

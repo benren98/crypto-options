@@ -59,11 +59,11 @@ s_rank = (DVOL_current − DVOL_min30d) / (DVOL_max30d − DVOL_min30d)
 ```
 `DVOL_current` is fetched live from the Deribit volatility index (same source as the 30-day range), not from an ATM option mark IV. This is the same value for all candidates in a given scan — it is a market context metric, not option-specific. Weight: 30%.
 
-**Yield component** — annualised premium normalised to 20% BTC/year:
+**Yield component** — annualised premium normalised to 60% BTC/year (~P90 of scannable OTM puts):
 ```
-s_yield = min(1.0, (bid_price / DTE_years) / 0.20)
+s_yield = min(1.0, (bid_price / DTE_years) / 0.60)
 ```
-Uses `bid_price` (the price we actually receive when selling). Reaches 1 when the annualised yield hits 20% BTC. Weight: 30%.
+Uses `bid_price` (the price we actually receive when selling). Reaches 1 when the annualised yield hits 60% BTC — the previous 20% cap saturated for half the scannable universe (median yield ≈ 19%), making the component non-discriminating. Weight: 30%.
 
 **Gamma penalty** — discounts the raw score for high-gamma options:
 ```
