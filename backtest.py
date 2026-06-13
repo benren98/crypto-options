@@ -28,6 +28,7 @@ GAMMA_SCORE_CAP   = 10.0
 DVOL_MIN          = 35.0
 YIELD_NORM        = 0.30
 SKEW_NORM         = 0.20
+SIZE_CONVEXITY    = 1.5     # taille ∝ score^1.5 (miroir greeks_hedge.compute_sizing)
 MIN_PREMIUM_USD   = 50.0    # plancher de prime au bid ($/BTC) — anti-poussière (remplace le filtre B/A%)
 
 # ── Paramètres modèle de pricing ───────────────────────────────────────────────
@@ -255,7 +256,7 @@ def run(years: float, always_one: bool = True, rank_mult=rank_mult_linear,
                         best = {'score': score, 'K': K, 'tte': tte, 'price': price, 'otm': otm}
             ok = best and (best['score'] >= ENTRY_SCORE_MIN or must_open)
             if ok:
-                size = round(best['score'] * rank_mult(iv_rank), 1)
+                size = round(best['score'] ** SIZE_CONVEXITY * rank_mult(iv_rank), 1)
                 size = max(0.1, min(size, MAX_PORTFOLIO_BTC - used))
                 if size >= 0.1:
                     positions.append({

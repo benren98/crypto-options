@@ -1534,15 +1534,25 @@ def get_market_context(currency: str = CURRENCY) -> dict:
     }
 
 
+SIZE_CONVEXITY = 1.5   # taille ∝ score^1.5 : concentre le capital sur les meilleurs scores
+
+
 def compute_sizing(score: float, used_btc: float, iv_rank: float = 1.0) -> float:
     """
-    Taille en BTC = score × (0.5 + 0.5 × rang DVOL 30j), arrondi à 0.1.
+    Taille en BTC = score^1.5 × (0.5 + 0.5 × rang DVOL 30j), arrondi à 0.1.
+
     Le rang DVOL est sorti du score (il était identique pour tous les candidats
     d'un même scan) : le score mesure la qualité de l'option, le rang module
     l'agressivité du sizing (×0.5 en bas de range, ×1.0 en haut).
+
+    La convexité score^1.5 (calibrée sur backtest 4 ans) réduit non-uniformément
+    la taille : les setups médiocres (score ≈ seuil 0.45) sont coupés d'un tiers
+    (0.45 → 0.30), les bons scores quasi inchangés. Ces setups faibles sont
+    surreprésentés les jours fragiles avant les gaps → max drawdown −28% (9.8k→7.1k$
+    sur 4 ans) avec un PnL en légère hausse. Voir README et backtest_sizing.py.
     """
     rank_mult = 0.5 + 0.5 * max(0.0, min(1.0, iv_rank))
-    raw      = round(score * rank_mult, 1)
+    raw      = round((score ** SIZE_CONVEXITY) * rank_mult, 1)
     raw      = max(0.1, raw)          # minimum 0.1 BTC
     capacity = max(0.0, MAX_PORTFOLIO_BTC - used_btc)
     return round(min(raw, capacity), 1)

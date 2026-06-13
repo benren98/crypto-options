@@ -122,16 +122,29 @@ The premium floor replaces the bid/ask spread as the real quality gate. A wide s
 
 ### Sizing
 
-The DVOL 30-day rank acts as an aggressiveness multiplier: full size when vol is at the top of its 30-day range, half size at the bottom.
+The DVOL 30-day rank acts as an aggressiveness multiplier: full size when vol is at the top of its 30-day range, half size at the bottom. The score enters with a **convexity exponent of 1.5** that concentrates capital on the best opportunities.
 
 ```python
-rank_mult = 0.5 + 0.5 × iv_rank          # iv_rank = DVOL position in 30d range [0..1]
-contracts = round(score × rank_mult, 1)  # e.g. score 0.72, rank 0.8 → 0.6 BTC
+rank_mult = 0.5 + 0.5 × iv_rank             # iv_rank = DVOL position in 30d range [0..1]
+contracts = round(score**1.5 × rank_mult, 1) # convexity: weak setups shrink, strong ones don't
 contracts = max(0.1, contracts)
 contracts = min(contracts, MAX_PORTFOLIO_BTC − used_btc)
 ```
 
-Portfolio cap: **5 BTC notional total**. Sizing reflects conviction: a score of 0.6 opens 0.6 BTC, a score of 1.0 opens 1.0 BTC (1 Deribit contract = 1 BTC).
+Portfolio cap: **5 BTC notional total** (1 Deribit contract = 1 BTC).
+
+**Convexity calibration (`score^1.5`).** The exponent reshapes size non-uniformly:
+
+| Score | Linear (old) | `^1.5` (new) | Reduction |
+|-------|--------------|--------------|-----------|
+| 1.00  | 1.00         | 1.00         | 0%        |
+| 0.80  | 0.80         | 0.72         | −10%      |
+| 0.60  | 0.60         | 0.46         | −23%      |
+| 0.45 (at threshold) | 0.45 | 0.30 | **−33%**  |
+
+Marginal setups near the 0.45 entry threshold — which cluster on the fragile days preceding gap-downs — get cut by a third, while high-conviction scores are barely touched. On the 4-year backtest (BTC, circuit breaker on) this lowers **max drawdown by 28% (9.8k → 7.1k$)** while *raising* PnL slightly (38.5k → 39.3k$): the trimmed capital was sitting on low-edge trades. Calmar improves 1.48 → 2.08, Sharpe 1.63 → 1.84.
+
+`^2.0` was tested and overshoots — it starves capital deployment (avg notional 3.4 vs 3.7 BTC) and cuts PnL. `1.5` is the sweet spot. A per-portfolio **aggregate gamma budget** was also evaluated: it is gamma-specific (binds before the notional cap) and adds ~+2k$ PnL, but does *not* reduce drawdown further — the entire DD reduction comes from convexity — so it was left out to keep sizing to a single lever. Reducing the notional cap in high-DVOL regimes was tested and is counterproductive (high DVOL = richest premium; the circuit breaker already handles the gap risk). See `backtest_sizing.py` and `diag_gamma.py`.
 
 ### Circuit breaker
 
@@ -166,7 +179,7 @@ The dashboard shows the breaker state in the header (armed + margin vs threshold
 
 ### "Always in a position" guarantee
 
-If the portfolio is empty (after a roll or on first run), the algo **always opens** the best scored candidate, even if market signal conditions are not met. If no liquid candidate is found (B/A > 12%), the spread filter is lifted to guarantee entry. Sizing still follows `round(score, 1)` with a 0.1 BTC minimum.
+If the portfolio is empty (after a roll or on first run), the algo **always opens** the best scored candidate, even if market signal conditions are not met. If no liquid candidate is found (B/A > 12%), the spread filter is lifted to guarantee entry. Sizing still follows `round(score**1.5 × rank_mult, 1)` with a 0.1 BTC minimum.
 
 ### Opportunistic entries
 
