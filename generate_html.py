@@ -328,6 +328,9 @@ def _attr_card(p: dict, live: dict) -> str:
   <div style="font-size:0.75rem;color:#8b949e;margin-bottom:10px">
     Spot {f(ds,0,True)}$&nbsp;·&nbsp;IV {f(div,1,True)}pts&nbsp;·&nbsp;{f(days_held*24,1)}h tenu&nbsp;·&nbsp;TTE <span class="{cl_tte}">{f(tte,2)}j</span>
     &nbsp;·&nbsp;Prime encaissée <span style="color:#3fb950;font-weight:600">+{f(entry_p * entry_spot * contracts, 0)}$</span> <span style="color:#484f58">({f(contracts,1)} BTC × {f(entry_p,5)} BTC × ${f(entry_spot,0)})</span>
+    <br>Mid actuel <b style="color:#e6edf3">{f(curr_mark,5)} BTC</b> (${f(curr_mark * spot, 0)} / 1 BTC)
+    &nbsp;·&nbsp;<span style="color:#484f58">entrée mid {f(entry_mark,5)} BTC</span>
+    &nbsp;·&nbsp;<span class="{color(entry_mark - curr_mark)}">{f((entry_mark - curr_mark) / entry_mark * 100 if entry_mark else 0, 1, True)}% depuis l'entrée</span>
   </div>
   <table class="tbl">
     <tr><th style="text-align:left">Composante</th><th>Valeur ($)</th><th>% PnL opt.</th></tr>
