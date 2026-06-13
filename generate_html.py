@@ -70,17 +70,46 @@ _pd_lots: dict = {}
 for _d in positions_detail:
     _pd_lots.setdefault(_d.get("instrument"), []).append(_d)
 
+def _synth_live(p: dict) -> dict:
+    """Détail live synthétique pour un lot pas encore marké par pnl_monitor
+    (cas : ré-entrée ajoutée par greeks_hedge après le run pnl_monitor → positions_detail
+    en retard d'un cycle). PnL = 0, greeks d'entrée. Honnête jusqu'au prochain snapshot."""
+    c  = float(p.get("contracts", 1))
+    em = float(p.get("entry_mark_price", p.get("entry_price", 0)))
+    return {
+        "instrument":         p.get("instrument_name", ""),
+        "current_price_btc":  em, "current_bid_btc": em, "current_ask_btc": em,
+        "current_iv_pct":     float(p.get("iv_at_entry", 0)),
+        "entry_price_btc":    float(p.get("entry_price", 0)),
+        "entry_spot":         float(p.get("entry_spot", 0)),
+        "pnl_option_usd":     0.0, "pnl_option_btc": 0.0,
+        "live_delta":         float(p.get("delta_at_entry", 0)) * c,
+        "live_gamma":         float(p.get("gamma_at_entry", 0)) * c,
+        "live_vega":          float(p.get("vega_at_entry", 0)) * c,
+        "theta_theory_usd":   0.0, "theta_daily_now_usd": 0.0, "days_held": 0.0,
+        "_synthetic":         True,
+    }
+
+# Assignation un-à-un lot↔détail (chaque détail utilisé au plus une fois).
+# Sans ça, 2 lots du même instrument apparieraient le même détail → double-comptage.
+_lot_live: dict = {}
+for _instr, _lots in {n: [p for p in positions_list if p.get("instrument_name") == n]
+                      for n in {p.get("instrument_name") for p in positions_list}}.items():
+    _avail = list(_pd_lots.get(_instr, []))
+    for _p in _lots:
+        if not _avail:
+            _lot_live[id(_p)] = _synth_live(_p)   # lot pas encore marké
+            continue
+        _ep, _es = float(_p.get("entry_price", 0)), float(_p.get("entry_spot", 0))
+        _best = min(_avail, key=lambda d: abs(float(d.get("entry_price_btc", 0)) - _ep)
+                    + abs(float(d.get("entry_spot", 0)) - _es) / 1e5)
+        _lot_live[id(_p)] = _best
+        _avail.remove(_best)
+
 def _match_live(p: dict) -> dict:
-    """Apparie un lot (position) à son détail live exact, par prix/spot d'entrée.
-    Indispensable quand 2 lots partagent le même instrument_name (ré-entrée)."""
-    lots = _pd_lots.get(p.get("instrument_name", ""), [])
-    if not lots:
-        return {}
-    if len(lots) == 1:
-        return lots[0]
-    ep, es = float(p.get("entry_price", 0)), float(p.get("entry_spot", 0))
-    return min(lots, key=lambda d: abs(float(d.get("entry_price_btc", 0)) - ep)
-               + abs(float(d.get("entry_spot", 0)) - es) / 1e5)
+    """Détail live d'un lot (assignation un-à-un pré-calculée). Jamais le même détail
+    pour deux lots ; un lot non encore marké reçoit un détail synthétique à l'entrée."""
+    return _lot_live.get(id(p), _pd_lots.get(p.get("instrument_name", ""), [{}])[0] if _pd_lots.get(p.get("instrument_name", "")) else {})
 
 def _group_positions() -> list:
     """Regroupe positions_list par instrument (ordre préservé). Retourne une liste de
@@ -476,7 +505,10 @@ def _agg_lots(lots: list) -> tuple:
 
     nonempty = [d for d in livs if d]
     if nonempty:
-        agg = dict(nonempty[0])  # base = champs instrument-level (mark, IV, tte) identiques
+        # base = champs instrument-level (mark, IV, tte) — préférer un détail RÉEL (marké)
+        # à un détail synthétique (lot pas encore traité par pnl_monitor)
+        _base = next((d for d in nonempty if not d.get("_synthetic")), nonempty[0])
+        agg = dict(_base)
         agg["pnl_option_usd"]      = sum(float(d.get("pnl_option_usd", 0)) for d in nonempty)
         agg["pnl_option_btc"]      = sum(float(d.get("pnl_option_btc", 0)) for d in nonempty)
         agg["live_delta"]          = sum(float(d.get("live_delta", 0)) for d in nonempty)
