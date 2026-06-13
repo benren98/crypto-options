@@ -192,6 +192,13 @@ pnl_open       = float(s.get("total_pnl_usd", 0))
 pnl_cumul      = pnl_hist_total + pnl_open
 realized_hedge = float(hedge_data.get("realized_pnl_usd", 0))
 pnl_hedge_usd  = float(s.get("pnl_hedge_usd", 0))
+_funding_usd   = float(s.get("funding_pnl_usd", 0) or 0)
+# PnL LATENT (mark-to-market des positions ouvertes) = option latente + hedge FLOTTANT
+# (on exclut le hedge réalisé qui est déjà encaissé). Calculé EXACTEMENT comme le
+# "LATENT TOTAL" de la carte détail (somme _match_live par lot) → header == détail.
+# L'ancien total_pnl_usd mélangeait option latente + hedge réalisé+flottant → incohérent.
+_pnl_opt_latent = sum(float(_match_live(p).get("pnl_option_usd", 0)) for p in positions_list)
+pnl_open_latent = _pnl_opt_latent + (pnl_hedge_usd - realized_hedge) + _funding_usd
 
 # Deltas depuis dernier snapshot
 _prev_spot  = float(pnl_history[-2].get("spot",      0)) if len(pnl_history) >= 2 else None
@@ -958,7 +965,7 @@ def _alerts_card() -> str:
 # ── HTML ───────────────────────────────────────────────────────────────────────
 title    = f"VRP Monitor — {n_instruments} position(s)" if positions_list else "VRP Monitor"
 _spot_cl = "pos" if (_delta_spot or 0) >= 0 else "neg"
-_pnl_cl  = "pos" if _curr_pnl >= 0 else "neg"
+_pnl_cl  = "pos" if pnl_open_latent >= 0 else "neg"
 _dpnl_cl = ("pos" if (_delta_pnl or 0) >= 0 else "neg") if _delta_pnl is not None else "neu"
 _tte_min = min((float(pd_map.get(p.get("instrument_name",""),{}).get("tte_days",99)) for p in positions_list), default=99)
 _tte_cl  = "warn" if _tte_min <= 1 else "neu"
@@ -1131,9 +1138,9 @@ else:
     {_move4h_html}
     {_move1d_html}
   </div>
-  <div class="chip">
-    <span class="chip-label">PnL total</span>
-    <span class="chip-value {_pnl_cl}">{f(_curr_pnl,0,True)}$</span>
+  <div class="chip" title="PnL latent des positions ouvertes (option latente + hedge flottant). = LATENT TOTAL de la carte détail. Le réalisé cumulé est dans la carte PnL global.">
+    <span class="chip-label">PnL ouvert (latent)</span>
+    <span class="chip-value {_pnl_cl}">{f(pnl_open_latent,0,True)}$</span>
     {_pnl_delta_html}
     {_pnl_1d_html}
   </div>
