@@ -81,7 +81,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
 <body>
 
 <h1>📊 VRP Monitor — 7 position(s) ouverte(s) (8 lots)</h1>
-<div class="subtitle">Données : 2026-06-13 15:08 EDT · Généré : 2026-06-13 15:09 EDT · ↻ auto-refresh 5min</div>
+<div class="subtitle">Données : 2026-06-13 15:08 EDT · Généré : 2026-06-13 15:14 EDT · ↻ auto-refresh 5min</div>
 
 <div class="header-bar">
   <div class="chip">
@@ -770,10 +770,10 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
       <th>IV option</th><th>IV/HV <span style="font-weight:400;color:#484f58">(≥1.10)</span></th>
       <th title="Richesse de l'IV bid vs ATM de la même échéance (norme : 20% → s_skew = 1.0)">Skew vs ATM</th>
       <th title="Distance au strike en écarts-types de vol réalisée : OTM% / (HV×√TTE)">z</th>
-      <th>Yield ann.</th><th>B/A <span style="font-weight:400;color:#484f58">(≤12%)</span></th><th title="Prime au bid pour 1 BTC (1 contrat Deribit)">Prime bid / 1 BTC</th>
+      <th>Yield ann.</th><th>B/A <span style="font-weight:400;color:#484f58">(≤50%)</span></th><th title="Prime au bid pour 1 BTC (1 contrat Deribit) — plancher 50$">Prime bid / 1 BTC</th>
     </tr>
-    <tr  style="opacity:0.75">
-      <td class="left"><span title="B/A large — ordre limite manuel (pas d'auto-entrée)">🔶</span> <b>BTC-19JUN26-54000-P</b></td>
+    <tr  style="">
+      <td class="left"><span title="ba_wide"></span> <b>BTC-19JUN26-54000-P</b></td>
       <td class="pos" style="font-weight:700">0.635 <span class="neg" style="font-size:0.75rem">(+nan)</span></td>
       <td>$54,000</td>
       <td>5.5j</td>
@@ -784,7 +784,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
       <td class="pos">+58.1%</td>
       <td class="pos">3.44</td>
       <td>2.0%/an</td>
-      <td class="neg">50.0%</td>
+      <td class="warn">50.0%</td>
       <td>$19</td>
     </tr><tr  style="opacity:0.5">
       <td class="left"><span title="Filtré (trop proche d'une pos. tenue)">🚫</span> <b>BTC-26JUN26-50000-P</b></td>
@@ -798,7 +798,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
       <td class="pos">+61.9%</td>
       <td class="pos">3.18</td>
       <td>1.7%/an</td>
-      <td class="neg">16.7%</td>
+      <td class="warn">16.7%</td>
       <td>$38</td>
     </tr><tr  style="opacity:0.5">
       <td class="left"><span title="Filtré (trop proche d'une pos. tenue)">🚫</span> <b>BTC-19JUN26-59000-P</b></td>
@@ -812,7 +812,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
       <td class="pos">+20.2%</td>
       <td class="pos">1.74</td>
       <td>12.5%/an</td>
-      <td class="neg">19.0%</td>
+      <td class="warn">19.0%</td>
       <td>$122</td>
     </tr><tr  style="">
       <td class="left"><span title="En position">📌</span> <b>BTC-19JUN26-58000-P</b></td>
@@ -826,7 +826,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
       <td class="pos">+28.0%</td>
       <td class="pos">2.09</td>
       <td>8.6%/an</td>
-      <td class="neg">14.3%</td>
+      <td class="warn">14.3%</td>
       <td>$83</td>
     </tr><tr  style="">
       <td class="left"><span title="En position">📌</span> <b>BTC-19JUN26-55000-P</b></td>
@@ -840,7 +840,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
       <td class="pos">+49.1%</td>
       <td class="pos">3.11</td>
       <td>2.6%/an</td>
-      <td class="neg">40.0%</td>
+      <td class="warn">40.0%</td>
       <td>$26</td>
     </tr><tr  style="">
       <td class="left"><span title="En position">📌</span> <b>BTC-19JUN26-56000-P</b></td>
@@ -854,7 +854,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
       <td class="pos">+42.5%</td>
       <td class="pos">2.77</td>
       <td>4.0%/an</td>
-      <td class="neg">28.6%</td>
+      <td class="warn">28.6%</td>
       <td>$38</td>
     </tr><tr  style="">
       <td class="left"><span title="En position">📌</span> <b>BTC-26JUN26-52000-P</b></td>
@@ -888,13 +888,13 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
   </table>
   </div>
   <div style="margin-top:10px;font-size:0.78rem;color:#8b949e">
-    ✅ Éligible · 📌 En position · 🔁 Re-entrée possible (score +0.05) · 🚫 Filtré (même expiry, delta trop proche) · 🔶 B/A large (ordre limite manuel, pas d'auto-entrée) ·
+    ✅ Éligible · 📌 En position · 🔁 Re-entrée possible (score +0.05) · 🚫 Filtré (même expiry, delta trop proche) ·
     <b>Diversification</b> : espacement delta ≥ 0.08 entre positions de même expiry · 1 entrée max par cycle
   </div>
   <div style="margin-top:8px;font-size:0.78rem;color:#8b949e;border-top:1px solid #21262d;padding-top:8px">
     Score = [40% × (IV<sub>bid</sub>/HV<sub>blend</sub> − 1) + 30% × yield ajusté risque + 30% × skew vs ATM] × pénalité gamma ·
     HV<sub>blend</sub> = ½HV10j + ½HV30j · yield ajusté = yield ann. × z où z = OTM% / (HV×√TTE) · Score brut en gris = avant pénalité gamma ·
-    <b>Seuils</b> : score ≥ 0.45 · B/A ≤ 12% · DVOL ≥ 35% ·
+    <b>Seuils</b> : score ≥ 0.45 · prime ≥ 50$/BTC · B/A ≤ 50% (anti-illiquidité) · DVOL ≥ 35% ·
     <b>Sizing</b> : round(score × (0.5 + 0.5 × rang DVOL 30j), 1) BTC · max 5 BTC
   </div>
 </div><div class="card full">
@@ -1371,5 +1371,5 @@ new Chart(document.getElementById("chartVol"), {
 });
 </script>
 
-<footer>VRP Monitor · Généré le 2026-06-13 15:09 EDT · GitHub Actions · Auto-refresh 5 min</footer>
+<footer>VRP Monitor · Généré le 2026-06-13 15:14 EDT · GitHub Actions · Auto-refresh 5 min</footer>
 </body></html>

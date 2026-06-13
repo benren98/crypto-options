@@ -850,7 +850,6 @@ def _scan_entry_card() -> str:
         "held":         ("📌", "neu",  "En position"),
         "held_reentry": ("🔁", "warn", "En position — re-entrée possible"),
         "filtered":     ("🚫", "neg",  "Filtré (trop proche d'une pos. tenue)"),
-        "ba_wide":      ("🔶", "warn", "B/A large — ordre limite manuel (pas d'auto-entrée)"),
     }
 
     rows = ""
@@ -861,7 +860,7 @@ def _scan_entry_card() -> str:
         s_icon, s_cl, s_lbl = STATUS_LABEL.get(status, ("", "neu", status))
         sc_cl   = "pos" if sc >= 0.45 else ("warn" if sc >= 0.35 else "neg")
         ba      = float(c.get("ba_pct", 0))
-        ba_cl   = "neg" if ba > 12 else "ok"
+        ba_cl   = "neg" if ba > 50 else ("warn" if ba > 12 else "ok")
         ivhv    = float(c.get("iv_hv_ratio", 0))
         ivhv_cl = "pos" if ivhv >= 1.10 else "neg"
         # Score pénalisé + score brut (avant pénalité gamma) si différent
@@ -874,7 +873,7 @@ def _scan_entry_card() -> str:
             delta_sc = sc - float(held_sc)
             dc = "pos" if delta_sc > 0.05 else ("warn" if delta_sc > 0 else "neg")
             score_cell += f' <span class="{dc}" style="font-size:0.75rem">({f(delta_sc,3,True)})</span>'
-        row_style = "opacity:0.5" if status == "filtered" else ("opacity:0.75" if status == "ba_wide" else "")
+        row_style = "opacity:0.5" if status == "filtered" else ""
         gpts    = float(c.get("gamma_pts", 0))
         gpts_cl = "neg" if gpts > 5 else ("warn" if gpts > 2.5 else "ok")
         skew    = float(c.get("skew_pct", 0))
@@ -918,19 +917,19 @@ def _scan_entry_card() -> str:
       <th>IV option</th><th>IV/HV <span style="font-weight:400;color:#484f58">(≥1.10)</span></th>
       <th title="Richesse de l'IV bid vs ATM de la même échéance (norme : 20% → s_skew = 1.0)">Skew vs ATM</th>
       <th title="Distance au strike en écarts-types de vol réalisée : OTM% / (HV×√TTE)">z</th>
-      <th>Yield ann.</th><th>B/A <span style="font-weight:400;color:#484f58">(≤12%)</span></th><th title="Prime au bid pour 1 BTC (1 contrat Deribit)">Prime bid / 1 BTC</th>
+      <th>Yield ann.</th><th>B/A <span style="font-weight:400;color:#484f58">(≤50%)</span></th><th title="Prime au bid pour 1 BTC (1 contrat Deribit) — plancher 50$">Prime bid / 1 BTC</th>
     </tr>
     {rows if rows else '<tr><td colspan="13" class="muted" style="text-align:center">Aucun candidat</td></tr>'}
   </table>
   </div>
   <div style="margin-top:10px;font-size:0.78rem;color:#8b949e">
-    ✅ Éligible · 📌 En position · 🔁 Re-entrée possible (score +0.05) · 🚫 Filtré (même expiry, delta trop proche) · 🔶 B/A large (ordre limite manuel, pas d'auto-entrée) ·
+    ✅ Éligible · 📌 En position · 🔁 Re-entrée possible (score +0.05) · 🚫 Filtré (même expiry, delta trop proche) ·
     <b>Diversification</b> : espacement delta ≥ 0.08 entre positions de même expiry · 1 entrée max par cycle
   </div>
   <div style="margin-top:8px;font-size:0.78rem;color:#8b949e;border-top:1px solid #21262d;padding-top:8px">
     Score = [40% × (IV<sub>bid</sub>/HV<sub>blend</sub> − 1) + 30% × yield ajusté risque + 30% × skew vs ATM] × pénalité gamma ·
     HV<sub>blend</sub> = ½HV10j + ½HV30j · yield ajusté = yield ann. × z où z = OTM% / (HV×√TTE) · Score brut en gris = avant pénalité gamma ·
-    <b>Seuils</b> : score ≥ 0.45 · B/A ≤ 12% · DVOL ≥ 35% ·
+    <b>Seuils</b> : score ≥ 0.45 · prime ≥ 50$/BTC · B/A ≤ 50% (anti-illiquidité) · DVOL ≥ 35% ·
     <b>Sizing</b> : round(score × (0.5 + 0.5 × rang DVOL 30j), 1) BTC · max 5 BTC
   </div>
 </div>"""

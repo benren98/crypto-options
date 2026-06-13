@@ -56,8 +56,10 @@ CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur 
 
 # ── Gestion de portefeuille ────────────────────────────────────────────────────
 MAX_PORTFOLIO_BTC        = 5.0   # notionnel total max en BTC (somme des contracts)
-BA_MAX_PCT               = 12.0  # spread bid/ask max pour AUTO-ENTRÉE (vente au bid → spread large = mauvais fill)
-SCAN_DISPLAY_BA_MAX      = 60.0  # spread bid/ask max pour AFFICHER dans le scan (au-delà de 12% → statut "B/A large", ordre limite manuel)
+BA_MAX_PCT               = 50.0  # spread bid/ask max — garde-fou anti-illiquidité totale seulement
+                                 # (le filtre anti-poussière est MIN_PREMIUM_USD, pas le %)
+MIN_PREMIUM_USD          = 50.0  # prime min encaissée au bid (par BTC) — exclut les options trop bon marché
+                                 # (deep OTM à quelques $) qui ne valent pas la marge ni le risque de queue
 ENTRY_SCORE_MIN          = 0.45  # score minimum pour entrée opportuniste (recalibré scoring v2 : ≈ IV/HV ≥ 1.35 implicite)
 
 # Circuit breaker (calibré par backtest 2023-2026 : DD −19% pour PnL −7%)
@@ -1176,12 +1178,8 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             }
             for p in _positions_now
         }
-        # Affichage : B/A élargi (SCAN_DISPLAY_BA_MAX) pour montrer aussi les candidats
-        # à spread large (actionnables en ordre limite manuel). L'auto-entrée, elle,
-        # reste strict à BA_MAX_PCT (scan séparé plus bas) → le bot ne les prend pas.
         _scan_candidates = fetch_scored_candidates(
             currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
-            ba_max_pct=SCAN_DISPLAY_BA_MAX,
         )
 
         def _scan_row_status(row):
@@ -1197,8 +1195,6 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             for h in _held_info.values():
                 if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING:
                     return "filtered"  # trop proche d'une position tenue
-            if float(row.get("ba_pct", 0)) > BA_MAX_PCT:
-                return "ba_wide"  # éligible mais spread large → ordre limite manuel (pas d'auto-entrée)
             return "eligible"
 
         if not _scan_candidates.empty:
@@ -1316,10 +1312,13 @@ def fetch_scored_candidates(currency: str, spot: float,
                             tte_max: float = SCAN_TTE_MAX,
                             delta_min: float = SCAN_DELTA_MIN,
                             delta_max: float = SCAN_DELTA_MAX,
-                            ba_max_pct: float = BA_MAX_PCT) -> pd.DataFrame:
+                            ba_max_pct: float = BA_MAX_PCT,
+                            min_premium_usd: float = MIN_PREMIUM_USD) -> pd.DataFrame:
     """
     Scanne les puts OTM, calcule le score composite, filtre le spread B/A.
     hv_ref = HV blend (0.5×10j + 0.5×30j) servant de référence vol réalisée.
+    min_premium_usd : prime min encaissée au bid (par BTC) — exclut les options trop
+    bon marché (deep OTM à quelques $) indépendamment du spread.
     Retourne un DataFrame trié par score décroissant.
     """
     instruments = get("get_instruments", {"currency": currency, "kind": "option", "expired": "false"})
@@ -1348,9 +1347,15 @@ def fetch_scored_candidates(currency: str, spot: float,
             if not (delta_min <= delta <= delta_max):
                 continue
 
-            # Filtre spread B/A
+            # Filtre spread B/A (garde-fou anti-illiquidité)
             ba_pct = (ask - bid) / mark * 100 if mark > 0 else 999
             if ba_pct > ba_max_pct:
+                continue
+
+            # Filtre prime min : on encaisse le bid → exclut les options trop bon marché
+            # (deep OTM à quelques $) qui ne valent pas la marge ni le risque de queue
+            premium_bid_usd = bid * spot
+            if premium_bid_usd < min_premium_usd:
                 continue
 
             rows.append({
@@ -1559,7 +1564,7 @@ def scan_entry(currency: str = CURRENCY,
     print_separator()
     print(f"  Entry Scanner -- {now_dt()}")
     print(f"  TTE [{tte_min:.0f}j - {tte_max:.0f}j]  |  Delta [{SCAN_DELTA_MIN:.2f} - {SCAN_DELTA_MAX:.2f}] (plafond seul)")
-    print(f"  Filtre B/A: max {BA_MAX_PCT:.0f}% du mark")
+    print(f"  Filtre B/A: max {BA_MAX_PCT:.0f}% du mark  |  Prime min: {MIN_PREMIUM_USD:.0f}$/BTC")
     print_separator()
 
     spot = fetch_spot(currency)

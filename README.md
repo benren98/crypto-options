@@ -36,7 +36,8 @@ Sell OTM BTC puts with short maturities (1–30 days), delta-hedged via a BTC-PE
 | Type | OTM puts only |
 | DTE | 1 – 30 days |
 | Delta | 0 to −0.30 (exposure cap only, no floor) |
-| Max bid/ask spread | 12% of mark |
+| Min premium collected | $50 / BTC at bid (dust filter) |
+| Max bid/ask spread | 50% of mark (illiquidity backstop only) |
 
 ### Composite score
 
@@ -113,8 +114,11 @@ All conditions must be met simultaneously for opportunistic entries:
 |---|---|
 | Composite score (after gamma penalty) | ≥ 0.45 |
 | IV/HV ratio (per option, bid IV) | ≥ 1.10 |
-| Bid/ask spread | ≤ 12% of mark |
+| Premium collected at bid | ≥ $50 / BTC |
+| Bid/ask spread | ≤ 50% of mark |
 | Market condition | DVOL ≥ 35% |
+
+The premium floor replaces the bid/ask spread as the real quality gate. A wide spread on a cheap short-dated option is only a few dollars in absolute terms — what matters is whether the premium collected is worth the margin and tail risk. The 50% B/A is now just a backstop against completely illiquid markets.
 
 ### Sizing
 
@@ -286,7 +290,8 @@ SCAN_TTE_MIN             = 1.0   # min DTE (days)
 SCAN_TTE_MAX             = 30.0  # max DTE (days)
 SCAN_DELTA_MIN           = -0.30 # exposure cap : no closer to ATM than -0.30
 SCAN_DELTA_MAX           = 0.0   # no floor : far-OTM small-delta puts are eligible
-BA_MAX_PCT               = 12.0  # max bid/ask spread (% of mark)
+BA_MAX_PCT               = 50.0  # max bid/ask spread — illiquidity backstop only
+MIN_PREMIUM_USD          = 50.0  # min premium at bid ($/BTC) — dust filter (replaces the % spread as the quality gate)
 
 # Entry signal
 ENTRY_SCORE_MIN          = 0.45  # minimum composite score (after gamma penalty) — recalibrated for score v2 (rank moved to sizing), implicitly demands IV/HV ≈ 1.35
