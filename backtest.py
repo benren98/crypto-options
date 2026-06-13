@@ -55,15 +55,21 @@ def bs_put(S, K, T, sigma):
     return price, delta, gamma
 
 def strike_for_delta(S, T, sigma_atm, target_delta):
-    """Strike donnant ~target_delta, avec skew appliqué itérativement."""
-    K = S * 0.93
-    for _ in range(40):
-        otm = (S - K) / S * 100
+    """Strike OTM donnant ~target_delta, skew inclus. Bissection (delta put décroît
+    avec K : K↑ → plus ITM → delta plus négatif)."""
+    lo, hi = S * 0.40, S * 1.0   # strikes OTM (delta ~0 à K bas, ~-0.5 à l'ATM)
+    K = 0.5 * (lo + hi)
+    for _ in range(60):
+        K = 0.5 * (lo + hi)
+        otm = max((S - K) / S * 100, 0.0)
         sig = sigma_atm * (1 + SKEW_SLOPE * otm)
         _, d, _ = bs_put(S, K, T, sig)
-        if abs(d - target_delta) < 0.002:
+        if abs(d - target_delta) < 0.0005:
             break
-        K *= 1 + (target_delta - d) * 0.08   # delta plus négatif → strike plus haut
+        if d < target_delta:   # trop négatif → strike trop haut → baisser hi
+            hi = K
+        else:                  # pas assez négatif → monter lo
+            lo = K
     return K
 
 # ── Données historiques ────────────────────────────────────────────────────────
