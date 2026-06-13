@@ -1455,11 +1455,13 @@ def get_market_context(currency: str = CURRENCY) -> dict:
     try:
         end_ts   = now_ms()
         start_ts = end_ts - 26 * 3600 * 1000   # 26h → couvre curr + point d'il y a ~24h
+        # Bougies horaires (3600s) : 26 points sur 26h. En résolution 60s, l'API plafonne
+        # le nombre de points (~1000) et ne renvoie que ~16h → le point à 24h manquait → None.
         dvol_data = get("get_volatility_index_data", {
             "currency":        currency,
             "start_timestamp": start_ts,
             "end_timestamp":   end_ts,
-            "resolution":      "60",
+            "resolution":      "3600",
         })
         dvol_rows = [(r[0], r[4]) for r in dvol_data.get("data", []) if r[4]]
         if dvol_rows:
