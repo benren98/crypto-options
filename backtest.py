@@ -108,10 +108,10 @@ def rank_mult_bell(iv_rank: float) -> float:
         return 0.5 + 0.5 * (iv_rank / 0.65)
     return 1.0 - 0.4 * (iv_rank - 0.65) / 0.35
 
-# ── Circuit breaker ────────────────────────────────────────────────────────────
-CB_MOVE_3D_PCT   = 8.0    # déclenche : |move spot 3j| > 8%
-CB_DVOL_3D_PTS   = 10.0   # ou DVOL +10 pts en 3j
-CB_REENTRY_MOVE  = 4.0    # re-entrée : |move 3j| < 4%
+# ── Circuit breaker (aligné sur greeks_hedge.py live : 10% / +12pts, baisse seule) ─
+CB_MOVE_3D_PCT   = 10.0   # déclenche : move spot 3j < −10% (baisse seule)
+CB_DVOL_3D_PTS   = 12.0   # ou DVOL +12 pts en 3j
+CB_REENTRY_MOVE  = 4.0    # re-entrée : |move 3j| < 4% et HV5 < HV10
 # + condition re-entrée : HV5 < HV10 (le réalisé court se retourne)
 
 def run(years: float, always_one: bool = True, rank_mult=rank_mult_linear,
