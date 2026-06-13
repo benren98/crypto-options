@@ -35,7 +35,7 @@ Sell OTM BTC puts with short maturities (1–30 days), delta-hedged via a BTC-PE
 |---|---|
 | Type | OTM puts only |
 | DTE | 1 – 30 days |
-| Delta | −0.10 to −0.30 |
+| Delta | 0 to −0.30 (exposure cap only, no floor) |
 | Max bid/ask spread | 12% of mark |
 
 ### Composite score
@@ -284,8 +284,8 @@ MAX_PORTFOLIO_BTC        = 5.0   # max total notional (BTC)
 # Scan
 SCAN_TTE_MIN             = 1.0   # min DTE (days)
 SCAN_TTE_MAX             = 30.0  # max DTE (days)
-SCAN_DELTA_MIN           = -0.30 # min delta
-SCAN_DELTA_MAX           = -0.10 # max delta
+SCAN_DELTA_MIN           = -0.30 # exposure cap : no closer to ATM than -0.30
+SCAN_DELTA_MAX           = 0.0   # no floor : far-OTM small-delta puts are eligible
 BA_MAX_PCT               = 12.0  # max bid/ask spread (% of mark)
 
 # Entry signal

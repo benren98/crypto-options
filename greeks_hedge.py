@@ -72,8 +72,8 @@ GAMMA_SCORE_CAP          = 10.0  # gamma_pts au-delà duquel le score est rédui
                                   # ex: gamma=5 → ×1.00 ; gamma=7.5 → ×0.50 ; gamma≥10 → éliminé
 SCAN_TTE_MIN       = 1.0  # TTE min pour le scan (roll + opportuniste)
 SCAN_TTE_MAX       = 30.0 # TTE max pour le scan
-SCAN_DELTA_MIN     = -0.30
-SCAN_DELTA_MAX     = -0.10
+SCAN_DELTA_MIN     = -0.30  # plafond d'exposition : pas plus proche de l'ATM que -0.30
+SCAN_DELTA_MAX     = 0.0    # pas de plancher : les puts loin OTM (petit delta) sont éligibles
 # Sizing score-based : contracts = round(score, 1) BTC, max portfolio MAX_PORTFOLIO_BTC
 # Diversification : 1 seule entrée opportuniste par run_once()
 #   - espacement delta >= DELTA_MIN_SPACING entre positions de même expiry
@@ -1551,7 +1551,7 @@ def scan_entry(currency: str = CURRENCY,
     """Scanne les puts OTM et affiche un score d'opportunite composite."""
     print_separator()
     print(f"  Entry Scanner -- {now_dt()}")
-    print(f"  TTE [{tte_min:.0f}j - {tte_max:.0f}j]  |  Delta [{SCAN_DELTA_MIN:.2f} - {SCAN_DELTA_MAX:.2f}]")
+    print(f"  TTE [{tte_min:.0f}j - {tte_max:.0f}j]  |  Delta [{SCAN_DELTA_MIN:.2f} - {SCAN_DELTA_MAX:.2f}] (plafond seul)")
     print(f"  Filtre B/A: max {BA_MAX_PCT:.0f}% du mark")
     print_separator()
 
