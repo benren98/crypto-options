@@ -126,6 +126,7 @@ def run(years: float, always_one: bool = True, rank_mult=rank_mult_linear,
     n_trades = n_expired_itm = 0
     worst_days = []
     notionals = []
+    notionals_usd = []
     dvol_30 = []
     dvol_hist = []
     risk_off = False
@@ -272,6 +273,10 @@ def run(years: float, always_one: bool = True, rank_mult=rank_mult_linear,
         worst_days.append((equity - eq_prev, day['date'], S, dvol))
         notional_track = sum(p['contracts'] for p in positions)
         notionals.append(notional_track)
+        notionals_usd.append(notional_track * S)   # notionnel $ jour par jour
+
+    # Expose pour analyse capital (rendement sur capital mobilisé)
+    globals()['_LAST_RUN'] = {"curve": equity_curve, "notionals_usd": notionals_usd}
 
     # ── Stats ──────────────────────────────────────────────────────────────────
     eq = [e[1] for e in equity_curve]
