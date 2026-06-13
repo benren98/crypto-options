@@ -120,6 +120,12 @@ def _group_positions() -> list:
         groups.setdefault(p.get("instrument_name", ""), []).append(p)
     return list(groups.values())
 
+# Compteurs distincts : instruments uniques (ce que l'utilisateur appelle "positions")
+# vs lots (positions_list inclut les ré-entrées comme lots séparés)
+n_instruments = len({p.get("instrument_name") for p in positions_list})
+n_lots        = len(positions_list)
+_lots_suffix  = f" ({n_lots} lots)" if n_lots > n_instruments else ""
+
 # scan_entry : top 5 opportunités (depuis greeks_hedge.py --run)
 se_file = Path("scan_entry.json")
 scan_entry = json.loads(se_file.read_text()) if se_file.exists() else {}
@@ -657,7 +663,7 @@ def _greeks_card() -> str:
     return f"""<div class="card">
   <h2>📐 Greeks nets portfolio</h2>
   <table>
-    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-bottom:4px">OPTIONS (cumulé {len(positions_list)} pos.)</td></tr>
+    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-bottom:4px">OPTIONS (cumulé {n_instruments} pos.{_lots_suffix})</td></tr>
     {row("Δ Delta net",   f'<b>{f(net_delta,4)}</b>  ({f(delta_pct,1)}%)')}
     {row("Γ Gamma net",   f'<span class="neg">−{f(gamma_pts,2)} pts Δ / 1% move</span>')}
     {row("ν Vega net",    f'<span class="neg">{f(net_vega,2)}</span>  ({f(-net_vega,0)}$ / +1pt IV)')}
@@ -950,7 +956,7 @@ def _alerts_card() -> str:
     return f'<div class="card alert-card full"><h2>🚨 Alertes</h2><table>{rows}</table></div>'
 
 # ── HTML ───────────────────────────────────────────────────────────────────────
-title    = f"VRP Monitor — {len(positions_list)} position(s)" if positions_list else "VRP Monitor"
+title    = f"VRP Monitor — {n_instruments} position(s)" if positions_list else "VRP Monitor"
 _spot_cl = "pos" if (_delta_spot or 0) >= 0 else "neg"
 _pnl_cl  = "pos" if _curr_pnl >= 0 else "neg"
 _dpnl_cl = ("pos" if (_delta_pnl or 0) >= 0 else "neg") if _delta_pnl is not None else "neu"
@@ -1114,7 +1120,7 @@ if no_position:
     html += "<h1>Aucune position ouverte.</h1></body></html>"
 else:
     html += f"""
-<h1>📊 VRP Monitor — {len(positions_list)} position(s) ouverte(s)</h1>
+<h1>📊 VRP Monitor — {n_instruments} position(s) ouverte(s){_lots_suffix}</h1>
 <div class="subtitle">Données : {ts} · Généré : {generated} · ↻ auto-refresh 5min</div>
 
 <div class="header-bar">
@@ -1144,7 +1150,7 @@ else:
   {_cb_chip_html}
   <div class="chip">
     <span class="chip-label">Positions</span>
-    <span class="chip-value">{len(positions_list)}</span>
+    <span class="chip-value">{n_instruments}{f'<span style="font-size:0.7rem;color:#8b949e"> · {n_lots} lots</span>' if n_lots > n_instruments else ''}</span>
     <span class="chip-delta neu">Nominal <b>{f(sum(float(p.get("contracts",1)) for p in positions_list),1)} BTC</b> / {f(5.0,1)} BTC max</span>
     <span class="chip-delta neu">TTE min <span class="{_tte_cl}">{f(_tte_min,2)}j</span></span>
   </div>

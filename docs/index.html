@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="300">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<title>VRP Monitor — 7 position(s)</title>
+<title>VRP Monitor — 6 position(s)</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'SF Mono', 'Fira Code', monospace; background: #0d1117; color: #e6edf3; min-height: 100vh; padding: 24px; }
@@ -80,22 +80,22 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
 </head>
 <body>
 
-<h1>📊 VRP Monitor — 7 position(s) ouverte(s)</h1>
-<div class="subtitle">Données : 2026-06-13 11:26 EDT · Généré : 2026-06-13 11:27 EDT · ↻ auto-refresh 5min</div>
+<h1>📊 VRP Monitor — 6 position(s) ouverte(s) (7 lots)</h1>
+<div class="subtitle">Données : 2026-06-13 11:26 EDT · Généré : 2026-06-13 12:25 EDT · ↻ auto-refresh 5min</div>
 
 <div class="header-bar">
   <div class="chip">
     <span class="chip-label">Spot BTC</span>
     <span class="chip-value">$64,251</span>
     <span class="chip-delta pos">+54$ (+0.08%) vs snapshot préc.</span>
-    <span class="chip-delta pos">4h +0.60% (+384$)</span>
-    <span class="chip-delta pos">1j +0.95% (+602$)</span>
+    <span class="chip-delta pos">4h +0.53% (+341$)</span>
+    <span class="chip-delta pos">1j +0.80% (+511$)</span>
   </div>
   <div class="chip">
     <span class="chip-label">PnL total</span>
     <span class="chip-value neg">-114$</span>
     <span class="chip-delta neg">-6$ vs snapshot préc.</span>
-    <span class="chip-delta neg">-75$ sur 1j</span>
+    <span class="chip-delta neg">-99$ sur 1j</span>
   </div>
   <div class="chip">
     <span class="chip-label">DVOL (index)</span>
@@ -114,7 +114,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
   </div>
   <div class="chip">
     <span class="chip-label">Positions</span>
-    <span class="chip-value">7</span>
+    <span class="chip-value">6<span style="font-size:0.7rem;color:#8b949e"> · 7 lots</span></span>
     <span class="chip-delta neu">Nominal <b>3.8 BTC</b> / 5.0 BTC max</span>
     <span class="chip-delta neu">TTE min <span class="neu">5.69j</span></span>
   </div>
@@ -250,7 +250,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
 <div class="card">
   <h2>📐 Greeks nets portfolio</h2>
   <table>
-    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-bottom:4px">OPTIONS (cumulé 7 pos.)</td></tr>
+    <tr><td colspan="2" style="color:#8b949e;font-size:0.75rem;padding-bottom:4px">OPTIONS (cumulé 6 pos. (7 lots))</td></tr>
     <tr><td class="label">Δ Delta net</td><td class=""><b>-0.2401</b>  (6.3%)</td></tr>
     <tr><td class="label">Γ Gamma net</td><td class=""><span class="neg">−1.32 pts Δ / 1% move</span></td></tr>
     <tr><td class="label">ν Vega net</td><td class=""><span class="neg">52.52</span>  (-53$ / +1pt IV)</td></tr>
@@ -1283,5 +1283,5 @@ new Chart(document.getElementById("chartVol"), {
 });
 </script>
 
-<footer>VRP Monitor · Généré le 2026-06-13 11:27 EDT · GitHub Actions · Auto-refresh 5 min</footer>
+<footer>VRP Monitor · Généré le 2026-06-13 12:25 EDT · GitHub Actions · Auto-refresh 5 min</footer>
 </body></html>
