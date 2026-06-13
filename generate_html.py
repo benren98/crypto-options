@@ -850,6 +850,7 @@ def _scan_entry_card() -> str:
         "held":         ("📌", "neu",  "En position"),
         "held_reentry": ("🔁", "warn", "En position — re-entrée possible"),
         "filtered":     ("🚫", "neg",  "Filtré (trop proche d'une pos. tenue)"),
+        "ba_wide":      ("🔶", "warn", "B/A large — ordre limite manuel (pas d'auto-entrée)"),
     }
 
     rows = ""
@@ -873,7 +874,7 @@ def _scan_entry_card() -> str:
             delta_sc = sc - float(held_sc)
             dc = "pos" if delta_sc > 0.05 else ("warn" if delta_sc > 0 else "neg")
             score_cell += f' <span class="{dc}" style="font-size:0.75rem">({f(delta_sc,3,True)})</span>'
-        row_style = "opacity:0.5" if status == "filtered" else ""
+        row_style = "opacity:0.5" if status == "filtered" else ("opacity:0.75" if status == "ba_wide" else "")
         gpts    = float(c.get("gamma_pts", 0))
         gpts_cl = "neg" if gpts > 5 else ("warn" if gpts > 2.5 else "ok")
         skew    = float(c.get("skew_pct", 0))
@@ -923,7 +924,7 @@ def _scan_entry_card() -> str:
   </table>
   </div>
   <div style="margin-top:10px;font-size:0.78rem;color:#8b949e">
-    ✅ Éligible · 📌 En position · 🔁 Re-entrée possible (score +0.05) · 🚫 Filtré (même expiry, delta trop proche) ·
+    ✅ Éligible · 📌 En position · 🔁 Re-entrée possible (score +0.05) · 🚫 Filtré (même expiry, delta trop proche) · 🔶 B/A large (ordre limite manuel, pas d'auto-entrée) ·
     <b>Diversification</b> : espacement delta ≥ 0.08 entre positions de même expiry · 1 entrée max par cycle
   </div>
   <div style="margin-top:8px;font-size:0.78rem;color:#8b949e;border-top:1px solid #21262d;padding-top:8px">
