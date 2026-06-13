@@ -59,7 +59,37 @@ hist           = pos_raw.get("history", [])
 # positions_detail : données live par position (depuis pnl_monitor.py)
 pd_file = Path("positions_detail.json")
 positions_detail = json.loads(pd_file.read_text()) if pd_file.exists() else []
+# pd_map : 1 entrée par instrument. ATTENTION : en cas de ré-entrée (2 lots du même
+# instrument), le dernier lot écrase le premier → ne l'utiliser QUE pour des champs
+# instrument-level identiques entre lots (mark, IV, tte). Pour le money/greeks par lot,
+# utiliser _match_live(p) qui apparie chaque lot à son détail exact.
 pd_map = {d.get("instrument"): d for d in positions_detail}
+
+# Détails live groupés par instrument (gère la ré-entrée : plusieurs lots même nom)
+_pd_lots: dict = {}
+for _d in positions_detail:
+    _pd_lots.setdefault(_d.get("instrument"), []).append(_d)
+
+def _match_live(p: dict) -> dict:
+    """Apparie un lot (position) à son détail live exact, par prix/spot d'entrée.
+    Indispensable quand 2 lots partagent le même instrument_name (ré-entrée)."""
+    lots = _pd_lots.get(p.get("instrument_name", ""), [])
+    if not lots:
+        return {}
+    if len(lots) == 1:
+        return lots[0]
+    ep, es = float(p.get("entry_price", 0)), float(p.get("entry_spot", 0))
+    return min(lots, key=lambda d: abs(float(d.get("entry_price_btc", 0)) - ep)
+               + abs(float(d.get("entry_spot", 0)) - es) / 1e5)
+
+def _group_positions() -> list:
+    """Regroupe positions_list par instrument (ordre préservé). Retourne une liste de
+    listes de lots — 1 lot le plus souvent, 2+ après une ré-entrée."""
+    from collections import OrderedDict
+    groups: OrderedDict = OrderedDict()
+    for p in positions_list:
+        groups.setdefault(p.get("instrument_name", ""), []).append(p)
+    return list(groups.values())
 
 # scan_entry : top 5 opportunités (depuis greeks_hedge.py --run)
 se_file = Path("scan_entry.json")
@@ -107,7 +137,7 @@ hedge_thr_btc  = float(s.get("hedge_threshold_btc") or hedge_thr_pct / 100)
 # Recalcule le drift depuis les données fraîches (positions.json hedge qty mis à jour par greeks_hedge
 # après pnl_monitor, donc plus récent que pnl_summary.hedge_delta_drift)
 _net_opt_delta = sum(
-    float(pd_map.get(p.get("instrument_name",""), {}).get(
+    float(_match_live(p).get(
         "live_delta",
         p.get("delta_at_entry", 0) * float(p.get("contracts", 1))
     ))
@@ -266,26 +296,48 @@ drift_bar_html = f"""
 </div>"""
 
 # ── Attribution PnL par position ───────────────────────────────────────────────
-def _attr_card(p: dict, live: dict) -> str:
-    """Carte attribution PnL pour une position."""
+def _attr_lot_nums(p: dict, live: dict) -> dict:
+    """Composantes d'attribution PnL d'UN lot (toutes en $, exactes et additives)."""
+    entry_spot = float(p.get("entry_spot", spot))
+    entry_p    = float(p.get("entry_price", 0))
+    entry_mark = float(p.get("entry_mark_price", entry_p))
+    entry_iv   = float(p.get("iv_at_entry", 0))
+    contracts  = float(p.get("contracts", 1))
+    gamma_e    = float(p.get("gamma_at_entry", 7e-5)) * contracts
+    curr_mark  = float(live.get("current_price_btc", entry_mark))
+    curr_ask   = float(live.get("current_ask_btc",   curr_mark))
+    curr_iv    = float(live.get("current_iv_pct", entry_iv))
+    d_live     = float(live.get("live_delta", p.get("delta_at_entry", 0) * contracts))
+    vega_live  = float(live.get("live_vega", p.get("vega_at_entry", 0) * contracts))
+    days_held  = float(live.get("days_held", 0))
+    theta_d    = float(live.get("theta_daily_now_usd", 0))
+    ds         = spot - entry_spot
+    div        = curr_iv - entry_iv
+    pnl_delta  = abs(d_live) * ds
+    pnl_gamma  = 0.5 * (-gamma_e) * ds ** 2
+    pnl_theta  = theta_d * days_held
+    pnl_vega   = (-vega_live) * div
+    mid_mid    = (entry_mark * entry_spot - curr_mark * spot) * contracts
+    ba_entry   = -(entry_mark - entry_p) * entry_spot * contracts
+    ba_exit    = -(curr_ask - curr_mark) * spot * contracts
+    return {"pnl_delta": pnl_delta, "pnl_gamma": pnl_gamma, "pnl_theta": pnl_theta,
+            "pnl_vega": pnl_vega, "mid_mid": mid_mid, "ba_entry": ba_entry, "ba_exit": ba_exit}
+
+
+def _attr_card(lots: list) -> str:
+    """Carte attribution PnL. Plusieurs lots (ré-entrée) → décomposition sommée par lot
+    (exacte), scalaires d'en-tête en VWAP. 1 lot → comportement standard."""
+    p, live = _agg_lots(lots)
+    _n_lots = p.get("_n_lots", 1)
     instr      = p.get("instrument_name","—")
     entry_spot = float(p.get("entry_spot", spot))
     entry_p    = float(p.get("entry_price", 0))
     entry_mark = float(p.get("entry_mark_price", entry_p))
     entry_iv   = float(p.get("iv_at_entry", 0))
     contracts  = float(p.get("contracts", 1))
-    # gamma_raw: per 1 BTC contract (for display as rate — pts Δ per 1% spot move)
-    gamma_raw  = float(p.get("gamma_at_entry", 7e-5))
-    # gamma_e: scaled by contracts (for PnL calculations: pnl_gamma = ½γΔspot²)
-    gamma_e    = gamma_raw * contracts
 
-    # mark/ask fallback to entry prices when live data not yet available
     curr_mark  = float(live.get("current_price_btc", entry_mark))
-    curr_bid   = float(live.get("current_bid_btc",   curr_mark))
-    curr_ask   = float(live.get("current_ask_btc",   curr_mark))
     curr_iv    = float(live.get("current_iv_pct", entry_iv))
-    d_live     = float(live.get("live_delta", p.get("delta_at_entry", 0) * contracts))
-    vega_live  = float(live.get("live_vega", p.get("vega_at_entry", 0) * contracts))
     days_held  = float(live.get("days_held", 0))
     theta_d       = float(live.get("theta_daily_now_usd", 0))
     theta_theory  = float(live.get("theta_theory_usd", 0))
@@ -294,23 +346,21 @@ def _attr_card(p: dict, live: dict) -> str:
 
     ds         = spot - entry_spot
     div        = curr_iv - entry_iv
-    # gamma_pts displayed per unit notional (rate, not scaled by contracts)
-    gamma_pts  = gamma_raw * (spot * 0.01) * 100
 
-    pnl_delta  = abs(d_live) * ds
-    pnl_gamma  = 0.5 * (-gamma_e) * ds ** 2  # uses gamma_e (contracts-scaled) for correct $PnL
-    pnl_theta  = theta_d * days_held
-    pnl_vega   = (-vega_live) * div
-    # Même formule que pnl_monitor : jambe d'entrée au spot d'entrée, jambe actuelle au spot actuel
-    mid_mid    = (entry_mark * entry_spot - curr_mark * spot) * contracts
-    pnl_resid  = mid_mid - (pnl_delta + pnl_gamma + pnl_theta + pnl_vega)
+    # Composantes : somme exacte des décompositions par lot (jamais un lot synthétique)
+    _nums = [_attr_lot_nums(_p, _match_live(_p)) for _p in lots]
+    pnl_delta = sum(n["pnl_delta"] for n in _nums)
+    pnl_gamma = sum(n["pnl_gamma"] for n in _nums)
+    pnl_theta = sum(n["pnl_theta"] for n in _nums)
+    pnl_vega  = sum(n["pnl_vega"]  for n in _nums)
+    mid_mid   = sum(n["mid_mid"]   for n in _nums)
+    ba_entry  = sum(n["ba_entry"]  for n in _nums)
+    ba_exit_est = sum(n["ba_exit"] for n in _nums)
+    pnl_resid = mid_mid - (pnl_delta + pnl_gamma + pnl_theta + pnl_vega)
+    total_opt = mid_mid + ba_entry
+    # Prime encaissée exacte (Σ par lot)
+    prem_total = float(p.get("_premium_usd_total", entry_p * entry_spot * contracts))
 
-    # Coût B/A entrée : on a vendu au bid, le mark était plus élevé
-    ba_entry   = -(entry_mark - entry_p) * entry_spot * contracts   # négatif = coût payé
-    # Coût B/A sortie estimé : pour racheter on paierait l'ask
-    ba_exit_est = -(curr_ask - curr_mark) * spot * contracts        # négatif = coût supplémentaire
-
-    total_opt  = mid_mid + ba_entry
     # TTE fallback: compute from expiry_dt when live data not yet available
     _tte_live = live.get("tte_days")
     if _tte_live is not None:
@@ -322,14 +372,15 @@ def _attr_card(p: dict, live: dict) -> str:
         except Exception:
             tte = 0.0
     cl_tte     = "warn" if tte <= 1 else "neu"
+    _lot_tag = (f' <span class="warn" style="font-size:0.7rem">⊕ {_n_lots} lots (VWAP)</span>' if _n_lots > 1 else "")
 
     return f"""<div class="card">
-  <h2>Attribution PnL — {instr}</h2>
+  <h2>Attribution PnL — {instr}{_lot_tag}</h2>
   <div style="font-size:0.75rem;color:#8b949e;margin-bottom:10px">
     Spot {f(ds,0,True)}$&nbsp;·&nbsp;IV {f(div,1,True)}pts&nbsp;·&nbsp;{f(days_held*24,1)}h tenu&nbsp;·&nbsp;TTE <span class="{cl_tte}">{f(tte,2)}j</span>
-    &nbsp;·&nbsp;Prime encaissée <span style="color:#3fb950;font-weight:600">+{f(entry_p * entry_spot * contracts, 0)}$</span> <span style="color:#484f58">({f(contracts,1)} BTC × {f(entry_p,5)} BTC × ${f(entry_spot,0)})</span>
+    &nbsp;·&nbsp;Prime encaissée <span style="color:#3fb950;font-weight:600">+{f(prem_total, 0)}$</span> <span style="color:#484f58">({f(contracts,1)} BTC{" agrégé" if _n_lots>1 else ""} × {f(entry_p,5)} BTC × ${f(entry_spot,0)})</span>
     <br>Mid actuel <b style="color:#e6edf3">{f(curr_mark,5)} BTC</b> (${f(curr_mark * spot, 0)} / 1 BTC)
-    &nbsp;·&nbsp;<span style="color:#484f58">entrée mid {f(entry_mark,5)} BTC</span>
+    &nbsp;·&nbsp;<span style="color:#484f58">entrée mid {f(entry_mark,5)} BTC{" VWAP" if _n_lots>1 else ""}</span>
     &nbsp;·&nbsp;<span class="{color(entry_mark - curr_mark)}">{f((entry_mark - curr_mark) / entry_mark * 100 if entry_mark else 0, 1, True)}% depuis l'entrée</span>
   </div>
   <table class="tbl">
@@ -388,14 +439,73 @@ def _attr_row(label, val, total):
             f'<td class="{color(val)}">{f(val,0,True)}</td>'
             f'<td class="{color(val)}" style="font-size:0.78rem">{f(pct,0,True)}%</td></tr>')
 
+# ── Agrégation des lots (ré-entrée : plusieurs lots d'un même instrument) ───────
+def _agg_lots(lots: list) -> tuple:
+    """Agrège une liste de lots du même instrument en (position, détail live) affichables.
+    Règles de correction :
+      - money & greeks (pnl, delta/gamma/vega déjà scalés par contracts) → SOMME
+      - prix d'entrée (price, spot, mark, IV) → VWAP pondéré par contracts
+      - ratios (% prime, VRP) → RECALCULÉS depuis les sommes, jamais moyennés
+      - entry_ts → le plus ancien ; entry_score → moyenne pondérée (label)
+    Un seul lot : renvoie tel quel (aucune transformation)."""
+    if len(lots) == 1:
+        return lots[0], _match_live(lots[0])
+
+    livs = [_match_live(p) for p in lots]
+    cs   = [float(p.get("contracts", 1)) for p in lots]
+    C    = sum(cs) or 1.0
+
+    def wavg(vals):
+        return sum(v * c for v, c in zip(vals, cs)) / C
+
+    p0 = dict(lots[0])
+    p0["contracts"]        = round(C, 4)
+    p0["entry_price"]      = wavg([float(p.get("entry_price", 0)) for p in lots])
+    p0["entry_spot"]       = wavg([float(p.get("entry_spot", spot)) for p in lots])
+    p0["entry_mark_price"] = wavg([float(p.get("entry_mark_price", p.get("entry_price", 0))) for p in lots])
+    p0["iv_at_entry"]      = wavg([float(p.get("iv_at_entry", 0)) for p in lots])
+    p0["entry_ts"]         = min((p.get("entry_ts", "") for p in lots), default="")
+    if any(p.get("entry_score") is not None for p in lots):
+        p0["entry_score"]  = wavg([float(p.get("entry_score", 0) or 0) for p in lots])
+    p0["entry_sizing_btc"] = round(C, 4)
+    p0["_n_lots"]          = len(lots)
+    # Prime exacte = Σ(prix × spot × contracts) par lot (≠ produit des VWAP)
+    prem_total = sum(float(p.get("entry_price", 0)) * float(p.get("entry_spot", 0)) * c
+                     for p, c in zip(lots, cs))
+    p0["_premium_usd_total"] = prem_total
+
+    nonempty = [d for d in livs if d]
+    if nonempty:
+        agg = dict(nonempty[0])  # base = champs instrument-level (mark, IV, tte) identiques
+        agg["pnl_option_usd"]      = sum(float(d.get("pnl_option_usd", 0)) for d in nonempty)
+        agg["pnl_option_btc"]      = sum(float(d.get("pnl_option_btc", 0)) for d in nonempty)
+        agg["live_delta"]          = sum(float(d.get("live_delta", 0)) for d in nonempty)
+        agg["live_gamma"]          = sum(float(d.get("live_gamma", 0)) for d in nonempty)
+        agg["live_vega"]           = sum(float(d.get("live_vega", 0)) for d in nonempty)
+        agg["theta_theory_usd"]    = sum(float(d.get("theta_theory_usd", 0)) for d in nonempty)
+        agg["theta_daily_now_usd"] = sum(float(d.get("theta_daily_now_usd", 0)) for d in nonempty)
+        agg["pnl_pct_of_premium"]  = round(agg["pnl_option_usd"] / prem_total * 100, 2) if prem_total else 0.0
+        _tt = agg["theta_theory_usd"]
+        agg["vrp_capture_pct"]     = round(agg["pnl_option_usd"] / _tt * 100, 1) if _tt > 0.5 else float("nan")
+        agg["entry_spot"]          = p0["entry_spot"]
+        agg["entry_price_btc"]     = p0["entry_price"]
+        agg["entry_iv_pct"]        = p0["iv_at_entry"]
+        agg["days_held"]           = wavg([float(d.get("days_held", 0)) for d in livs])
+    else:
+        agg = {}
+    return p0, agg
+
+
 # ── Tableau des positions ──────────────────────────────────────────────────────
 def _positions_table() -> str:
     if not positions_list:
         return '<p style="color:#8b949e">Aucune position ouverte.</p>'
+    _groups = _group_positions()
     rows = ""
-    for p in positions_list:
+    for _lots in _groups:
+        p, live = _agg_lots(_lots)
+        _n_lots = p.get("_n_lots", 1)
         instr   = p.get("instrument_name","—")
-        live    = pd_map.get(instr, {})
         strike  = int(p.get("strike", 0))
         expiry  = (p.get("expiry_dt","") or "")[:10]
         # TTE fallback: compute from expiry_dt when live data not yet available
@@ -434,9 +544,13 @@ def _positions_table() -> str:
         entry_sizing  = p.get("entry_sizing_btc")
         score_html    = f'<b>{f(entry_score,3)}</b>' if entry_score is not None else '<span class="muted">—</span>'
         sizing_html   = f'{f(entry_sizing,1)} BTC' if entry_sizing is not None else '<span class="muted">—</span>'
+        _lot_badge = (f' <span class="warn" style="font-size:0.7rem" title="{_n_lots} lots agrégés (ré-entrée) — prix en VWAP, money/greeks en somme">⊕{_n_lots} lots</span>'
+                      if _n_lots > 1 else "")
+        _ts_cell = (f'{to_ny(p.get("entry_ts","—"))} <span class="muted" style="font-size:0.7rem">(+{_n_lots-1} ré-entrée)</span>'
+                    if _n_lots > 1 else to_ny(p.get("entry_ts","—")))
         rows += f"""<tr>
-      <td class="left"><b>{instr}</b></td>
-      <td class="left muted" style="font-size:0.78rem">{to_ny(p.get("entry_ts","—"))}</td>
+      <td class="left"><b>{instr}</b>{_lot_badge}</td>
+      <td class="left muted" style="font-size:0.78rem">{_ts_cell}</td>
       <td>${strike:,} <span class="{cl_m}" style="font-size:0.75rem">({f(moneyness,1,True)}%)</span></td>
       <td>{expiry}</td>
       <td class="{cl_tte}"><b>{f(tte,2)}j</b></td>
@@ -450,8 +564,13 @@ def _positions_table() -> str:
       <td style="text-align:center">{score_html}</td>
       <td style="text-align:center">{sizing_html}</td>
     </tr>"""
+    _n_instr = len(_groups)
+    _n_extra = len(positions_list) - _n_instr
+    _agg_note = (f' <span style="font-weight:400;color:#484f58;font-size:0.72rem">'
+                 f'({_n_instr} instrument(s) · {_n_extra} ré-entrée(s) agrégée(s))</span>'
+                 if _n_extra > 0 else "")
     return f"""<div class="card full">
-  <h2>📍 Positions ouvertes — {len(positions_list)} position(s)</h2>
+  <h2>📍 Positions ouvertes — {_n_instr} position(s){_agg_note}</h2>
   <div style="overflow-x:auto">
   <table class="tbl">
     <tr>
@@ -531,7 +650,8 @@ def _greeks_card() -> str:
 def _pnl_global_card() -> str:
     # pnl_opt_total calculé depuis positions_detail (même source que les cartes attribution)
     # pour rester cohérent avec positions_list après expiry/roll
-    pnl_opt_total = sum(float(pd_map.get(p.get("instrument_name",""),{}).get("pnl_option_usd", 0)) for p in positions_list)
+    # _match_live(p) (pas pd_map) : apparie chaque lot à son détail → pas de double-comptage en ré-entrée
+    pnl_opt_total = sum(float(_match_live(p).get("pnl_option_usd", 0)) for p in positions_list)
     funding       = float(s.get("funding_pnl_usd", 0))
     total_prem    = sum(float(p.get("entry_price",0)) * float(p.get("entry_spot",spot)) * float(p.get("contracts",1)) for p in positions_list)
 
@@ -539,7 +659,7 @@ def _pnl_global_card() -> str:
     # Même formule que pnl_monitor : (mark entrée × spot entrée − mark actuel × spot actuel) × contracts
     midmid_total = sum(
         (float(p.get("entry_mark_price", p.get("entry_price", 0))) * float(p.get("entry_spot", spot)) -
-         float(pd_map.get(p.get("instrument_name",""),{}).get(
+         float(_match_live(p).get(
              "current_price_btc",
              float(p.get("entry_mark_price", p.get("entry_price", 0)))  # fallback: 0 PnL si pas encore de données live
          )) * spot) * float(p.get("contracts", 1))
@@ -1020,10 +1140,8 @@ else:
 <div class="grid-3">
 """
 
-    for p in positions_list:
-        instr = p.get("instrument_name","")
-        live  = pd_map.get(instr, {})
-        html += _attr_card(p, live)  # live={} fallback handled inside _attr_card
+    for _lots in _group_positions():
+        html += _attr_card(_lots)  # agrège les ré-entrées (lots du même instrument)
 
     html += "</div>\n<div class=\"grid\" style=\"margin-top:16px\">\n"
     html += _scan_entry_card()
