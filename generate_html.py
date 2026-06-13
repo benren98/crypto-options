@@ -835,6 +835,40 @@ def _vol_chip_delta(move_abs):
 _dvol_1d_html = _vol_chip_delta(_dvol_1d_chg)
 _hv_1d_html   = _vol_chip_delta(_hv_1d_chg)
 
+# ── Circuit breaker ────────────────────────────────────────────────────────────
+_cb_risk_off = bool(_ctx_mc.get("risk_off", pos_raw.get("risk_off", False)))
+_cb_move_3d  = _ctx_mc.get("cb_move_3d")
+_cb_dvol_3d  = _ctx_mc.get("cb_dvol_3d")
+
+def _cb_chip() -> str:
+    if _cb_risk_off:
+        info = pos_raw.get("risk_off_info", {})
+        since = to_ny(info.get("ts", ""))[:16] if info.get("ts") else "—"
+        return f"""<div class="chip" style="border-color:#f85149">
+    <span class="chip-label" style="color:#f85149">⛔ Circuit breaker</span>
+    <span class="chip-value" style="color:#f85149">RISK-OFF</span>
+    <span class="chip-delta neu">depuis {since}</span>
+    <span class="chip-delta neu">re-entrée : HV5 &lt; HV10 et |move 3j| &lt; 4%</span>
+  </div>"""
+    parts = []
+    if _cb_move_3d is not None:
+        mv = float(_cb_move_3d)
+        cl = "neg" if abs(mv) > 8 else ("warn" if abs(mv) > 6 else "ok")
+        parts.append(f'<span class="chip-delta {cl}">move 3j {mv:+.1f}% / ±10%</span>')
+    if _cb_dvol_3d is not None:
+        dv = float(_cb_dvol_3d)
+        cl = "neg" if dv > 9 else ("warn" if dv > 6 else "ok")
+        parts.append(f'<span class="chip-delta {cl}">DVOL 3j {dv:+.1f}pt / +12pt</span>')
+    if not parts:
+        return ""
+    return f"""<div class="chip">
+    <span class="chip-label">Circuit breaker</span>
+    <span class="chip-value ok" style="font-size:0.9rem">armé</span>
+    {''.join(parts)}
+  </div>"""
+
+_cb_chip_html = _cb_chip()
+
 # ── PnL 1j ─────────────────────────────────────────────────────────────────────
 def _pnl_move_1d():
     if not pnl_history:
@@ -951,6 +985,7 @@ else:
     <span class="chip-value">{"—" if _hv_curr == 0 else f"{_hv_curr:.1f}%"}</span>
     {_hv_1d_html}
   </div>
+  {_cb_chip_html}
   <div class="chip">
     <span class="chip-label">Positions</span>
     <span class="chip-value">{len(positions_list)}</span>

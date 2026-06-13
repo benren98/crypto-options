@@ -58,6 +58,11 @@ CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur 
 MAX_PORTFOLIO_BTC        = 5.0   # notionnel total max en BTC (somme des contracts)
 BA_MAX_PCT               = 12.0  # spread bid/ask max en % du mark pour entrer
 ENTRY_SCORE_MIN          = 0.45  # score minimum pour entrée opportuniste (recalibré scoring v2 : ≈ IV/HV ≥ 1.35 implicite)
+
+# Circuit breaker (calibré par backtest 2023-2026 : DD −19% pour PnL −7%)
+CB_MOVE_3D_PCT           = 10.0  # déclenche si |move spot 3j| > 10%
+CB_DVOL_3D_PTS           = 12.0  # ou si DVOL a pris +12 pts en 3j
+CB_REENTRY_MOVE_PCT      = 4.0   # re-entrée : |move 3j| < 4% ET HV5 < HV10
 ENTRY_IV_HV_MIN          = 1.10  # ratio IV/HV minimum pour entrée opportuniste
 ENTRY_SCORE_REENTRY_BOOST= 0.10  # amélioration score nécessaire pour re-entrer un instrument déjà tenu
 DELTA_MIN_SPACING        = 0.08  # espacement min |delta| entre positions sur la même expiry
@@ -611,6 +616,159 @@ def display_pnl(p: dict):
     print(f"  Theta daily    : +{p['theta_daily_usd']:,.2f} USD/jour (attendu)")
 
 
+# ── Circuit breaker ───────────────────────────────────────────────────────────
+
+def check_circuit_breaker(currency: str, spot: float, hv_10d: float) -> dict:
+    """
+    Calcule les métriques du circuit breaker :
+      - move_3d_pct  : variation du spot vs il y a 72h
+      - dvol_3d_chg  : variation du DVOL vs il y a 72h (pts)
+      - hv_5d        : vol réalisée 5j annualisée
+      - triggered    : |move 3j| > CB_MOVE_3D_PCT ou DVOL +CB_DVOL_3D_PTS
+      - reentry_ok   : HV5 < HV10 (réalisé court se retourne) et |move 3j| < CB_REENTRY_MOVE_PCT
+    """
+    move_3d_pct = None
+    try:
+        end_ts   = now_ms()
+        start_ts = end_ts - 80 * 3600 * 1000
+        cd = get("get_tradingview_chart_data", {
+            "instrument_name": f"{currency}-PERPETUAL",
+            "start_timestamp": start_ts, "end_timestamp": end_ts, "resolution": "60"})
+        pairs = [(t, c) for t, c in zip(cd.get("ticks", []), cd.get("close", [])) if c]
+        if pairs:
+            target = end_ts - 72 * 3600 * 1000
+            ref = min(pairs, key=lambda r: abs(r[0] - target))
+            if abs(ref[0] - target) < 6 * 3600 * 1000:
+                move_3d_pct = (spot / ref[1] - 1) * 100
+    except Exception:
+        pass
+
+    dvol_3d_chg = None
+    try:
+        end_ts   = now_ms()
+        start_ts = end_ts - 80 * 3600 * 1000
+        dv = get("get_volatility_index_data", {
+            "currency": currency, "start_timestamp": start_ts,
+            "end_timestamp": end_ts, "resolution": "3600"})
+        rows = [(r[0], r[4]) for r in dv.get("data", []) if r[4]]
+        if rows:
+            curr = rows[-1][1]
+            target = end_ts - 72 * 3600 * 1000
+            ref = min(rows, key=lambda r: abs(r[0] - target))
+            if abs(ref[0] - target) < 6 * 3600 * 1000:
+                dvol_3d_chg = curr - ref[1]
+    except Exception:
+        pass
+
+    hv_5d = None
+    try:
+        end_ts   = now_ms()
+        start_ts = end_ts - 10 * 24 * 3600 * 1000
+        cd = get("get_tradingview_chart_data", {
+            "instrument_name": f"{currency}-PERPETUAL",
+            "start_timestamp": start_ts, "end_timestamp": end_ts, "resolution": "1D"})
+        closes = [c for c in cd.get("close", []) if c]
+        if len(closes) >= 6:
+            w = closes[-6:]
+            rets = [math.log(w[j] / w[j-1]) for j in range(1, len(w))]
+            hv_5d = math.sqrt(sum(r * r for r in rets) / len(rets)) * math.sqrt(365) * 100
+    except Exception:
+        pass
+
+    triggered = ((move_3d_pct is not None and abs(move_3d_pct) > CB_MOVE_3D_PCT)
+                 or (dvol_3d_chg is not None and dvol_3d_chg > CB_DVOL_3D_PTS))
+    reentry_ok = (hv_5d is not None and hv_5d < hv_10d
+                  and move_3d_pct is not None and abs(move_3d_pct) < CB_REENTRY_MOVE_PCT)
+
+    return {
+        "move_3d_pct": round(move_3d_pct, 2) if move_3d_pct is not None else None,
+        "dvol_3d_chg": round(dvol_3d_chg, 2) if dvol_3d_chg is not None else None,
+        "hv_5d":       round(hv_5d, 2) if hv_5d is not None else None,
+        "triggered":   triggered,
+        "reentry_ok":  reentry_ok,
+    }
+
+
+def apply_circuit_breaker(state: dict, spot: float, cb: dict) -> bool:
+    """
+    Applique le circuit breaker à l'état :
+      - déclenchement : rachat de toutes les positions (à l'ask), hedge à plat, risk_off=True
+      - re-entrée     : risk_off=False quand les conditions sont réunies
+    Retourne True si l'état a changé.
+    """
+    risk_off = bool(state.get("risk_off", False))
+
+    if not risk_off and state.get("positions") and cb["triggered"]:
+        print_section("CIRCUIT BREAKER DECLENCHE")
+        print(f"  Move 3j : {cb['move_3d_pct']}%  (seuil {CB_MOVE_3D_PCT}%)")
+        print(f"  DVOL 3j : {cb['dvol_3d_chg']:+} pts  (seuil +{CB_DVOL_3D_PTS} pts)" if cb["dvol_3d_chg"] is not None else "  DVOL 3j : n/a")
+        # 1) Rachat de toutes les positions à l'ask (on paie le spread de sortie)
+        for pos in state.get("positions", []):
+            exit_p = pos["entry_price"]
+            try:
+                t = fetch_ticker_full(pos["instrument_name"])
+                exit_p = t.get("best_ask_price") or t.get("mark_price") or exit_p
+            except Exception:
+                pass
+            n = float(pos.get("contracts", 1))
+            entry_spot = float(pos.get("entry_spot", spot))
+            pnl_usd = round((pos["entry_price"] * entry_spot - exit_p * spot) * n, 2)
+            closed = {**pos,
+                      "exit_price":  exit_p,
+                      "exit_spot":   spot,
+                      "exit_ts":     now_dt(),
+                      "exit_reason": "circuit_breaker",
+                      "pnl_btc":     round((pos["entry_price"] - exit_p) * n, 6),
+                      "pnl_usd":     pnl_usd}
+            state.setdefault("history", []).append(closed)
+            print(f"  [CB] Rachat {pos['instrument_name']}  exit {exit_p:.5f} BTC  PnL {pnl_usd:+.2f}$")
+        state["positions"] = []
+        state["open"] = None
+
+        # 2) Hedge à plat
+        hd = state.setdefault("hedge", {})
+        qty = float(hd.get("qty", 0.0))
+        if abs(qty) > 1e-8:
+            avg = float(hd.get("avg_entry", spot))
+            realized = abs(qty) * (avg - spot)   # short : gain si spot < avg
+            hd["realized_pnl_usd"] = round(float(hd.get("realized_pnl_usd", 0.0)) + realized, 2)
+            hd.setdefault("history", []).append({
+                "ts":         now_dt(),
+                "side":       "BUY",
+                "qty":        round(abs(qty), 5),
+                "spot":       round(spot, 2),
+                "qty_before": round(qty, 5),
+                "qty_after":  0.0,
+                "vwap_before": round(avg, 2),
+                "vwap_after":  0.0,
+                "realized_pnl_usd": round(realized, 2),
+                "note":       "circuit breaker — hedge a plat",
+            })
+            hd["qty"] = 0.0
+            print(f"  [CB] Hedge a plat : rachat {abs(qty):.5f} BTC-PERP  PnL réalisé {realized:+.2f}$")
+
+        state["risk_off"] = True
+        state["risk_off_info"] = {
+            "ts":          now_dt(),
+            "move_3d_pct": cb["move_3d_pct"],
+            "dvol_3d_chg": cb["dvol_3d_chg"],
+        }
+        return True
+
+    if risk_off and cb["reentry_ok"]:
+        print_section("CIRCUIT BREAKER — RE-ENTREE")
+        print(f"  HV5 {cb['hv_5d']}% < HV10  |  move 3j {cb['move_3d_pct']}% < {CB_REENTRY_MOVE_PCT}%")
+        state["risk_off"] = False
+        info = state.setdefault("risk_off_info", {})
+        info["reentry_ts"] = now_dt()
+        return True
+
+    if risk_off:
+        print_section("CIRCUIT BREAKER — RISK-OFF MAINTENU")
+        print(f"  HV5 {cb['hv_5d']}% (doit < HV10)  |  move 3j {cb['move_3d_pct']}% (doit < {CB_REENTRY_MOVE_PCT}%)")
+    return False
+
+
 # ── Main run ──────────────────────────────────────────────────────────────────
 
 def expire_positions(state: dict, spot: float) -> list[str]:
@@ -719,11 +877,22 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     # ── Marché : contexte de vol (une seule fois) ─────────────────────────────
     ctx = get_market_context(currency)
 
+    # ── Circuit breaker ────────────────────────────────────────────────────────
+    cb = check_circuit_breaker(currency, spot, ctx["hv_10d"])
+    print_section("CIRCUIT BREAKER CHECK")
+    print(f"  Move 3j : {cb['move_3d_pct']}%  (déclenche si |move| > {CB_MOVE_3D_PCT}%)")
+    print(f"  DVOL 3j : {cb['dvol_3d_chg']:+} pts  (déclenche si > +{CB_DVOL_3D_PTS} pts)"
+          if cb["dvol_3d_chg"] is not None else "  DVOL 3j : n/a")
+    print(f"  HV5/HV10: {cb['hv_5d']}% / {ctx['hv_10d']}%  |  Etat : {'RISK-OFF' if state.get('risk_off') else 'normal'}")
+    if apply_circuit_breaker(state, spot, cb):
+        save_positions(state)
+    risk_off = bool(state.get("risk_off", False))
+
     # ── Roll ou ouverture si portfolio vide ────────────────────────────────────
     open_positions_now = state.get("positions", [])
-    must_open = len(open_positions_now) == 0   # garantie "toujours au moins 1"
+    must_open = len(open_positions_now) == 0 and not risk_off   # garantie "toujours au moins 1" (hors risk-off)
 
-    if state["open"] is None or must_open:
+    if (state["open"] is None or must_open) and not risk_off:
         reason = "portfolio vide -- ouverture obligatoire" if must_open else "roll declenche"
         print_section(f"SELECTION CANDIDAT ({reason.upper()})")
         print(f"  HV 10j: {ctx['hv_10d']:.1f}%  |  IV: {ctx['curr_iv']:.1f}%  "
@@ -821,7 +990,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                 return False
         return True
 
-    if used_btc_now < MAX_PORTFOLIO_BTC and ctx["signal_ok"]:
+    if used_btc_now < MAX_PORTFOLIO_BTC and ctx["signal_ok"] and not risk_off:
         candidates = fetch_scored_candidates(
             currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
@@ -1090,6 +1259,10 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                 "dvol_1d_chg": ctx.get("dvol_1d_chg"),
                 "regime": ctx["regime"],
                 "signal_ok": ctx["signal_ok"],
+                "risk_off": risk_off,
+                "cb_move_3d": cb.get("move_3d_pct"),
+                "cb_dvol_3d": cb.get("dvol_3d_chg"),
+                "cb_hv_5d": cb.get("hv_5d"),
             },
             "top7": _top7.to_dict(orient="records") if not _top7.empty else [],
         }

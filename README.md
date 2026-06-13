@@ -129,6 +129,26 @@ contracts = min(contracts, MAX_PORTFOLIO_BTC − used_btc)
 
 Portfolio cap: **5 BTC notional total**. Sizing reflects conviction: a score of 0.6 opens 0.6 BTC, a score of 1.0 opens 1.0 BTC (1 Deribit contract = 1 BTC).
 
+### Circuit breaker
+
+De-risks the whole book on violent moves, re-enters when realized vol turns down while implieds are still rich. Calibrated by backtest (2023–2026 model backtest: max drawdown −19% for −7% PnL, same Sharpe, zero ITM expiries).
+
+**Trigger** (checked every run):
+```
+|spot move over 3 days| > 10%   OR   DVOL change over 3 days > +12 pts
+```
+Action: buy back **all** positions at the ask, flatten the perp hedge (PnL realized), set `risk_off = true` in positions.json. No new entries while risk-off (including the always-≥1-position rule).
+
+**Re-entry**:
+```
+HV_5d < HV_10d   AND   |spot move over 3 days| < 4%
+```
+The short realized vol turning back below the 10-day says the stress peak is behind; entries resume under normal scoring rules — typically into still-elevated implieds (post-stress premiums are the richest the strategy ever sells).
+
+Constants: `CB_MOVE_3D_PCT = 10.0`, `CB_DVOL_3D_PTS = 12.0`, `CB_REENTRY_MOVE_PCT = 4.0`. Threshold sweep in `cb_sweep.py`: looser (8%) whipsaws (30 triggers), stricter (12–15%) fires after the damage and is worse than no breaker at all.
+
+The dashboard shows the breaker state in the header (armed + margin vs thresholds, or RISK-OFF since timestamp) and draws the trigger levels on the spot chart (±10% vs 3 days ago) and the vol chart (DVOL 3d + 12 pts).
+
 ---
 
 ## Portfolio Management
