@@ -837,6 +837,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     print(f"\n  Spot {currency}: ${spot:,.2f}")
 
     state = load_positions()
+    _entries_this_run: list = []   # instruments ouverts ce run (hedge délégué au rebalance unifié)
 
     # ── Expiration automatique ─────────────────────────────────────────────────
     expired = expire_positions(state, spot)
@@ -923,34 +924,13 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         sizing = compute_sizing(float(best["score"]), used_btc, ctx["iv_rank"])
         new_pos = open_position_from_candidate(best, spot, contracts=sizing)
 
-        # Ajouter au hedge partagé
-        hd = state.setdefault("hedge", {})
-        old_qty = float(hd.get("qty", 0.0))
-        old_avg = float(hd.get("avg_entry", spot))
-        delta_new_pos = abs(float(best["delta"]))
-        hedge_for_new = -delta_new_pos * sizing
-        new_qty = round(old_qty + hedge_for_new, 5)
-        abs_old, abs_add, abs_new = abs(old_qty), abs(hedge_for_new), abs(new_qty)
-        new_avg = (abs_old * old_avg + abs_add * spot) / abs_new if abs_new > 1e-8 else spot
-
-        hd["qty"]         = new_qty
-        hd["avg_entry"]   = round(new_avg, 2)
-        hd["rebalances"]  = hd.get("rebalances", 0) + 1
-        hd.setdefault("history", []).append({
-            "ts":          now_dt(),
-            "side":        "SELL",
-            "qty":         round(hedge_for_new, 5),
-            "spot":        round(spot, 2),
-            "qty_before":  round(old_qty, 5),
-            "qty_after":   new_qty,
-            "vwap_before": round(old_avg, 2),
-            "vwap_after":  round(new_avg, 2),
-            "drift":       round(delta_new_pos, 5),
-            "note":        f"hedge initial {new_pos['instrument_name']}",
-        })
-
+        # NB : le hedge n'est PAS exécuté ici. La position est ajoutée, puis l'unique
+        # rebalance de fin de run calcule la cible delta nette de TOUT le portefeuille
+        # et exécute un seul ordre. Hedger inline ici déclenchait un aller-retour
+        # (SELL du delta du lot, puis BUY du rebalance qui re-snap au net exact).
         state.setdefault("positions", []).append(new_pos)
         state["open"] = new_pos
+        _entries_this_run.append(new_pos["instrument_name"])
 
         print(f"  [OUVERTURE] {new_pos['instrument_name']}")
         print(f"    Score    : {best['score']:.3f}  (IV/HV {best['iv_hv_ratio']:.2f}x  rank {best['s_rank']*100:.0f}%  yield {best['yield_ann_pct']:.1f}%/an)")
@@ -958,7 +938,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         print(f"    TTE      : {best['tte_days']:.1f}j  |  Delta {best['delta']:+.3f}  |  IV {best['mark_iv']:.1f}%")
         print(f"    Prix     : {new_pos['entry_price']:.5f} BTC = ${new_pos['entry_price_usd']:,.0f}  (bid)")
         print(f"    B/A      : {best['ba_pct']:.1f}%  |  OI {best['open_interest']:.0f}")
-        print(f"    Hedge    : SELL {abs(hedge_for_new):.5f} BTC-PERPETUAL @ ~${spot:,.0f}")
+        print(f"    Hedge    : delta du portefeuille recalculé au rebalance unifié (ci-dessous)")
 
     # ── Entrée opportuniste (positions < MAX) ──────────────────────────────────
     open_positions_now = state.get("positions", [])
@@ -1003,38 +983,16 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             sizing2 = compute_sizing(float(best2["score"]), used_btc2, ctx["iv_rank"])
             new_pos2 = open_position_from_candidate(best2, spot, contracts=sizing2)
 
-            hd = state.setdefault("hedge", {})
-            old_qty = float(hd.get("qty", 0.0))
-            old_avg = float(hd.get("avg_entry", spot))
-            delta2  = abs(float(best2["delta"]))
-            hedge2  = -delta2 * sizing2
-            new_qty = round(old_qty + hedge2, 5)
-            abs_old, abs_add, abs_new = abs(old_qty), abs(hedge2), abs(new_qty)
-            new_avg = (abs_old * old_avg + abs_add * spot) / abs_new if abs_new > 1e-8 else spot
-
-            hd["qty"]        = new_qty
-            hd["avg_entry"]  = round(new_avg, 2)
-            hd["rebalances"] = hd.get("rebalances", 0) + 1
-            hd.setdefault("history", []).append({
-                "ts":          now_dt(),
-                "side":        "SELL",
-                "qty":         round(hedge2, 5),
-                "spot":        round(spot, 2),
-                "qty_before":  round(old_qty, 5),
-                "qty_after":   new_qty,
-                "vwap_before": round(old_avg, 2),
-                "vwap_after":  round(new_avg, 2),
-                "drift":       round(delta2, 5),
-                "note":        f"entree opportuniste {new_pos2['instrument_name']}",
-            })
-
+            # Hedge délégué au rebalance unifié de fin de run (évite l'aller-retour)
             state["positions"].append(new_pos2)
+            _entries_this_run.append(new_pos2["instrument_name"])
             print_section("ENTREE OPPORTUNISTE")
             print(f"  [OUVERTURE] {new_pos2['instrument_name']}")
             print(f"    Score    : {best2['score']:.3f}  (IV/HV {best2['iv_hv_ratio']:.2f}x)")
             print(f"    Strike   : {best2['strike']:,.0f}  ({best2['moneyness']:+.1f}%)")
             print(f"    TTE      : {best2['tte_days']:.1f}j  |  Delta {best2['delta']:+.3f}  |  IV {best2['mark_iv']:.1f}%")
             print(f"    Prix     : {new_pos2['entry_price']:.5f} BTC = ${new_pos2['entry_price_usd']:,.0f}")
+            print(f"    Hedge    : delta du portefeuille recalculé au rebalance unifié (ci-dessous)")
         else:
             score_top = candidates.iloc[0]["score"] if not candidates.empty else 0
             print(f"  [Opportuniste] score {score_top:.3f} < seuil {ENTRY_SCORE_MIN:.2f} ou IV/HV insuffisant -- pas d'entree")
@@ -1123,6 +1081,10 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             else "position fermée"                     if abs_new < 1e-8
             else ""
         )
+        if _entries_this_run:
+            _entry_lbl = ", ".join(_entries_this_run)
+            _vwap_note = (f"hedge net après entrée ({_entry_lbl})"
+                          + (f" · {_vwap_note}" if _vwap_note else ""))
         _delta_after_pct = round((hedge["delta_drift"] - order_qty) * 100, 3)
         rebal_entry = {
             "ts":        now_dt(),
