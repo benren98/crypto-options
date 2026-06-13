@@ -28,13 +28,16 @@ GAMMA_SCORE_CAP   = 10.0
 DVOL_MIN          = 35.0
 YIELD_NORM        = 0.30
 SKEW_NORM         = 0.20
+MIN_PREMIUM_USD   = 50.0    # plancher de prime au bid ($/BTC) — anti-poussière (remplace le filtre B/A%)
 
 # ── Paramètres modèle de pricing ───────────────────────────────────────────────
 SKEW_SLOPE        = 0.013   # IV(K) = DVOL × (1 + 0.013 × OTM%) — calibré juin 2026 (~1.3%/pt OTM)
 BA_HAIRCUT_VOLPTS = 1.5     # on vend au bid ≈ mark_iv − 1.5 pts de vol
 FUNDING_DAILY     = 0.0001  # ~0.01%/jour payé sur le short perp (hedge)
-TTE_CHOICES       = [7, 14, 21]          # échéances candidates (jours)
-DELTA_TARGETS     = [-0.12, -0.16, -0.20, -0.25]  # deltas candidats par échéance
+TTE_CHOICES       = [3, 7, 14, 21]       # échéances candidates (jours) — inclut le court terme
+# Deltas candidats : plancher retiré (SCAN_DELTA_MAX=0) → on inclut les far-OTM petits deltas.
+# Le plancher de prime ($50) écarte ensuite ceux trop bon marché.
+DELTA_TARGETS     = [-0.05, -0.08, -0.12, -0.16, -0.20, -0.25]
 
 N = lambda x: 0.5 * (1 + math.erf(x / math.sqrt(2)))
 n_pdf = lambda x: math.exp(-0.5 * x * x) / math.sqrt(2 * math.pi)
@@ -230,6 +233,8 @@ def run(years: float, always_one: bool = True, rank_mult=rank_mult_linear,
                     mark_iv = dvol * (1 + SKEW_SLOPE * otm)
                     bid_iv  = mark_iv - BA_HAIRCUT_VOLPTS
                     price, delta, gamma = bs_put(S, K, T, bid_iv/100)
+                    if price < MIN_PREMIUM_USD:   # plancher de prime ($/BTC au bid)
+                        continue
                     yield_a = (price / S) / T
                     s_ivhv  = max(0.0, min(1.0, bid_iv / hv_blend - 1.0))
                     z       = (otm/100) / max(hv_blend/100 * math.sqrt(T), 1e-9)
