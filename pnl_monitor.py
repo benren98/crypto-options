@@ -67,8 +67,8 @@ def now_str() -> str:
 
 # ── DVOL + HV ─────────────────────────────────────────────────────────────────
 
-def fetch_dvol_hv(currency: str = "BTC") -> tuple[float, float]:
-    """Retourne (dvol_curr, hv_10d) — DVOL index live + HV annualisée sur 10j."""
+def fetch_dvol_hv(currency: str = "BTC") -> tuple[float, float, float, float]:
+    """Retourne (dvol_curr, hv_5d, hv_10d, hv_30d) — DVOL index live + HV annualisées."""
     try:
         end_ts   = int(datetime.now(timezone.utc).timestamp() * 1000)
         start_ts = end_ts - 2 * 3600 * 1000  # 2h pour avoir au moins 1 point
@@ -78,21 +78,24 @@ def fetch_dvol_hv(currency: str = "BTC") -> tuple[float, float]:
         dvol = pts[-1] if pts else 60.0
     except Exception:
         dvol = 60.0
+
+    def _hv(closes, n):
+        if len(closes) < n + 1:
+            return 50.0
+        w = closes[-(n+1):]
+        rets = [math.log(w[j] / w[j-1]) for j in range(1, len(w))]
+        return math.sqrt(sum(r**2 for r in rets) / len(rets)) * math.sqrt(365) * 100
+
     try:
         end_ts2   = int(datetime.now(timezone.utc).timestamp() * 1000)
-        start_ts2 = end_ts2 - 15 * 24 * 3600 * 1000
+        start_ts2 = end_ts2 - 40 * 24 * 3600 * 1000
         cd = get("get_tradingview_chart_data", {"instrument_name": f"{currency}-PERPETUAL",
              "start_timestamp": start_ts2, "end_timestamp": end_ts2, "resolution": "1D"})
-        closes = cd.get("close", [])
-        if len(closes) >= 11:
-            window = closes[-11:]
-            rets = [math.log(window[j] / window[j-1]) for j in range(1, len(window))]
-            hv = math.sqrt(sum(r**2 for r in rets) / len(rets)) * math.sqrt(365) * 100
-        else:
-            hv = 50.0
+        closes = [c for c in cd.get("close", []) if c]
+        hv5, hv10, hv30 = _hv(closes, 5), _hv(closes, 10), _hv(closes, 30)
     except Exception:
-        hv = 50.0
-    return dvol, hv
+        hv5 = hv10 = hv30 = 50.0
+    return dvol, hv5, hv10, hv30
 
 
 # ── Market data ───────────────────────────────────────────────────────────────
@@ -925,7 +928,7 @@ def run_once(plot: bool = False, report: bool = False):
     _spot_snap      = float(snap.get("spot", 0))
     delta_pct_avg   = net_delta_abs / total_contracts * 100
     gamma_pts_avg   = net_gamma / total_contracts * _spot_snap * 0.01 * 100
-    _dvol, _hv10    = fetch_dvol_hv("BTC")
+    _dvol, _hv5, _hv10, _hv30 = fetch_dvol_hv("BTC")
     hist_point = {
         "ts":            snap["timestamp"],
         "spot":          snap["spot"],
@@ -935,7 +938,9 @@ def run_once(plot: bool = False, report: bool = False):
         "gamma_pts":     round(gamma_pts_avg, 4),
         "iv_pct":        snap.get("current_iv_pct"),
         "dvol":          round(_dvol, 2),
+        "hv_5d":         round(_hv5, 2),
         "hv_10d":        round(_hv10, 2),
+        "hv_30d":        round(_hv30, 2),
         "pnl_option":    snap.get("pnl_option_usd"),
         "pnl_hedge":     snap.get("pnl_hedge_usd"),
         "pnl_total":     snap.get("total_pnl_usd"),
