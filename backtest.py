@@ -142,7 +142,8 @@ def run(years: float, always_one: bool = True, rank_mult=rank_mult_linear,
 
         # ── 0. Circuit breaker ────────────────────────────────────────────────
         if circuit_breaker:
-            if not risk_off and positions and (move_3d > CB_MOVE_3D_PCT or dvol_chg_3d > CB_DVOL_3D_PTS):
+            move_3d_signed = (S / closes_hist[-4] - 1) * 100 if len(closes_hist) >= 4 else 0.0
+            if not risk_off and positions and (move_3d_signed < -CB_MOVE_3D_PCT or dvol_chg_3d > CB_DVOL_3D_PTS):
                 # Tout racheter au mark + haircut (on paie le spread en sortie)
                 for p in positions:
                     T = p['tte_left'] / 365

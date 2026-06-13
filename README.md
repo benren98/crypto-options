@@ -135,8 +135,9 @@ De-risks the whole book on violent moves, re-enters when realized vol turns down
 
 **Trigger** (checked every run):
 ```
-|spot move over 3 days| > 10%   OR   DVOL change over 3 days > +12 pts
+spot move over 3 days < −10%   OR   DVOL change over 3 days > +12 pts
 ```
+Downside only: an upward move melts short puts (their gamma fades as spot moves away from the strikes) and is harmless. Restricting to downside removed 6 of 15 backtest triggers (all pump false-alarms) with slightly better PnL and identical max drawdown. The DVOL leg is a near-free backstop for an implied-vol explosion without a spot move (priced-in event risk): it fired only twice in 2.7 years of history, both times alongside a spot move that had already triggered.
 Action: buy back **all** positions at the ask, flatten the perp hedge (PnL realized), set `risk_off = true` in positions.json. No new entries while risk-off (including the always-≥1-position rule).
 
 **Re-entry**:

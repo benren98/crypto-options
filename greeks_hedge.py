@@ -60,7 +60,7 @@ BA_MAX_PCT               = 12.0  # spread bid/ask max en % du mark pour entrer
 ENTRY_SCORE_MIN          = 0.45  # score minimum pour entrée opportuniste (recalibré scoring v2 : ≈ IV/HV ≥ 1.35 implicite)
 
 # Circuit breaker (calibré par backtest 2023-2026 : DD −19% pour PnL −7%)
-CB_MOVE_3D_PCT           = 10.0  # déclenche si |move spot 3j| > 10%
+CB_MOVE_3D_PCT           = 10.0  # déclenche si move spot 3j < −10% (baisse seule — un pump est inoffensif pour des short puts)
 CB_DVOL_3D_PTS           = 12.0  # ou si DVOL a pris +12 pts en 3j
 CB_REENTRY_MOVE_PCT      = 4.0   # re-entrée : |move 3j| < 4% ET HV5 < HV10
 ENTRY_IV_HV_MIN          = 1.10  # ratio IV/HV minimum pour entrée opportuniste
@@ -675,7 +675,8 @@ def check_circuit_breaker(currency: str, spot: float, hv_10d: float) -> dict:
     except Exception:
         pass
 
-    triggered = ((move_3d_pct is not None and abs(move_3d_pct) > CB_MOVE_3D_PCT)
+    # Baisse uniquement : un move haussier fait fondre les short puts (gamma décroissant à la hausse)
+    triggered = ((move_3d_pct is not None and move_3d_pct < -CB_MOVE_3D_PCT)
                  or (dvol_3d_chg is not None and dvol_3d_chg > CB_DVOL_3D_PTS))
     reentry_ok = (hv_5d is not None and hv_5d < hv_10d
                   and move_3d_pct is not None and abs(move_3d_pct) < CB_REENTRY_MOVE_PCT)
@@ -880,7 +881,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     # ── Circuit breaker ────────────────────────────────────────────────────────
     cb = check_circuit_breaker(currency, spot, ctx["hv_10d"])
     print_section("CIRCUIT BREAKER CHECK")
-    print(f"  Move 3j : {cb['move_3d_pct']}%  (déclenche si |move| > {CB_MOVE_3D_PCT}%)")
+    print(f"  Move 3j : {cb['move_3d_pct']}%  (déclenche si < -{CB_MOVE_3D_PCT}%)")
     print(f"  DVOL 3j : {cb['dvol_3d_chg']:+} pts  (déclenche si > +{CB_DVOL_3D_PTS} pts)"
           if cb["dvol_3d_chg"] is not None else "  DVOL 3j : n/a")
     print(f"  HV5/HV10: {cb['hv_5d']}% / {ctx['hv_10d']}%  |  Etat : {'RISK-OFF' if state.get('risk_off') else 'normal'}")

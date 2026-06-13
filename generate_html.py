@@ -853,8 +853,9 @@ def _cb_chip() -> str:
     parts = []
     if _cb_move_3d is not None:
         mv = float(_cb_move_3d)
-        cl = "neg" if abs(mv) > 8 else ("warn" if abs(mv) > 6 else "ok")
-        parts.append(f'<span class="chip-delta {cl}">move 3j {mv:+.1f}% / ±10%</span>')
+        # seul le downside compte (short puts) : un move haussier est inoffensif
+        cl = "neg" if mv < -8 else ("warn" if mv < -6 else "ok")
+        parts.append(f'<span class="chip-delta {cl}">move 3j {mv:+.1f}% / −10%</span>')
     if _cb_dvol_3d is not None:
         dv = float(_cb_dvol_3d)
         cl = "neg" if dv > 9 else ("warn" if dv > 6 else "ok")
@@ -1077,7 +1078,7 @@ if pnl_history:
     # ── Seuils circuit breaker (référence = snapshot le plus proche de 72h avant)
     # Spot : ±10% vs spot d'il y a 3j · DVOL : +12 pts vs DVOL d'il y a 3j
     _ts_parsed = [_parse_ts(p.get("ts")) for p in pnl_history]
-    cb_spot_low, cb_spot_high, cb_dvol_thr = [], [], []
+    cb_spot_low, cb_dvol_thr = [], []
     for _i, _dt in enumerate(_ts_parsed):
         _ref_idx = None
         if _dt is not None:
@@ -1101,10 +1102,9 @@ if pnl_history:
             except (TypeError, ValueError):
                 _ref_dvol = None
             cb_spot_low.append(round(_ref_spot * 0.90, 0) if _ref_spot else None)
-            cb_spot_high.append(round(_ref_spot * 1.10, 0) if _ref_spot else None)
             cb_dvol_thr.append(round(_ref_dvol + 12, 1) if _ref_dvol else None)
         else:
-            cb_spot_low.append(None); cb_spot_high.append(None); cb_dvol_thr.append(None)
+            cb_spot_low.append(None); cb_dvol_thr.append(None)
 
     labels_js    = _json.dumps(labels)
     delta_js     = _json.dumps(delta_data)
@@ -1119,7 +1119,6 @@ if pnl_history:
     hv10_js      = _json.dumps(hv10_data)
     hv30_js      = _json.dumps(hv30_data)
     cb_low_js    = _json.dumps(cb_spot_low)
-    cb_high_js   = _json.dumps(cb_spot_high)
     cb_dvol_js   = _json.dumps(cb_dvol_thr)
     n_pts        = len(pnl_history)
 
@@ -1154,7 +1153,7 @@ if pnl_history:
 </div>
 
 <div class="chart-card">
-  <h2>&#x20BF; Spot BTC &amp; Strikes <span style="font-weight:400;color:#484f58;font-size:0.72rem">· seuils circuit breaker ±10% vs spot 3j</span></h2>
+  <h2>&#x20BF; Spot BTC &amp; Strikes <span style="font-weight:400;color:#484f58;font-size:0.72rem">· seuil circuit breaker −10% vs spot 3j</span></h2>
   <div class="chart-wrap"><canvas id="chartSpot"></canvas></div>
 </div>
 
@@ -1222,9 +1221,7 @@ new Chart(document.getElementById("chartSpot"), {{
   data:{{ labels:LABELS, datasets:[
     {{ label:"Spot BTC ($)", data:{spot_js}, borderColor:"#d29922", backgroundColor:"rgba(210,153,34,0.06)",
       tension:0.3, pointRadius:PT_R, borderWidth:2.5, fill:true }},
-    {{ label:"Seuil CB bas (−10% / 3j)", data:{cb_low_js}, borderColor:"rgba(248,81,73,0.8)", backgroundColor:"transparent",
-      tension:0.2, pointRadius:0, borderWidth:1.5, borderDash:[8,4], spanGaps:false }},
-    {{ label:"Seuil CB haut (+10% / 3j)", data:{cb_high_js}, borderColor:"rgba(248,81,73,0.4)", backgroundColor:"transparent",
+    {{ label:"Seuil CB (−10% / 3j)", data:{cb_low_js}, borderColor:"rgba(248,81,73,0.8)", backgroundColor:"transparent",
       tension:0.2, pointRadius:0, borderWidth:1.5, borderDash:[8,4], spanGaps:false }},{_strike_datasets_spot}
   ]}},
   options:{{ responsive:true, maintainAspectRatio:false,
