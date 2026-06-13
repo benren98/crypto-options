@@ -303,6 +303,44 @@
       ],
       "entry_score": 0.533,
       "entry_sizing_btc": 0.4
+    },
+    {
+      "instrument_name": "BTC-16JUN26-61500-P",
+      "strike": 61500.0,
+      "expiry_dt": "2026-06-16 08:00:00+00:00",
+      "tte_at_entry": 2.46,
+      "delta_at_entry": -0.08352,
+      "gamma_at_entry": 7e-05,
+      "vega_at_entry": 8.09844,
+      "theta_at_entry": -65.17795,
+      "iv_at_entry": 38.28,
+      "entry_price": 0.0011,
+      "entry_mark_price": 0.0013,
+      "entry_price_usd": 70.71,
+      "entry_spot": 64285.14,
+      "contracts": 0.3,
+      "entry_ts": "2026-06-13 21:03:25 UTC",
+      "hedge_qty": -0.02506,
+      "hedge_entry_spot": 64285.14,
+      "hedge_avg_entry": 64274.35,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-06-13 21:03:25 UTC",
+          "side": "SELL",
+          "qty": -0.02506,
+          "spot": 64285.14,
+          "perp_price": 64274.35,
+          "qty_before": 0.0,
+          "qty_after": -0.02506,
+          "vwap_before": 0.0,
+          "vwap_after": 64274.35,
+          "drift": 0.08352,
+          "note": "hedge initial (perp mark $64274.35 vs index $64285.14)"
+        }
+      ],
+      "entry_score": 0.457,
+      "entry_sizing_btc": 0.3
     }
   ],
   "hedge": {
