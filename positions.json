@@ -189,13 +189,51 @@
       ],
       "entry_score": 0.45,
       "entry_sizing_btc": 0.4
+    },
+    {
+      "instrument_name": "BTC-26JUN26-58000-P",
+      "strike": 58000.0,
+      "expiry_dt": "2026-06-26 08:00:00+00:00",
+      "tte_at_entry": 12.82,
+      "delta_at_entry": -0.11844,
+      "gamma_at_entry": 4e-05,
+      "vega_at_entry": 23.75655,
+      "theta_at_entry": -42.2886,
+      "iv_at_entry": 44.95,
+      "entry_price": 0.0049,
+      "entry_mark_price": 0.0052,
+      "entry_price_usd": 313.16,
+      "entry_spot": 63910.37,
+      "contracts": 0.4,
+      "entry_ts": "2026-06-13 12:13:04 UTC",
+      "hedge_qty": -0.04738,
+      "hedge_entry_spot": 63910.37,
+      "hedge_avg_entry": 63910.85,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-06-13 12:13:04 UTC",
+          "side": "SELL",
+          "qty": -0.04738,
+          "spot": 63910.37,
+          "perp_price": 63910.85,
+          "qty_before": 0.0,
+          "qty_after": -0.04738,
+          "vwap_before": 0.0,
+          "vwap_after": 63910.85,
+          "drift": 0.11844,
+          "note": "hedge initial (perp mark $63910.85 vs index $63910.37)"
+        }
+      ],
+      "entry_score": 0.561,
+      "entry_sizing_btc": 0.4
     }
   ],
   "hedge": {
-    "qty": -0.25979,
-    "avg_entry": 61821.17,
-    "rebalances": 23,
-    "realized_pnl_usd": -862.72,
+    "qty": -0.26049,
+    "avg_entry": 62142.59,
+    "rebalances": 25,
+    "realized_pnl_usd": -945.24,
     "history": [
       {
         "ts": "2026-06-07 03:32:05 UTC",
@@ -504,6 +542,33 @@
         "drift": 0.09799,
         "realized_pnl_usd": -177.55,
         "realized_cumul_usd": -862.72,
+        "delta_net_after_pct": 0.0,
+        "note": "rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
+      },
+      {
+        "ts": "2026-06-13 12:13:04 UTC",
+        "side": "SELL",
+        "qty": -0.04738,
+        "spot": 63910.37,
+        "qty_before": -0.25979,
+        "qty_after": -0.30717,
+        "vwap_before": 61821.17,
+        "vwap_after": 62142.59,
+        "drift": 0.11844,
+        "note": "entree opportuniste BTC-26JUN26-58000-P"
+      },
+      {
+        "ts": "2026-06-13 12:13:05 UTC",
+        "side": "BUY",
+        "qty": 0.04668,
+        "spot": 63910.37,
+        "qty_before": -0.30717,
+        "qty_after": -0.26049,
+        "vwap_before": 62142.59,
+        "vwap_after": 62142.59,
+        "drift": 0.04668,
+        "realized_pnl_usd": -82.52,
+        "realized_cumul_usd": -945.24,
         "delta_net_after_pct": 0.0,
         "note": "rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
       }
