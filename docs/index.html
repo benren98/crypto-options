@@ -81,7 +81,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
 <body>
 
 <h1>📊 VRP Monitor — 8 position(s) ouverte(s) (9 lots)</h1>
-<div class="subtitle">Données : 2026-06-13 16:17 EDT · Généré : 2026-06-13 16:32 EDT · ↻ auto-refresh 5min</div>
+<div class="subtitle">Données : 2026-06-13 16:17 EDT · Généré : 2026-06-13 16:33 EDT · ↻ auto-refresh 5min</div>
 
 <div class="header-bar">
   <div class="chip">
@@ -91,11 +91,13 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
     <span class="chip-delta pos">4h +0.43% (+278$)</span>
     <span class="chip-delta pos">1j +1.08% (+689$)</span>
   </div>
-  <div class="chip" title="PnL latent des positions ouvertes (option latente + hedge flottant). = LATENT TOTAL de la carte détail. Le réalisé cumulé est dans la carte PnL global.">
+  <div class="chip" title="Latent = MtM des positions ouvertes (option latente + hedge flottant). Réalisé = options clôturées + rebalancements hedge déjà encaissés. Total = somme.">
     <span class="chip-label">PnL ouvert (latent)</span>
     <span class="chip-value pos">+790$</span>
     <span class="chip-delta neg">-2$ vs snapshot préc.</span>
     <span class="chip-delta neg">-200$ sur 1j</span>
+    <span class="chip-delta neg">Réalisé cumulé -116$</span>
+    <span class="chip-delta pos" style="border-top:1px solid #21262d;padding-top:2px;margin-top:2px">Total stratégie <b>+674$</b></span>
   </div>
   <div class="chip">
     <span class="chip-label">DVOL (index)</span>
@@ -1445,5 +1447,5 @@ new Chart(document.getElementById("chartVol"), {
 });
 </script>
 
-<footer>VRP Monitor · Généré le 2026-06-13 16:32 EDT · GitHub Actions · Auto-refresh 5 min</footer>
+<footer>VRP Monitor · Généré le 2026-06-13 16:33 EDT · GitHub Actions · Auto-refresh 5 min</footer>
 </body></html>

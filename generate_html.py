@@ -199,6 +199,10 @@ _funding_usd   = float(s.get("funding_pnl_usd", 0) or 0)
 # L'ancien total_pnl_usd mélangeait option latente + hedge réalisé+flottant → incohérent.
 _pnl_opt_latent = sum(float(_match_live(p).get("pnl_option_usd", 0)) for p in positions_list)
 pnl_open_latent = _pnl_opt_latent + (pnl_hedge_usd - realized_hedge) + _funding_usd
+# Réalisé cumulé (options clôturées + rebalancements hedge) et total stratégie — mêmes
+# définitions que la carte détail (TOTAL RÉALISÉ / TOTAL STRATÉGIE)
+pnl_realized_total = pnl_hist_total + realized_hedge
+pnl_strategy_total = pnl_open_latent + pnl_realized_total
 
 # Deltas depuis dernier snapshot
 _prev_spot  = float(pnl_history[-2].get("spot",      0)) if len(pnl_history) >= 2 else None
@@ -1138,11 +1142,13 @@ else:
     {_move4h_html}
     {_move1d_html}
   </div>
-  <div class="chip" title="PnL latent des positions ouvertes (option latente + hedge flottant). = LATENT TOTAL de la carte détail. Le réalisé cumulé est dans la carte PnL global.">
+  <div class="chip" title="Latent = MtM des positions ouvertes (option latente + hedge flottant). Réalisé = options clôturées + rebalancements hedge déjà encaissés. Total = somme.">
     <span class="chip-label">PnL ouvert (latent)</span>
     <span class="chip-value {_pnl_cl}">{f(pnl_open_latent,0,True)}$</span>
     {_pnl_delta_html}
     {_pnl_1d_html}
+    <span class="chip-delta {color(pnl_realized_total)}">Réalisé cumulé {f(pnl_realized_total,0,True)}$</span>
+    <span class="chip-delta {color(pnl_strategy_total)}" style="border-top:1px solid #21262d;padding-top:2px;margin-top:2px">Total stratégie <b>{f(pnl_strategy_total,0,True)}$</b></span>
   </div>
   <div class="chip">
     <span class="chip-label">DVOL (index)</span>
