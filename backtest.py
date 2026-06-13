@@ -88,7 +88,25 @@ def hv_from(closes, n):
     return math.sqrt(sum(r*r for r in rets)/len(rets)) * math.sqrt(365) * 100
 
 # ── Backtest ───────────────────────────────────────────────────────────────────
-def run(years: float, always_one: bool = True, verbose: bool = False):
+def rank_mult_linear(iv_rank: float) -> float:
+    """Multiplicateur actuel : monotone 0.5 -> 1.0."""
+    return 0.5 + 0.5 * iv_rank
+
+def rank_mult_bell(iv_rank: float) -> float:
+    """Profil en cloche : 0.5 en bas de range, pic 1.0 vers rank 0.65,
+    réduit à 0.6 à l'extrême haut (crash en cours / imminent)."""
+    if iv_rank <= 0.65:
+        return 0.5 + 0.5 * (iv_rank / 0.65)
+    return 1.0 - 0.4 * (iv_rank - 0.65) / 0.35
+
+# ── Circuit breaker ────────────────────────────────────────────────────────────
+CB_MOVE_3D_PCT   = 8.0    # déclenche : |move spot 3j| > 8%
+CB_DVOL_3D_PTS   = 10.0   # ou DVOL +10 pts en 3j
+CB_REENTRY_MOVE  = 4.0    # re-entrée : |move 3j| < 4%
+# + condition re-entrée : HV5 < HV10 (le réalisé court se retourne)
+
+def run(years: float, always_one: bool = True, rank_mult=rank_mult_linear,
+        circuit_breaker: bool = False, label: str = "", verbose: bool = False):
     days = fetch_history(years + 0.15)   # marge pour warmup HV30
     closes_hist = []
     positions = []      # {strike, tte_left, contracts, entry_premium_usd, iv_entry}
@@ -100,19 +118,52 @@ def run(years: float, always_one: bool = True, verbose: bool = False):
     worst_days = []
     notionals = []
     dvol_30 = []
+    dvol_hist = []
+    risk_off = False
+    n_cb_triggers = 0
+    cb_days_off = 0
 
     for day in days:
         S, dvol = day['spot'], day['dvol']
         closes_hist.append(S)
         dvol_30.append(dvol)
         dvol_30 = dvol_30[-30:]
+        dvol_hist.append(dvol)
         hv10, hv30 = hv_from(closes_hist, 10), hv_from(closes_hist, 30)
         if hv10 is None or hv30 is None or len(dvol_30) < 10:
             continue
+        hv5 = hv_from(closes_hist, 5)
         hv_blend = 0.5 * hv10 + 0.5 * hv30
         iv_rank  = max(0.0, min(1.0, (dvol - min(dvol_30)) / max(max(dvol_30) - min(dvol_30), 5)))
+        move_3d  = abs(S / closes_hist[-4] - 1) * 100 if len(closes_hist) >= 4 else 0.0
+        dvol_chg_3d = dvol - dvol_hist[-4] if len(dvol_hist) >= 4 else 0.0
 
         day_pnl = 0.0
+
+        # ── 0. Circuit breaker ────────────────────────────────────────────────
+        if circuit_breaker:
+            if not risk_off and positions and (move_3d > CB_MOVE_3D_PCT or dvol_chg_3d > CB_DVOL_3D_PTS):
+                # Tout racheter au mark + haircut (on paie le spread en sortie)
+                for p in positions:
+                    T = p['tte_left'] / 365
+                    otm = (S - p['strike']) / S * 100
+                    sig = (dvol * (1 + SKEW_SLOPE * max(otm, 0)) + BA_HAIRCUT_VOLPTS) / 100
+                    price, _, _ = bs_put(S, p['strike'], T, sig)
+                    cash += p['entry_premium_usd'] - price * p['contracts']
+                    day_pnl += p['entry_premium_usd'] - price * p['contracts']
+                positions = []
+                # Hedge à plat : réalise le PnL du short
+                if hedge_qty != 0:
+                    cash += hedge_qty * (hedge_vwap - S)
+                    day_pnl += hedge_qty * (hedge_vwap - S)
+                    hedge_qty, hedge_vwap = 0.0, 0.0
+                risk_off = True
+                n_cb_triggers += 1
+            elif risk_off:
+                cb_days_off += 1
+                # Re-entrée : réalisé court se retourne + spot stabilisé
+                if hv5 is not None and hv5 < hv10 and move_3d < CB_REENTRY_MOVE:
+                    risk_off = False
 
         # ── 1. Vieillissement + expiration des positions ──────────────────────
         still = []
@@ -164,8 +215,8 @@ def run(years: float, always_one: bool = True, verbose: bool = False):
 
         # ── 4. Entrées (scan + score v2) ──────────────────────────────────────
         used = sum(p['contracts'] for p in positions)
-        must_open = always_one and not positions
-        if (dvol >= DVOL_MIN and used < MAX_PORTFOLIO_BTC) or must_open:
+        must_open = always_one and not positions and not risk_off
+        if not risk_off and ((dvol >= DVOL_MIN and used < MAX_PORTFOLIO_BTC) or must_open):
             best = None
             for tte in TTE_CHOICES:
                 T = tte / 365
@@ -191,7 +242,7 @@ def run(years: float, always_one: bool = True, verbose: bool = False):
                         best = {'score': score, 'K': K, 'tte': tte, 'price': price, 'otm': otm}
             ok = best and (best['score'] >= ENTRY_SCORE_MIN or must_open)
             if ok:
-                size = round(best['score'] * (0.5 + 0.5 * iv_rank), 1)
+                size = round(best['score'] * rank_mult(iv_rank), 1)
                 size = max(0.1, min(size, MAX_PORTFOLIO_BTC - used))
                 if size >= 0.1:
                     positions.append({
@@ -231,6 +282,8 @@ def run(years: float, always_one: bool = True, verbose: bool = False):
     print(f"  Max drawdown     : {max_dd:>12,.0f} $")
     print(f"  Sharpe (daily)   : {sharpe:>12.2f}")
     print(f"  Trades           : {n_trades}  |  expires ITM : {n_expired_itm}")
+    if circuit_breaker:
+        print(f"  Circuit breaker  : {n_cb_triggers} déclenchements  |  {cb_days_off} jours risk-off")
     avg_not = sum(notionals)/len(notionals)
     avg_spot = sum(e[3] for e in equity_curve)/len(equity_curve)
     print(f"  Notionnel moyen  : {avg_not:.1f} BTC (~{avg_not*avg_spot:,.0f} $)  ->  rendement ~{eq[-1]/len(eq)*365/(avg_not*avg_spot)*100:.1f}%/an du notionnel")
