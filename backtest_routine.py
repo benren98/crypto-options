@@ -190,7 +190,7 @@ def run(years=4.0):
         sweep("Pénalité gamma (start)", 'GPEN', [3.0,4.0,5.0,6.0,8.0,100.0], lambda v:"OFF" if v>=100 else f"{int(v)}"),
         sweep("Sizing — convexité", 'CONVEX', [1.0,1.25,1.5,1.75,2.0], lambda v:f"{v:.2f}"),
         sweep("Sizing — cap notionnel BTC", 'MAXBTC', [3.0,4.0,5.0,6.0,7.0], lambda v:f"{v:.0f}"),
-        sweep("Sizing — plancher rang DVOL", 'RANKFLOOR', [0.3,0.4,0.5,0.6,0.7,1.0], lambda v:f"{v:.2f}"),
+        sweep("Sizing — plancher rang DVOL", 'RANKFLOOR', [0.1,0.2,0.3,0.4,0.5,0.6,0.7,1.0], lambda v:f"{v:.2f}"),
         sweep("CB — fermeture move 3j %", 'CB_T2M', [8.0,10.0,12.0,15.0,100.0], lambda v:"OFF" if v>=100 else f"−{int(v)}%"),
         sweep("CB — fermeture DVOL 3j pts", 'CB_T2D', [8.0,10.0,12.0,15.0,100.0], lambda v:"OFF" if v>=100 else f"+{int(v)}"),
         sweep("CB — allègement move 1j %", 'CB_T1M1', [4.0,5.0,6.0,7.0,100.0], lambda v:"OFF" if v>=100 else f"−{int(v)}%"),
