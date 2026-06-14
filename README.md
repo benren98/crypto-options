@@ -36,7 +36,7 @@ Sell OTM BTC puts with short maturities (1–30 days), delta-hedged via a BTC-PE
 | Type | OTM puts only |
 | DTE | 1 – 30 days |
 | Delta | 0 to −0.30 (exposure cap only, no floor) |
-| Min premium collected | $50 / BTC at bid (dust filter) |
+| Min premium collected | $150 / BTC at bid (dust filter, BTC-specific) |
 | Max bid/ask spread | 50% of mark (illiquidity backstop only) |
 
 ### Composite score
@@ -323,7 +323,8 @@ SCAN_TTE_MAX             = 30.0  # max DTE (days)
 SCAN_DELTA_MIN           = -0.30 # exposure cap : no closer to ATM than -0.30
 SCAN_DELTA_MAX           = 0.0   # no floor : far-OTM small-delta puts are eligible
 BA_MAX_PCT               = 50.0  # max bid/ask spread — illiquidity backstop only
-MIN_PREMIUM_USD          = 50.0  # min premium at bid ($/BTC) — dust filter (replaces the % spread as the quality gate)
+MIN_PREMIUM_USD          = 150.0 # min premium at bid ($/BTC) — dust filter; backtest Calmar 3.56→4.40, DD −17%
+                                 # (absolute $ floor, calibrated for BTC — ETH would need a relative % floor)
 
 # Score weights (skew-weighted, C1)
 SCORE_W_IVHV             = 0.30  # VRP (IV/HV) weight

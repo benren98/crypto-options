@@ -58,8 +58,10 @@ CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur 
 MAX_PORTFOLIO_BTC        = 5.0   # notionnel total max en BTC (somme des contracts)
 BA_MAX_PCT               = 50.0  # spread bid/ask max — garde-fou anti-illiquidité totale seulement
                                  # (le filtre anti-poussière est MIN_PREMIUM_USD, pas le %)
-MIN_PREMIUM_USD          = 50.0  # prime min encaissée au bid (par BTC) — exclut les options trop bon marché
-                                 # (deep OTM à quelques $) qui ne valent pas la marge ni le risque de queue
+MIN_PREMIUM_USD          = 150.0 # prime min encaissée au bid (par BTC) — écarte la poussière far-OTM
+                                 # (positions à ~38$ encaissés) : backtest 4 ans → Calmar 3.56→4.40, DD −17%.
+                                 # NB : plancher en $ ABSOLU, calibré BTC. Pour ETH (sous-jacent ~20× moins
+                                 # cher) il faudrait un plancher relatif (% du spot), sinon il bloque tout.
 ENTRY_SCORE_MIN          = 0.50  # score minimum pour entrée (recalibré scoring skew-pondéré C1, backtest 4 ans)
 ALWAYS_IN_POSITION       = False # C2 : ne PAS forcer l'entrée sur book vide si aucun candidat ne passe le seuil
                                  # (rester à plat les jours faibles → MaxDD −28% à PnL neutre, voir README)

@@ -35,6 +35,7 @@ def run_combo(years=4.0, w=(0.40,0.30,0.30), entry_min=0.45, always_one=True,
     hedge_qty = hedge_vwap = 0.0
     cash = 0.0
     equity_curve, daily_pnls = [], []
+    entries   = []   # (TTE jours, prime $/BTC, size BTC) de chaque entrée
     n_exp_itm = 0
     state = 0   # 0 normal, 1 allégé, 2 fermé
 
@@ -155,6 +156,7 @@ def run_combo(years=4.0, w=(0.40,0.30,0.30), entry_min=0.45, always_one=True,
                 if size >= 0.1:
                     positions.append({'k': best['K'], 'tte_left': best['tte'],
                                       'contracts': size, 'net_prem_usd': best['price']*size})
+                    entries.append((best['tte'], best['price'], size))   # (TTE j, prime $/BTC, size)
 
         open_prem = sum(p['net_prem_usd'] for p in positions)
         equity = cash + open_prem - mtm + hedge_qty*(hedge_vwap-S)
@@ -172,7 +174,8 @@ def run_combo(years=4.0, w=(0.40,0.30,0.30), entry_min=0.45, always_one=True,
     pnl_an = eq[-1]/len(eq)*365
     calmar = pnl_an/max_dd if max_dd > 0 else 0
     worst, _ = min(daily_pnls)
-    return {'pnl': eq[-1], 'maxdd': max_dd, 'sharpe': sharpe, 'calmar': calmar, 'worst': worst}
+    return {'pnl': eq[-1], 'maxdd': max_dd, 'sharpe': sharpe, 'calmar': calmar,
+            'worst': worst, 'entries': entries}
 
 
 SKEW_W = (0.30, 0.25, 0.45)

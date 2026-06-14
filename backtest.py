@@ -29,7 +29,7 @@ DVOL_MIN          = 35.0
 YIELD_NORM        = 0.30
 SKEW_NORM         = 0.20
 SIZE_CONVEXITY    = 1.5     # taille ∝ score^1.5 (miroir greeks_hedge.compute_sizing)
-MIN_PREMIUM_USD   = 50.0    # plancher de prime au bid ($/BTC) — anti-poussière (remplace le filtre B/A%)
+MIN_PREMIUM_USD   = 150.0   # plancher de prime au bid ($/BTC) — anti-poussière (BTC ; backtest Calmar 3.56→4.40)
 # Poids du score (C1 : repondéré vers le skew, miroir greeks_hedge)
 SCORE_W_IVHV      = 0.30
 SCORE_W_YIELD     = 0.25
