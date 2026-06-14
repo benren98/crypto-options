@@ -44,9 +44,17 @@ Sell OTM BTC puts with short maturities (1–30 days), delta-hedged via a BTC-PE
 Each option receives a score between 0 and 1:
 
 ```
-score_raw = 0.40 × s_iv_hv + 0.30 × s_yield + 0.30 × s_skew
+score_raw = 0.30 × s_iv_hv + 0.25 × s_yield + 0.45 × s_skew
 score     = score_raw × gamma_factor
 ```
+
+> **Weight calibration (skew-weighted, 4-year backtest).** Weights were retuned from the
+> original 0.40/0.30/0.30 toward the **skew** component. Over-weighting `s_yield` is the most
+> dangerous setting (it chases near-the-money high-premium options that blow up on gaps — in
+> backtest it ballooned max drawdown to 18.7k\$); over-weighting `s_skew` selects further-OTM
+> options where the market overpays most for crash fear (richer, less gap-sensitive). The
+> retune (`0.30/0.25/0.45`) cut **max drawdown −20% at neutral PnL** (Calmar 2.23 → 2.77). See
+> `backtest_scoring.py`.
 
 All three components are option-specific (the DVOL rank, identical for every candidate in a scan, was moved out of the score and into the sizing multiplier — see Sizing).
 
@@ -55,7 +63,7 @@ All three components are option-specific (the DVOL rank, identical for every can
 HV_blend = 0.5 × HV_10d + 0.5 × HV_30d
 s_iv_hv  = clamp(bid_IV / HV_blend − 1.0, 0, 1)
 ```
-0 when bid IV = HV (no premium), 1 when bid IV = 2× HV. Uses `bid_iv` (IV implied by the bid price — the price we actually sell at), not mid IV. The blended HV keeps the responsiveness of the 10-day window while damping the cliff effect of a single large day entering/leaving it (HV_10d ranged 20–57% within one month). Weight: 40%.
+0 when bid IV = HV (no premium), 1 when bid IV = 2× HV. Uses `bid_iv` (IV implied by the bid price — the price we actually sell at), not mid IV. The blended HV keeps the responsiveness of the 10-day window while damping the cliff effect of a single large day entering/leaving it (HV_10d ranged 20–57% within one month). Weight: **30%**.
 
 **Risk-adjusted yield component** — annualised premium scaled by the strike's distance in realised vols:
 ```
@@ -63,14 +71,14 @@ yield_ann = bid_price / DTE_years
 z         = OTM% / (HV_blend × √DTE_years)
 s_yield   = min(1.0, (yield_ann × z) / 0.30)
 ```
-`z` is the distance to the strike expressed in realised-vol standard deviations: a high yield close to the strike is worth less than a moderate yield far from it. Uses `bid_price` (the price we actually receive when selling). Weight: 30%.
+`z` is the distance to the strike expressed in realised-vol standard deviations: a high yield close to the strike is worth less than a moderate yield far from it. Uses `bid_price` (the price we actually receive when selling). Weight: **25%** (reduced — this is the most gap-dangerous component).
 
 **Skew component** — how rich the sold strike is relative to the ATM of the same expiry:
 ```
 atm_IV = mark IV of the put whose strike is closest to spot (same expiry)
 s_skew = clamp((bid_IV / atm_IV − 1) / 0.20, 0, 1)
 ```
-Reaches 1 when the put trades 20% richer than ATM. Between two puts with equal overall scores, this favours the one the market overpays the most relative to the centre of the smile — exactly the premium the strategy sells. Weight: 30%.
+Reaches 1 when the put trades 20% richer than ATM. Between two puts with equal overall scores, this favours the one the market overpays the most relative to the centre of the smile — exactly the premium the strategy sells. Weight: **45%** (raised — steep-skew strikes sit further OTM and are less gap-sensitive).
 
 **Gamma penalty** — discounts the raw score for high-gamma options:
 ```
@@ -104,7 +112,7 @@ The component spans 0 → 0.8 within a single month even with the blended HV, so
 
 **Gamma penalty thresholds (5 → 10 pts).** In the hunting zone, far-OTM medium-dated puts run 1–3 pts; near-ATM or short-dated puts run 5–10+ pts. The 5-pt start avoids penalising normal candidates; the 10-pt elimination kills only the genuinely dangerous gamma profiles.
 
-**Entry threshold 0.45.** Calibrated so the implicit demand matches the previous scoring version: with a typical base of ~0.30 from the yield and skew components, crossing 0.45 requires `s_iv_hv ≈ 0.35–0.40`, i.e. **IV/HV ≈ 1.35–1.40** — the same implicit bar the old 0.58 threshold imposed before the DVOL rank was moved out of the score.
+**Entry threshold 0.50.** Raised from 0.45 alongside the skew-weighted score (the skew-heavy weighting shifts the score distribution upward, so a higher bar keeps the same selectivity). In backtest the 0.50 bar combined with the skew weighting and the disabled always-in rule (see below) cut max drawdown −28% at neutral PnL. Raising the threshold *without* the skew reweighting was worse — the lever works as a bundle.
 
 ### Entry thresholds
 
@@ -112,7 +120,7 @@ All conditions must be met simultaneously for opportunistic entries:
 
 | Condition | Threshold |
 |---|---|
-| Composite score (after gamma penalty) | ≥ 0.45 |
+| Composite score (after gamma penalty) | ≥ 0.50 |
 | IV/HV ratio (per option, bid IV) | ≥ 1.10 |
 | Premium collected at bid | ≥ $50 / BTC |
 | Bid/ask spread | ≤ 50% of mark |
@@ -140,30 +148,41 @@ Portfolio cap: **5 BTC notional total** (1 Deribit contract = 1 BTC).
 | 1.00  | 1.00         | 1.00         | 0%        |
 | 0.80  | 0.80         | 0.72         | −10%      |
 | 0.60  | 0.60         | 0.46         | −23%      |
-| 0.45 (at threshold) | 0.45 | 0.30 | **−33%**  |
+| 0.50 (at threshold) | 0.50 | 0.35 | **−29%**  |
 
-Marginal setups near the 0.45 entry threshold — which cluster on the fragile days preceding gap-downs — get cut by a third, while high-conviction scores are barely touched. On the 4-year backtest (BTC, circuit breaker on) this lowers **max drawdown by 28% (9.8k → 7.1k$)** while *raising* PnL slightly (38.5k → 39.3k$): the trimmed capital was sitting on low-edge trades. Calmar improves 1.48 → 2.08, Sharpe 1.63 → 1.84.
+Marginal setups near the 0.50 entry threshold — which cluster on the fragile days preceding gap-downs — get cut by ~29%, while high-conviction scores are barely touched. On the 4-year backtest (BTC, circuit breaker on) this lowers **max drawdown by 28% (9.8k → 7.1k$)** while *raising* PnL slightly (38.5k → 39.3k$): the trimmed capital was sitting on low-edge trades. Calmar improves 1.48 → 2.08, Sharpe 1.63 → 1.84.
 
 `^2.0` was tested and overshoots — it starves capital deployment (avg notional 3.4 vs 3.7 BTC) and cuts PnL. `1.5` is the sweet spot. A per-portfolio **aggregate gamma budget** was also evaluated: it is gamma-specific (binds before the notional cap) and adds ~+2k$ PnL, but does *not* reduce drawdown further — the entire DD reduction comes from convexity — so it was left out to keep sizing to a single lever. Reducing the notional cap in high-DVOL regimes was tested and is counterproductive (high DVOL = richest premium; the circuit breaker already handles the gap risk). See `backtest_sizing.py` and `diag_gamma.py`.
 
-### Circuit breaker
+### Circuit breaker (two-tier graduated)
 
-De-risks the whole book on violent moves, re-enters when realized vol turns down while implieds are still rich. Calibrated by backtest (2023–2026 model backtest: max drawdown −19% for −7% PnL, same Sharpe, zero ITM expiries).
+De-risks the book in two stages on a down-move, re-enters when realized vol turns down while implieds are still rich. The graduated design beats a binary all-or-nothing breaker: it cushions sharp single-day gaps without fully exiting, and recovers fast.
 
-**Trigger** (checked every run):
+**Tier 1 — partial de-risk** (`GRADUATED_CB = True`, checked every run):
+```
+spot move over 1 day < −5%   OR   spot move over 3 days < −6%
+→ trim the whole book to 30% (buy back 70% at the ask)
+→ cap new entries at 30% of MAX_PORTFOLIO_BTC until recovery
+```
+Recovery (full size restored):
+```
+|spot move over 3 days| < 3%
+```
+The 1-day leg is crisis-alpha: trimming right after a sharp single-day crash and re-entering at higher vol is *PnL-positive* on both BTC (+7.5%) and ETH (+11%), and on ETH it halves the drawdown. Adding the 3-day leg deepens the drawdown protection (−20% BTC / −50% ETH MaxDD) for a light PnL cost (−8.6% BTC). The trigger was selected by a broad sweep (`backtest_cb2.py`): DVOL-based tier-1 triggers were rejected (they trim during the richest selling moments).
+
+**Tier 2 — full close** (hard backstop):
 ```
 spot move over 3 days < −10%   OR   DVOL change over 3 days > +12 pts
 ```
-Downside only: an upward move melts short puts (their gamma fades as spot moves away from the strikes) and is harmless. Restricting to downside removed 6 of 15 backtest triggers (all pump false-alarms) with slightly better PnL and identical max drawdown. The DVOL leg is a near-free backstop for an implied-vol explosion without a spot move (priced-in event risk): it fired only twice in 2.7 years of history, both times alongside a spot move that had already triggered.
-Action: buy back **all** positions at the ask, flatten the perp hedge (PnL realized), set `risk_off = true` in positions.json. No new entries while risk-off (including the always-≥1-position rule).
+Action: buy back **all** positions at the ask, flatten the perp hedge (PnL realized), set `risk_off = true`. No new entries while risk-off. Downside only: an upward move melts short puts (gamma fades as spot moves away) and is harmless. The DVOL leg backstops an implied-vol explosion without a spot move.
 
-**Re-entry**:
+**Re-entry from full close**:
 ```
 HV_5d < HV_10d   AND   |spot move over 3 days| < 4%
 ```
-The short realized vol turning back below the 10-day says the stress peak is behind; entries resume under normal scoring rules — typically into still-elevated implieds (post-stress premiums are the richest the strategy ever sells).
+The short realized vol turning back below the 10-day says the stress peak is behind; entries resume into still-elevated implieds (the richest premiums the strategy ever sells).
 
-Constants: `CB_MOVE_3D_PCT = 10.0`, `CB_DVOL_3D_PTS = 12.0`, `CB_REENTRY_MOVE_PCT = 4.0`. Threshold sweep in `cb_sweep.py`: looser (8%) whipsaws (30 triggers), stricter (12–15%) fires after the damage and is worse than no breaker at all.
+Constants: tier 1 `CB_T1_MOVE_1D_PCT = 5.0`, `CB_T1_MOVE_3D_PCT = 6.0`, `CB_T1_KEEP = 0.30`, `CB_T1_RESTORE_MOVE_PCT = 3.0`; tier 2 `CB_MOVE_3D_PCT = 10.0`, `CB_DVOL_3D_PTS = 12.0`, `CB_REENTRY_MOVE_PCT = 4.0`. Set `GRADUATED_CB = False` to revert to the binary breaker. Backtests: `backtest_cb.py` (graduated calibration), `backtest_cb2.py` (trigger sweep), `cb_robustness.py` (ETH + per-year).
 
 The dashboard shows the breaker state in the header (armed + margin vs thresholds, or RISK-OFF since timestamp) and draws the trigger levels on the spot chart (±10% vs 3 days ago) and the vol chart (DVOL 3d + 12 pts).
 
@@ -177,9 +196,9 @@ The dashboard shows the breaker state in the header (armed + margin vs threshold
 |---|---|
 | Max total notional | 5 BTC |
 
-### "Always in a position" guarantee
+### "Always in a position" guarantee — disabled by default (`ALWAYS_IN_POSITION = False`)
 
-If the portfolio is empty (after a roll or on first run), the algo **always opens** the best scored candidate, even if market signal conditions are not met. If no liquid candidate is found (B/A > 12%), the spread filter is lifted to guarantee entry. Sizing still follows `round(score**1.5 × rank_mult, 1)` with a 0.1 BTC minimum.
+The forced-entry rule (open the best candidate on an empty book even if it fails the score/signal gate) is **off**. Staying flat on low-opportunity days, rather than forcing a weak sale, lowered max drawdown −28% at neutral PnL on the 4-year backtest (the forced entries clustered on fragile days). With it off, an empty book only opens when the best candidate clears `ENTRY_SCORE_MIN (0.50)` and the market signal is active — otherwise it sits in cash. Set `ALWAYS_IN_POSITION = True` to restore the guarantee. Sizing follows `round(score**1.5 × rank_mult, 1)` with a 0.1 BTC minimum.
 
 ### Opportunistic entries
 
@@ -306,8 +325,14 @@ SCAN_DELTA_MAX           = 0.0   # no floor : far-OTM small-delta puts are eligi
 BA_MAX_PCT               = 50.0  # max bid/ask spread — illiquidity backstop only
 MIN_PREMIUM_USD          = 50.0  # min premium at bid ($/BTC) — dust filter (replaces the % spread as the quality gate)
 
+# Score weights (skew-weighted, C1)
+SCORE_W_IVHV             = 0.30  # VRP (IV/HV) weight
+SCORE_W_YIELD            = 0.25  # risk-adjusted yield weight (reduced — most gap-dangerous)
+SCORE_W_SKEW             = 0.45  # skew vs ATM weight (raised — further-OTM, less gap-sensitive)
+
 # Entry signal
-ENTRY_SCORE_MIN          = 0.45  # minimum composite score (after gamma penalty) — recalibrated for score v2 (rank moved to sizing), implicitly demands IV/HV ≈ 1.35
+ENTRY_SCORE_MIN          = 0.50  # minimum composite score (raised with skew weighting)
+ALWAYS_IN_POSITION       = False # C2: do NOT force entry on an empty book if nothing clears the gate
 ENTRY_IV_HV_MIN          = 1.10  # minimum bid IV/HV ratio (per option)
 
 # Gamma penalty on score
@@ -317,6 +342,20 @@ GAMMA_SCORE_CAP          = 10.0  # gamma_pts at which score reaches 0
 # Diversification & re-entry
 DELTA_MIN_SPACING        = 0.08  # min |delta| gap between positions on same expiry
 ENTRY_SCORE_REENTRY_BOOST= 0.05  # score improvement needed to re-enter a held instrument
+
+# Sizing
+SIZE_CONVEXITY           = 1.5   # size ∝ score^1.5 (concentrates capital on best scores)
+
+# Circuit breaker — tier 1 (graduated de-risk)
+GRADUATED_CB             = True  # enable the partial-trim tier before full close
+CB_T1_MOVE_1D_PCT        = 5.0   # trim if 1-day spot drop > 5%
+CB_T1_MOVE_3D_PCT        = 6.0   # or 3-day drop > 6%
+CB_T1_KEEP               = 0.30  # fraction of book kept on trim
+CB_T1_RESTORE_MOVE_PCT   = 3.0   # restore full size when |3-day move| < 3%
+# Circuit breaker — tier 2 (full close)
+CB_MOVE_3D_PCT           = 10.0  # full close if 3-day drop > 10%
+CB_DVOL_3D_PTS           = 12.0  # or DVOL +12 pts in 3 days
+CB_REENTRY_MOVE_PCT      = 4.0   # re-entry (from full close): |3-day move| < 4% AND HV5 < HV10
 
 # Roll
 ROLL_TRIGGER             = 1.0   # DTE (days) to enter roll window

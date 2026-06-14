@@ -60,12 +60,26 @@ BA_MAX_PCT               = 50.0  # spread bid/ask max — garde-fou anti-illiqui
                                  # (le filtre anti-poussière est MIN_PREMIUM_USD, pas le %)
 MIN_PREMIUM_USD          = 50.0  # prime min encaissée au bid (par BTC) — exclut les options trop bon marché
                                  # (deep OTM à quelques $) qui ne valent pas la marge ni le risque de queue
-ENTRY_SCORE_MIN          = 0.45  # score minimum pour entrée opportuniste (recalibré scoring v2 : ≈ IV/HV ≥ 1.35 implicite)
+ENTRY_SCORE_MIN          = 0.50  # score minimum pour entrée (recalibré scoring skew-pondéré C1, backtest 4 ans)
+ALWAYS_IN_POSITION       = False # C2 : ne PAS forcer l'entrée sur book vide si aucun candidat ne passe le seuil
+                                 # (rester à plat les jours faibles → MaxDD −28% à PnL neutre, voir README)
+# Poids du score composite (C1 : repondéré vers le skew, backtest 4 ans → MaxDD −20% à PnL neutre).
+# Le yield est le composant le plus risqué (chasse les strikes proches) → réduit ; le skew (options
+# loin OTM, prime de crash riche, moins gap-sensibles) → relevé.
+SCORE_W_IVHV             = 0.30  # poids VRP (IV au bid / HV blend)
+SCORE_W_YIELD            = 0.25  # poids yield ajusté au risque (réduit de 0.30)
+SCORE_W_SKEW             = 0.45  # poids skew vs ATM (relevé de 0.30)
 
-# Circuit breaker (calibré par backtest 2023-2026 : DD −19% pour PnL −7%)
-CB_MOVE_3D_PCT           = 10.0  # déclenche si move spot 3j < −10% (baisse seule — un pump est inoffensif pour des short puts)
+# Circuit breaker — palier dur (fermeture totale), calibré par backtest 2023-2026
+CB_MOVE_3D_PCT           = 10.0  # ferme tout si move spot 3j < −10% (baisse seule — un pump est inoffensif pour des short puts)
 CB_DVOL_3D_PTS           = 12.0  # ou si DVOL a pris +12 pts en 3j
-CB_REENTRY_MOVE_PCT      = 4.0   # re-entrée : |move 3j| < 4% ET HV5 < HV10
+CB_REENTRY_MOVE_PCT      = 4.0   # re-entrée (depuis fermeture) : |move 3j| < 4% ET HV5 < HV10
+# Circuit breaker — palier d'allègement gradué (backtest 4 ans : DD −20% BTC / −50% ETH à PnL ~neutre)
+GRADUATED_CB             = True  # active le palier intermédiaire avant la fermeture totale
+CB_T1_MOVE_1D_PCT        = 5.0   # allège le book si chute spot >5% en 1 jour (crisis-alpha)
+CB_T1_MOVE_3D_PCT        = 6.0   # ou >6% en 3 jours
+CB_T1_KEEP               = 0.30  # fraction du book conservée à l'allègement (on rachète 70%)
+CB_T1_RESTORE_MOVE_PCT   = 3.0   # reprise pleine taille quand |move 3j| < 3% (sans attendre HV5<HV10)
 ENTRY_IV_HV_MIN          = 1.10  # ratio IV/HV minimum pour entrée opportuniste
 ENTRY_SCORE_REENTRY_BOOST= 0.10  # amélioration score nécessaire pour re-entrer un instrument déjà tenu
 DELTA_MIN_SPACING        = 0.08  # espacement min |delta| entre positions sur la même expiry
@@ -631,6 +645,7 @@ def check_circuit_breaker(currency: str, spot: float, hv_10d: float) -> dict:
       - reentry_ok   : HV5 < HV10 (réalisé court se retourne) et |move 3j| < CB_REENTRY_MOVE_PCT
     """
     move_3d_pct = None
+    move_1d_pct = None
     try:
         end_ts   = now_ms()
         start_ts = end_ts - 80 * 3600 * 1000
@@ -639,10 +654,13 @@ def check_circuit_breaker(currency: str, spot: float, hv_10d: float) -> dict:
             "start_timestamp": start_ts, "end_timestamp": end_ts, "resolution": "60"})
         pairs = [(t, c) for t, c in zip(cd.get("ticks", []), cd.get("close", [])) if c]
         if pairs:
-            target = end_ts - 72 * 3600 * 1000
-            ref = min(pairs, key=lambda r: abs(r[0] - target))
-            if abs(ref[0] - target) < 6 * 3600 * 1000:
-                move_3d_pct = (spot / ref[1] - 1) * 100
+            for horizon_h, setter in ((72, "3d"), (24, "1d")):
+                target = end_ts - horizon_h * 3600 * 1000
+                ref = min(pairs, key=lambda r: abs(r[0] - target))
+                if abs(ref[0] - target) < 6 * 3600 * 1000:
+                    val = (spot / ref[1] - 1) * 100
+                    if setter == "3d": move_3d_pct = val
+                    else:              move_1d_pct = val
     except Exception:
         pass
 
@@ -684,12 +702,21 @@ def check_circuit_breaker(currency: str, spot: float, hv_10d: float) -> dict:
     reentry_ok = (hv_5d is not None and hv_5d < hv_10d
                   and move_3d_pct is not None and abs(move_3d_pct) < CB_REENTRY_MOVE_PCT)
 
+    # Palier d'allègement gradué (chute sèche 1j OU baisse 3j) ; reprise quand le spot se stabilise
+    tier1_triggered = GRADUATED_CB and (
+        (move_1d_pct is not None and move_1d_pct < -CB_T1_MOVE_1D_PCT)
+        or (move_3d_pct is not None and move_3d_pct < -CB_T1_MOVE_3D_PCT))
+    tier1_restore = (move_3d_pct is not None and abs(move_3d_pct) < CB_T1_RESTORE_MOVE_PCT)
+
     return {
         "move_3d_pct": round(move_3d_pct, 2) if move_3d_pct is not None else None,
+        "move_1d_pct": round(move_1d_pct, 2) if move_1d_pct is not None else None,
         "dvol_3d_chg": round(dvol_3d_chg, 2) if dvol_3d_chg is not None else None,
         "hv_5d":       round(hv_5d, 2) if hv_5d is not None else None,
         "triggered":   triggered,
         "reentry_ok":  reentry_ok,
+        "tier1_triggered": tier1_triggered,
+        "tier1_restore":   tier1_restore,
     }
 
 
@@ -752,11 +779,54 @@ def apply_circuit_breaker(state: dict, spot: float, cb: dict) -> bool:
             print(f"  [CB] Hedge a plat : rachat {abs(qty):.5f} BTC-PERP  PnL réalisé {realized:+.2f}$")
 
         state["risk_off"] = True
+        state["cb_reduced"] = False   # la fermeture totale supplante l'allègement
         state["risk_off_info"] = {
             "ts":          now_dt(),
             "move_3d_pct": cb["move_3d_pct"],
             "dvol_3d_chg": cb["dvol_3d_chg"],
         }
+        return True
+
+    # ── Palier d'allègement gradué (tier 1) : on rachète une fraction, on garde le reste ──
+    reduced = bool(state.get("cb_reduced", False))
+    if GRADUATED_CB and not risk_off and not reduced and state.get("positions") and cb.get("tier1_triggered"):
+        print_section("CIRCUIT BREAKER — ALLEGEMENT (palier 1)")
+        print(f"  Move 1j : {cb.get('move_1d_pct')}%  (seuil −{CB_T1_MOVE_1D_PCT}%)  |  "
+              f"Move 3j : {cb.get('move_3d_pct')}%  (seuil −{CB_T1_MOVE_3D_PCT}%)")
+        print(f"  On conserve {CB_T1_KEEP*100:.0f}% du book, rachat du reste a l'ask.")
+        for pos in state.get("positions", []):
+            n = float(pos.get("contracts", 1))
+            sell_n = round(n * (1.0 - CB_T1_KEEP), 6)
+            keep_n = round(n - sell_n, 6)
+            if sell_n <= 1e-9:
+                continue
+            exit_p = pos["entry_price"]
+            try:
+                t = fetch_ticker_full(pos["instrument_name"])
+                exit_p = t.get("best_ask_price") or t.get("mark_price") or exit_p
+            except Exception:
+                pass
+            entry_spot = float(pos.get("entry_spot", spot))
+            pnl_usd = round((pos["entry_price"] * entry_spot - exit_p * spot) * sell_n, 2)
+            state.setdefault("history", []).append({
+                **pos, "contracts": sell_n,
+                "exit_price": exit_p, "exit_spot": spot, "exit_ts": now_dt(),
+                "exit_reason": "cb_tier1_trim",
+                "pnl_btc": round((pos["entry_price"] - exit_p) * sell_n, 6),
+                "pnl_usd": pnl_usd})
+            pos["contracts"] = keep_n
+            print(f"  [CB-T1] Allege {pos['instrument_name']} : -{sell_n:.2f} (reste {keep_n:.2f})  PnL {pnl_usd:+.2f}$")
+        state["cb_reduced"] = True
+        state["cb_reduced_info"] = {"ts": now_dt(),
+                                    "move_1d_pct": cb.get("move_1d_pct"),
+                                    "move_3d_pct": cb.get("move_3d_pct")}
+        # NB : le hedge suit automatiquement au rebalance unifié de fin de run (book réduit)
+        return True
+
+    if reduced and cb.get("tier1_restore"):
+        print_section("CIRCUIT BREAKER — REPRISE PLEINE TAILLE (palier 1)")
+        print(f"  move 3j {cb.get('move_3d_pct')}% < {CB_T1_RESTORE_MOVE_PCT}% -> cap d'allegement relache")
+        state["cb_reduced"] = False
         return True
 
     if risk_off and cb["reentry_ok"]:
@@ -895,7 +965,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
 
     # ── Roll ou ouverture si portfolio vide ────────────────────────────────────
     open_positions_now = state.get("positions", [])
-    must_open = len(open_positions_now) == 0 and not risk_off   # garantie "toujours au moins 1" (hors risk-off)
+    must_open = ALWAYS_IN_POSITION and len(open_positions_now) == 0 and not risk_off   # garantie "toujours ≥1" si activée
 
     if (state["open"] is None or must_open) and not risk_off:
         reason = "portfolio vide -- ouverture obligatoire" if must_open else "roll declenche"
@@ -923,8 +993,22 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                 return
 
         best = candidates.iloc[0]
+
+        # C2 : entrée non forcée → exiger le seuil de score + signal. Sinon, rester à plat.
+        if not must_open and (float(best["score"]) < ENTRY_SCORE_MIN or not ctx["signal_ok"]):
+            print(f"  [Pas d'entree] meilleur score {best['score']:.3f} < seuil {ENTRY_SCORE_MIN:.2f} "
+                  f"ou signal KO -- book laisse a plat")
+            save_positions(state)
+            return
+
         used_btc = sum(float(p.get("contracts", 1)) for p in state.get("positions", []))
         sizing = compute_sizing(float(best["score"]), used_btc, ctx["iv_rank"])
+        _eff_cap = MAX_PORTFOLIO_BTC * (CB_T1_KEEP if state.get("cb_reduced") else 1.0)
+        sizing = min(sizing, max(0.0, round(_eff_cap - used_btc, 1)))   # cap réduit si allègement
+        if sizing < 0.1:
+            print("  [Pas d'entree] cap d'allegement (CB tier 1) atteint -- pas d'ouverture")
+            save_positions(state)
+            return
         new_pos = open_position_from_candidate(best, spot, contracts=sizing)
 
         # NB : le hedge n'est PAS exécuté ici. La position est ajoutée, puis l'unique
@@ -974,7 +1058,9 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                 return False
         return True
 
-    if used_btc_now < MAX_PORTFOLIO_BTC and ctx["signal_ok"] and not risk_off:
+    # Cap effectif réduit pendant l'allègement gradué (CB tier 1)
+    eff_cap = MAX_PORTFOLIO_BTC * (CB_T1_KEEP if state.get("cb_reduced") else 1.0)
+    if used_btc_now < eff_cap and ctx["signal_ok"] and not risk_off:
         candidates = fetch_scored_candidates(
             currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
@@ -984,6 +1070,9 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             best2 = candidates.iloc[0]
             used_btc2 = sum(float(p.get("contracts", 1)) for p in state.get("positions", []))
             sizing2 = compute_sizing(float(best2["score"]), used_btc2, ctx["iv_rank"])
+            sizing2 = min(sizing2, max(0.0, round(eff_cap - used_btc2, 1)))   # respecte le cap réduit
+            if sizing2 < 0.1:
+                save_positions(state); return
             new_pos2 = open_position_from_candidate(best2, spot, contracts=sizing2)
 
             # Hedge délégué au rebalance unifié de fin de run (évite l'aller-retour)
@@ -1426,7 +1515,7 @@ def fetch_scored_candidates(currency: str, spot: float,
         z_score  = otm_frac / max(hv_ref / 100 * math.sqrt(tte_yr), 1e-9)
         s_yield  = min(1.0, (yield_a * z_score) / 0.30)
 
-        score_raw = 0.40 * s_iv_hv + 0.30 * s_yield + 0.30 * s_skew
+        score_raw = SCORE_W_IVHV * s_iv_hv + SCORE_W_YIELD * s_yield + SCORE_W_SKEW * s_skew
         # Pénalité gamma : linéaire entre GAMMA_PENALTY_START (×1.0) et GAMMA_SCORE_CAP (×0.0)
         gamma_pts_val = r["gamma"] * spot * 0.01 * 100
         gamma_excess  = max(0.0, gamma_pts_val - GAMMA_PENALTY_START)

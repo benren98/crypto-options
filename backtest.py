@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from greeks_hedge import get, now_ms
 
 # ── Paramètres stratégie (miroir de greeks_hedge.py) ──────────────────────────
-ENTRY_SCORE_MIN   = 0.45
+ENTRY_SCORE_MIN   = 0.50    # C2 : seuil relevé (scoring skew-pondéré)
 MAX_PORTFOLIO_BTC = 5.0
 GAMMA_PEN_START   = 5.0
 GAMMA_SCORE_CAP   = 10.0
@@ -30,6 +30,10 @@ YIELD_NORM        = 0.30
 SKEW_NORM         = 0.20
 SIZE_CONVEXITY    = 1.5     # taille ∝ score^1.5 (miroir greeks_hedge.compute_sizing)
 MIN_PREMIUM_USD   = 50.0    # plancher de prime au bid ($/BTC) — anti-poussière (remplace le filtre B/A%)
+# Poids du score (C1 : repondéré vers le skew, miroir greeks_hedge)
+SCORE_W_IVHV      = 0.30
+SCORE_W_YIELD     = 0.25
+SCORE_W_SKEW      = 0.45
 
 # ── Paramètres modèle de pricing ───────────────────────────────────────────────
 SKEW_SLOPE        = 0.013   # IV(K) = DVOL × (1 + 0.013 × OTM%) — calibré juin 2026 (~1.3%/pt OTM)
@@ -110,12 +114,17 @@ def rank_mult_bell(iv_rank: float) -> float:
     return 1.0 - 0.4 * (iv_rank - 0.65) / 0.35
 
 # ── Circuit breaker (aligné sur greeks_hedge.py live : 10% / +12pts, baisse seule) ─
-CB_MOVE_3D_PCT   = 10.0   # déclenche : move spot 3j < −10% (baisse seule)
+CB_MOVE_3D_PCT   = 10.0   # palier dur : ferme tout si move spot 3j < −10% (baisse seule)
 CB_DVOL_3D_PTS   = 12.0   # ou DVOL +12 pts en 3j
-CB_REENTRY_MOVE  = 4.0    # re-entrée : |move 3j| < 4% et HV5 < HV10
-# + condition re-entrée : HV5 < HV10 (le réalisé court se retourne)
+CB_REENTRY_MOVE  = 4.0    # re-entrée (depuis fermeture) : |move 3j| < 4% et HV5 < HV10
+# Palier d'allègement gradué (miroir greeks_hedge : move1=5 OU move3=6 → trim à 30%, reprise si move3<3)
+GRADUATED_CB     = True
+CB_T1_MOVE_1D    = 5.0
+CB_T1_MOVE_3D    = 6.0
+CB_T1_KEEP       = 0.30
+CB_T1_RESTORE    = 3.0
 
-def run(years: float, always_one: bool = True, rank_mult=rank_mult_linear,
+def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         circuit_breaker: bool = False, label: str = "", verbose: bool = False):
     days = fetch_history(years + 0.15)   # marge pour warmup HV30
     closes_hist = []
@@ -131,6 +140,7 @@ def run(years: float, always_one: bool = True, rank_mult=rank_mult_linear,
     dvol_30 = []
     dvol_hist = []
     risk_off = False
+    cb_reduced = False
     n_cb_triggers = 0
     cb_days_off = 0
 
@@ -151,11 +161,12 @@ def run(years: float, always_one: bool = True, rank_mult=rank_mult_linear,
 
         day_pnl = 0.0
 
-        # ── 0. Circuit breaker ────────────────────────────────────────────────
+        # ── 0. Circuit breaker (gradué : allègement → fermeture totale) ────────
         if circuit_breaker:
             move_3d_signed = (S / closes_hist[-4] - 1) * 100 if len(closes_hist) >= 4 else 0.0
+            move_1d_signed = (S / closes_hist[-2] - 1) * 100 if len(closes_hist) >= 2 else 0.0
             if not risk_off and positions and (move_3d_signed < -CB_MOVE_3D_PCT or dvol_chg_3d > CB_DVOL_3D_PTS):
-                # Tout racheter au mark + haircut (on paie le spread en sortie)
+                # Palier dur : tout racheter au mark + haircut (on paie le spread en sortie)
                 for p in positions:
                     T = p['tte_left'] / 365
                     otm = (S - p['strike']) / S * 100
@@ -164,13 +175,29 @@ def run(years: float, always_one: bool = True, rank_mult=rank_mult_linear,
                     cash += p['entry_premium_usd'] - price * p['contracts']
                     day_pnl += p['entry_premium_usd'] - price * p['contracts']
                 positions = []
-                # Hedge à plat : réalise le PnL du short
                 if hedge_qty != 0:
                     cash += hedge_qty * (hedge_vwap - S)
                     day_pnl += hedge_qty * (hedge_vwap - S)
                     hedge_qty, hedge_vwap = 0.0, 0.0
                 risk_off = True
+                cb_reduced = False
                 n_cb_triggers += 1
+            elif GRADUATED_CB and not risk_off and not cb_reduced and positions and \
+                    (move_1d_signed < -CB_T1_MOVE_1D or move_3d_signed < -CB_T1_MOVE_3D):
+                # Palier d'allègement : rachat de (1−keep) de chaque position à l'ask
+                for p in positions:
+                    sell = p['contracts'] * (1.0 - CB_T1_KEEP)
+                    T = p['tte_left'] / 365
+                    otm = (S - p['strike']) / S * 100
+                    sig = (dvol * (1 + SKEW_SLOPE * max(otm, 0)) + BA_HAIRCUT_VOLPTS) / 100
+                    price, _, _ = bs_put(S, p['strike'], T, sig)
+                    cash += p['entry_premium_usd'] * (1.0 - CB_T1_KEEP) - price * sell
+                    day_pnl += p['entry_premium_usd'] * (1.0 - CB_T1_KEEP) - price * sell
+                    p['contracts'] *= CB_T1_KEEP
+                    p['entry_premium_usd'] *= CB_T1_KEEP
+                cb_reduced = True
+            elif cb_reduced and move_3d < CB_T1_RESTORE:
+                cb_reduced = False
             elif risk_off:
                 cb_days_off += 1
                 # Re-entrée : réalisé court se retourne + spot stabilisé
@@ -227,8 +254,9 @@ def run(years: float, always_one: bool = True, rank_mult=rank_mult_linear,
 
         # ── 4. Entrées (scan + score v2) ──────────────────────────────────────
         used = sum(p['contracts'] for p in positions)
+        eff_cap = MAX_PORTFOLIO_BTC * (CB_T1_KEEP if cb_reduced else 1.0)   # cap réduit si allègement
         must_open = always_one and not positions and not risk_off
-        if not risk_off and ((dvol >= DVOL_MIN and used < MAX_PORTFOLIO_BTC) or must_open):
+        if not risk_off and ((dvol >= DVOL_MIN and used < eff_cap) or must_open):
             best = None
             for tte in TTE_CHOICES:
                 T = tte / 365
@@ -251,13 +279,13 @@ def run(years: float, always_one: bool = True, rank_mult=rank_mult_linear,
                     s_skew  = max(0.0, min(1.0, skew / SKEW_NORM))
                     g_pts   = gamma * S * 0.01 * 100
                     g_fac   = max(0.0, 1.0 - max(0.0, g_pts - GAMMA_PEN_START) / (GAMMA_SCORE_CAP - GAMMA_PEN_START))
-                    score   = (0.40*s_ivhv + 0.30*s_yield + 0.30*s_skew) * g_fac
+                    score   = (SCORE_W_IVHV*s_ivhv + SCORE_W_YIELD*s_yield + SCORE_W_SKEW*s_skew) * g_fac
                     if best is None or score > best['score']:
                         best = {'score': score, 'K': K, 'tte': tte, 'price': price, 'otm': otm}
             ok = best and (best['score'] >= ENTRY_SCORE_MIN or must_open)
             if ok:
                 size = round(best['score'] ** SIZE_CONVEXITY * rank_mult(iv_rank), 1)
-                size = max(0.1, min(size, MAX_PORTFOLIO_BTC - used))
+                size = max(0.1, min(size, eff_cap - used))
                 if size >= 0.1:
                     positions.append({
                         'strike': best['K'], 'tte_left': best['tte'], 'contracts': size,
