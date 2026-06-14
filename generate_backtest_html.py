@@ -54,9 +54,11 @@ def _equity_chart(base):
 
 def _verdict(s):
     if s["sensitivity"] < 0.5:                                    return ("· peu sensible", "low")
+    if s.get("robust") and s.get("extend"):                       return ("✅↗ robuste · optimum au bord (étendre)", "ok")
     if s.get("robust"):                                           return ("✅ robuste (multi-régimes)", "ok")
     if (s.get("best_worst_fold") or -1) <= 0:                     return ("⛔ s'effondre ≥1 régime", "bad")
     if s.get("fold_wins", 0) < (s.get("n_folds", 5)+1)//2:        return ("⛔ un régime porte tout", "bad")
+    if s.get("extend"):                                           return ("↗ à étendre (tendance au bord)", "warn")
     if not s.get("plateau"):                                      return ("⚠ pic isolé", "warn")
     return ("⚠ limite", "warn")
 

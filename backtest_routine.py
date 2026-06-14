@@ -151,14 +151,26 @@ def run(years=4.0):
         for i, r in enumerate(results):
             r['is_best'] = (i == bi)
         wins = fold_winner.count(bi)                       # nb de folds où le reco gagne
-        # Plateau sur le mean_fold (voisins ≥80%)
-        neigh = [results[i].get('mean_fold') for i in (bi-1, bi+1) if 0 <= i < len(results)]
-        neigh = [c for c in neigh if c is not None]
-        plateau = bool(neigh) and best.get('mean_fold') and all(c >= 0.8*best['mean_fold'] for c in neigh)
-        # Robuste : pire fold positif + plateau + gagne dans la MAJORITÉ des régimes
-        robust = ((best.get('worst_fold') or -1) > 0 and plateau
-                  and wins >= (NFOLDS+1)//2)
+        n = len(results); bf = best.get('mean_fold')
+        # Voisins présents (un seul si le meilleur est au bord de la plage testée)
+        left  = results[bi-1].get('mean_fold') if bi-1 >= 0 else None
+        right = results[bi+1].get('mean_fold') if bi+1 < n else None
+        present = [c for c in (left, right) if c is not None]
+        # Plateau : tous les voisins PRÉSENTS restent ≥80% du meilleur
+        plateau = bool(present) and bf and all(c >= 0.8*bf for c in present)
+        # Optimum au bord + tendance monotone vers ce bord → pas un pic, plage trop étroite
+        mf = [r.get('mean_fold') for r in results]
+        at_edge = (bi == 0 or bi == n-1) and all(x is not None for x in mf) and n >= 3
+        monotonic = False
+        if at_edge:
+            if bi == n-1:  monotonic = all(mf[i] <= mf[i+1] + 1e-9 for i in range(n-1))
+            else:          monotonic = all(mf[i] >= mf[i+1] - 1e-9 for i in range(n-1))
+        extend = at_edge and monotonic          # tendance claire mais optimum hors plage
+        # Robuste : pire fold > 0, majorité des régimes, ET (plateau OU tendance monotone au bord)
+        robust = ((best.get('worst_fold') or -1) > 0 and wins >= (NFOLDS+1)//2
+                  and (plateau or extend))
         return dict(param=name, results=results, sensitivity=round(max(cals)-min(cals), 2),
+                    extend=extend,
                     best_label=best['label'], best_calmar=best['calmar'],
                     best_worst_fold=best.get('worst_fold'), best_mean_fold=best.get('mean_fold'),
                     fold_wins=wins, n_folds=NFOLDS, plateau=plateau, robust=robust)
@@ -167,8 +179,8 @@ def run(years=4.0):
         sweep("Poids score (ivhv/yield/skew)", 'WEIGHTS',
               [(0.40,0.30,0.30),(0.35,0.30,0.35),(0.30,0.25,0.45),(0.30,0.20,0.50),
                (0.25,0.20,0.55),(0.20,0.15,0.65),(0.50,0.25,0.25),(0.20,0.40,0.40)]),
-        sweep("SKEW_NORM", 'SKEW_NORM', [0.15,0.20,0.30,0.40,0.50,0.60,0.80], lambda v:f"{v:.2f}"),
-        sweep("IV/HV — normalisation", 'IVHV_NORM', [0.5,0.75,1.0,1.5,2.0], lambda v:f"{v:.2f}"),
+        sweep("SKEW_NORM", 'SKEW_NORM', [0.15,0.20,0.30,0.40,0.50,0.60,0.80,1.0,1.2], lambda v:f"{v:.2f}"),
+        sweep("IV/HV — normalisation", 'IVHV_NORM', [0.5,0.75,1.0,1.5,2.0,2.5,3.0], lambda v:f"{v:.2f}"),
         sweep("IV/HV — horizon HV (5/10/30j)", 'HV',
               [(0,0,1.0),(0,1.0,0),(1.0,0,0),(0,0.5,0.5),(0.5,0.5,0),(0.34,0.33,0.33),(0,0.7,0.3)],
               lambda v:{(0,0,1.0):"30j",(0,1.0,0):"10j",(1.0,0,0):"5j",(0,0.5,0.5):"10/30",
@@ -193,9 +205,11 @@ def run(years=4.0):
     for s in ranked:
         def g(x): return "—" if x is None else f"{x}"
         if s['sensitivity'] < 0.5:      verdict = "· peu sensible"
+        elif s['robust'] and s.get('extend'):  verdict = "✅↗ robuste (optimum au bord → étendre la plage)"
         elif s['robust']:               verdict = "✅ robuste (multi-régimes)"
         elif (s.get('best_worst_fold') or -1) <= 0:  verdict = "⛔ s'effondre dans ≥1 régime"
         elif s['fold_wins'] < (s['n_folds']+1)//2:   verdict = "⛔ un régime porte tout"
+        elif s.get('extend'):           verdict = "↗ à étendre (tendance monotone au bord)"
         elif not s['plateau']:          verdict = "⚠ pic isolé"
         else:                           verdict = "⚠ limite"
         print(f"  {s['param']:<32} {s['sensitivity']:>5} {s['best_label']:>12} "
