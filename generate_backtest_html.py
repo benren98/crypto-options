@@ -52,28 +52,41 @@ def _equity_chart(base):
     return json.dumps(labels), json.dumps(data)
 
 
+def _verdict(s):
+    if s["sensitivity"] < 0.5:        return ("· peu sensible", "low")
+    if s.get("robust"):               return ("✅ robuste (IS=OOS)", "ok")
+    if not s.get("is_oos_agree"):     return ("⛔ overfit (opt. IS≠OOS)", "bad")
+    if not s.get("plateau"):          return ("⚠ pic isolé", "warn")
+    return ("⚠ une année porte tout", "warn")
+
+
 def _sweep_table(s):
     rows = ""
     for r in s["results"]:
-        is_best = r.get("is_best", r["label"] == s.get("best_label"))
+        is_best = r.get("is_best", False)       # = optimum OOS (recommandé)
         is_cur = r.get("is_current", False)
-        # actuel = bordure bleue à gauche ; meilleur = fond vert
+        is_isb = r.get("is_is_best", False)     # optimum in-sample
         style = ' style="'
         if is_best: style += 'background:#1f6f3f33;'
         if is_cur:  style += 'border-left:3px solid #58a6ff;'
         style += '"'
         tags = ""
         if is_cur:  tags += ' <span class="tag cur">actuel</span>'
-        if is_best: tags += ' <span class="tag best">meilleur</span>'
-        cal_cl = "pos" if r["calmar"] >= 2 else ("warn" if r["calmar"] >= 1 else "neg")
+        if is_best: tags += ' <span class="tag best">OOS★</span>'
+        if is_isb and not is_best: tags += ' <span class="tag isb">IS★</span>'
+        def cl(c): return "pos" if (c or 0) >= 2 else ("warn" if (c or 0) >= 1 else "neg")
+        oos = r.get("calmar_oos"); ins = r.get("calmar_is")
         rows += (f'<tr{style}><td>{r["label"]}{tags}</td><td>{r["pnl"]:,}$</td>'
-                 f'<td>{r["maxdd"]:,}$</td><td class="{cal_cl}">{r["calmar"]}</td>'
-                 f'<td>{r.get("trades","-")}</td></tr>')
-    badge = "high" if s["sensitivity"] >= 1.0 else "low"
+                 f'<td class="{cl(ins)}">{"—" if ins is None else ins}</td>'
+                 f'<td class="{cl(oos)}">{"—" if oos is None else oos}</td>'
+                 f'<td class="{cl(r["calmar"])}">{r["calmar"]}</td></tr>')
+    sbadge = "high" if s["sensitivity"] >= 1.0 else "low"
+    vtxt, vcl = _verdict(s)
     return f"""
     <div class="card">
-      <h3>{s['param']} <span class="sens {badge}">ΔCalmar {s['sensitivity']}</span></h3>
-      <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
+      <h3>{s['param']} <span class="sens {sbadge}">ΔCalmar {s['sensitivity']}</span>
+          <span class="verdict {vcl}">{vtxt}</span></h3>
+      <table><thead><tr><th>config</th><th>PnL</th><th>Calmar IS</th><th>Calmar OOS</th><th>full</th></tr></thead>
       <tbody>{rows}</tbody></table>
     </div>"""
 
@@ -115,6 +128,10 @@ th,td{{text-align:right;padding:4px 6px;border-bottom:1px solid #21262d}} th:fir
 .sens.high{{background:#f8514933;color:#f85149}} .sens.low{{background:#30363d;color:#8b949e}}
 .tag{{font-size:0.62rem;padding:1px 5px;border-radius:3px}}
 .tag.cur{{background:#1f6feb33;color:#58a6ff}} .tag.best{{background:#1f6f3f55;color:#3fb950}}
+.tag.isb{{background:#30363d;color:#8b949e}}
+.verdict{{font-size:0.66rem;padding:2px 6px;border-radius:4px;font-weight:400}}
+.verdict.ok{{background:#1f6f3f55;color:#3fb950}} .verdict.bad{{background:#f8514933;color:#f85149}}
+.verdict.warn{{background:#d2992233;color:#d29922}} .verdict.low{{background:#30363d;color:#8b949e}}
 .muted{{color:#484f58;font-size:0.8rem}}
 </style></head><body>
 <a class="back" href="index.html">← Dashboard live</a>
@@ -138,7 +155,12 @@ th,td{{text-align:right;padding:4px 6px;border-bottom:1px solid #21262d}} th:fir
     <div class="chart-wrap"><canvas id="eq"></canvas></div></div>
 </div>
 
-<h2>Sweeps de paramètres — classés par sensibilité (à regarder en priorité)</h2>
+<h2>Sweeps de paramètres — classés par sensibilité</h2>
+<p class="muted">Anti-overfit : <b>IS</b> = in-sample (60% initiaux, tuning) · <b>OOS</b> = out-of-sample
+(40% jamais vus). <span class="tag best">OOS★</span> optimum hors-échantillon (recommandé) ·
+<span class="tag isb">IS★</span> optimum in-sample · <span class="tag cur">actuel</span> config prod.
+✅ robuste = l'optimum IS et OOS coïncident (+ plateau) → fiable. ⛔ overfit = ils divergent → ne pas
+suivre. Règle : changer 1-2 params à la fois, confirmer sur ETH, ne jamais empiler tous les optima.</p>
 <div class="grid">{sweeps_html}</div>
 
 <script>

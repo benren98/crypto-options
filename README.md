@@ -402,6 +402,27 @@ regimes** (calm + a stress episode, ~months) → the regime-aware deformation ac
 projected skew faithful to each historical regime; collect longer → the recent window runs entirely on
 real recorded IVs. Scripts: `vol_surface_logger.py`, `vol_surface_data.py`, `fit_vol_model.py`.
 
+### Backtest routine & overfitting controls
+
+`backtest_routine.py` (weekly via Actions) re-fits the skew surface and sweeps the full parameter
+battery under it — scoring weights, `SKEW_NORM`, IV/HV normalisation & horizon (5/10/30j), entry
+threshold, premium floor, gamma penalty, sizing (convexity, notional cap, rank floor), and every
+circuit-breaker parameter — then writes `backtest_routine.json` and the `docs/backtest.html` dashboard.
+
+Because sweeping ~16 parameter families and picking the best is a textbook overfitting trap, every
+sweep is judged out-of-sample, not just on the full period:
+- **IS / OOS split** — each config's Calmar is computed on the first 60% (in-sample) **and** the last
+  40% (out-of-sample). The recommended value is the **OOS** optimum, not the full-period one.
+- **IS vs OOS agreement** — a parameter is only flagged **robuste** if its in-sample optimum *equals*
+  its out-of-sample optimum. If they diverge it is flagged **⛔ overfit** and ignored. (This correctly
+  flagged the `0.20/0.15/0.65` weights as overfit — IS likes 0.65, OOS likes 0.50.)
+- **Plateau check** — the optimum must have neighbouring values that are also strong (a plateau), not
+  an isolated spike.
+- **Per-year consistency** — Calmar per calendar year + the worst year; an edge that rests on one
+  lucky year is rejected.
+- **Reading discipline** (documented in the dashboard): change 1–2 params at a time, confirm on ETH
+  (`backtest_eth.py`), never stack all individual optima. A bootstrap confidence band is a future add.
+
 ---
 
 ## Global Parameters
