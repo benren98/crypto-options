@@ -20,18 +20,25 @@ def _load():
 
 
 def _skew_chart(skew_fit):
-    """Datasets Chart.js : 1 courbe par bucket + la référence linéaire 0.013."""
+    """Datasets Chart.js : 1 courbe par bucket (au régime de référence) + variante
+    DVOL+20 en pointillé pour les buckets régime-aware + référence linéaire 0.013."""
     xs = list(range(0, 26))
     ds = []
     cols = ["#58a6ff", "#a371f7", "#3fb950"]
     if skew_fit and skew_fit.get("buckets"):
         for i, bk in enumerate(skew_fit["buckets"]):
-            a, b = bk["a"], bk["b"]
-            ys = [round(1 + a*x + b*x*x, 3) for x in xs]
-            tag = "fit" if bk.get("fitted") else "poolé"
-            ds.append(f'{{label:"{bk["label"]} ({tag}, R²={bk.get("r2")})",data:{json.dumps(ys)},'
-                      f'borderColor:"{cols[i%len(cols)]}",backgroundColor:"transparent",tension:0.3,'
-                      f'pointRadius:0,borderWidth:2}}')
+            a0, b0 = bk.get("a0", 0.0), bk.get("b0", 0.0)
+            col = cols[i % len(cols)]
+            ys = [round(1 + a0*x + b0*x*x, 3) for x in xs]
+            ds.append(f'{{label:"{bk["label"]} @DVOL {bk.get("dvol_ref","?")} (R²={bk.get("r2")})",'
+                      f'data:{json.dumps(ys)},borderColor:"{col}",backgroundColor:"transparent",'
+                      f'tension:0.3,pointRadius:0,borderWidth:2}}')
+            if bk.get("regime_aware"):
+                a1, b1 = bk.get("a1", 0.0), bk.get("b1", 0.0)
+                yh = [round(1 + (a0+a1*20)*x + (b0+b1*20)*x*x, 3) for x in xs]
+                ds.append(f'{{label:"{bk["label"]} @DVOL +20 (stress)",data:{json.dumps(yh)},'
+                          f'borderColor:"{col}",backgroundColor:"transparent",tension:0.3,'
+                          f'pointRadius:0,borderWidth:1.5,borderDash:[4,3]}}')
     lin = [round(1 + 0.013*x, 3) for x in xs]
     ds.append(f'{{label:"modèle linéaire (0.013)",data:{json.dumps(lin)},borderColor:"#f85149",'
               f'backgroundColor:"transparent",tension:0,pointRadius:0,borderWidth:1.5,borderDash:[6,4]}}')

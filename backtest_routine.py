@@ -65,8 +65,10 @@ def run(years=4.0):
     surf = fm.fit_surface(min_snapshots=1)
     if surf:
         bt.SKEW_SURFACE = surf["buckets"]
-        bt.SKEW_A, bt.SKEW_B = surf["pooled"]["a"], surf["pooled"]["b"]
-        print(f"  Skew fité : {surf['n_snapshots']}j, {len(surf['buckets'])} buckets")
+        bt.SKEW_POOLED  = surf["pooled"]
+        n_reg = sum(1 for bk in surf["buckets"] if bk.get("regime_aware"))
+        print(f"  Skew fité : {surf['n_snapshots']}j, {len(surf['buckets'])} buckets "
+              f"({n_reg} régime-aware)")
     else:
         print("  Pas de surface réelle — sweeps sous skew linéaire 0.013")
 

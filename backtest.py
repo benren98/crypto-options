@@ -47,16 +47,17 @@ DELTA_TARGETS     = [-0.05, -0.08, -0.12, -0.16, -0.20, -0.25]
 # ── Surface de vol : réelle quand disponible, sinon modèle (skew fité par maturité ou linéaire) ──
 # Le skew quadratique est lu depuis vol_model_fit.json (surface fittée par bucket de maturité,
 # fit_vol_model.py) ; à défaut, skew linéaire 0.013 = comportement d'origine.
-SKEW_A, SKEW_B = SKEW_SLOPE, 0.0    # repli linéaire / poolé
-SKEW_SURFACE   = None               # liste de buckets {dte_lo, dte_hi, a, b} ou None
+SKEW_A, SKEW_B = SKEW_SLOPE, 0.0    # repli linéaire ultime
+SKEW_SURFACE   = None               # liste de buckets régime-aware {dte_lo,dte_hi,a0,a1,b0,b1,dvol_ref}
+SKEW_POOLED    = None               # fit poolé (repli si pas de bucket pour la maturité)
 try:
     import json as _json_fit
     _fit = _json_fit.load(open("vol_model_fit.json", encoding="utf-8"))
     SKEW_SURFACE = _fit.get("buckets")
-    _p = _fit.get("pooled", {})
-    SKEW_A, SKEW_B = float(_p.get("a", SKEW_SLOPE)), float(_p.get("b", 0.0))
+    SKEW_POOLED  = _fit.get("pooled")
+    _na = sum(1 for bk in (SKEW_SURFACE or []) if bk.get("regime_aware"))
     print(f"[backtest] surface skew fitée chargée ({_fit.get('n_snapshots')}j, "
-          f"{len(SKEW_SURFACE or [])} buckets de maturité)")
+          f"{len(SKEW_SURFACE or [])} buckets, {_na} régime-aware)")
 except Exception:
     pass
 
@@ -71,29 +72,37 @@ except Exception:
     _vs = None
 
 
-def skew_factor(otm_pct: float, dte=None) -> float:
-    """Multiplicateur de skew IV(K)/IV_ATM. Surface par maturité si fitée (bucket choisi
-    selon dte), sinon courbe poolée, sinon linéaire."""
+def skew_factor(otm_pct: float, dte=None, dvol=None) -> float:
+    """Multiplicateur de skew IV(K)/IV_ATM. Surface par maturité ET conditionnée au
+    régime de vol si fitée : a(DVOL)=a0+a1·(DVOL−ref), idem b. Repli : bucket statique,
+    puis fit poolé, puis linéaire."""
     o = otm_pct if otm_pct > 0 else 0.0
-    a, b = SKEW_A, SKEW_B
+    # choisir le bucket de maturité
+    bk = None
     if SKEW_SURFACE and dte is not None:
-        for bk in SKEW_SURFACE:
-            if bk["dte_lo"] <= dte < bk["dte_hi"]:
-                a, b = bk["a"], bk["b"]
-                break
+        for _bk in SKEW_SURFACE:
+            if _bk["dte_lo"] <= dte < _bk["dte_hi"]:
+                bk = _bk; break
+    if bk is None:
+        bk = SKEW_POOLED
+    if bk is None:
+        return 1.0 + SKEW_A * o + SKEW_B * o * o   # repli linéaire
+    dc = (dvol - bk.get("dvol_ref", 0.0)) if dvol is not None else 0.0
+    a = bk["a0"] + bk.get("a1", 0.0) * dc
+    b = bk["b0"] + bk.get("b1", 0.0) * dc
     return 1.0 + a * o + b * o * o
 
 
 def iv_pct(S, K, dvol, date=None, dte=None):
     """mark IV (%) : réelle si la date est couverte par le dataset enregistré,
-    sinon modèle (DVOL × skew, surface par maturité). Bascule automatique → supprime
-    le risque modèle sur la période enregistrée."""
+    sinon modèle (DVOL × skew, surface par maturité conditionnée au régime). Bascule
+    automatique → supprime le risque modèle sur la période enregistrée."""
     if USE_REAL_SURFACE and _vs is not None and date is not None and dte is not None:
         riv = _vs.iv_for(date, dte, K / S)
         if riv is not None:
             return riv
     otm = (S - K) / S * 100
-    return dvol * skew_factor(otm, dte)
+    return dvol * skew_factor(otm, dte, dvol)
 
 N = lambda x: 0.5 * (1 + math.erf(x / math.sqrt(2)))
 n_pdf = lambda x: math.exp(-0.5 * x * x) / math.sqrt(2 * math.pi)
@@ -118,7 +127,7 @@ def strike_for_delta(S, T, sigma_atm, target_delta):
     for _ in range(60):
         K = 0.5 * (lo + hi)
         otm = max((S - K) / S * 100, 0.0)
-        sig = sigma_atm * skew_factor(otm, T * 365)   # candidate generation : skew par maturité
+        sig = sigma_atm * skew_factor(otm, T * 365, sigma_atm * 100)   # skew par maturité × régime
         _, d, _ = bs_put(S, K, T, sig)
         if abs(d - target_delta) < 0.0005:
             break

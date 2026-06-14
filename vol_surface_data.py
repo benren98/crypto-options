@@ -121,6 +121,18 @@ def all_points():
                     yield (d, exp.get("dte"), s.get("moneyness"), s.get("mark_iv"), atm)
 
 
+def all_points_dvol():
+    """Comme all_points mais ajoute la DVOL du snapshot : (date, dte, moneyness,
+    mark_iv, atm_iv, dvol). Pour le fit du skew conditionné au régime de vol."""
+    for d, snap in _load().items():
+        dv = snap.get("dvol")
+        for exp in snap.get("expiries", []):
+            atm = exp.get("atm_iv")
+            for s in exp.get("strikes", []):
+                if s.get("mark_iv") is not None:
+                    yield (d, exp.get("dte"), s.get("moneyness"), s.get("mark_iv"), atm, dv)
+
+
 if __name__ == "__main__":
     cov = coverage()
     print("Couverture :", cov)

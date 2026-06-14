@@ -381,16 +381,26 @@ This is backward-compatible: until the dataset covers backtest dates, every call
 results are unchanged. As the dataset grows, the recent backtest window silently becomes real-data-based,
 **from the start of recording**, with zero code change. `USE_REAL_SURFACE = False` disables it.
 
-**Fit & project to the past** — `fit_vol_model.py` fits a quadratic skew on the real surfaces,
-`IV(K)/IV_ATM = 1 + a·OTM% + b·OTM²` (the `b` term captures the convexity the linear model misses),
-and writes `vol_model_fit.json`. `backtest.py` reads it at import and replaces the linear `0.013`
-with the fitted curve **for the model (pre-recording) portion** — i.e. it projects the real-shaped
-skew backward in time. It writes the file only after **≥15 days** are collected (no-op until then,
-so the default linear skew stands). The fit step runs in Actions after the logger.
+**Fit & project to the past (per-maturity, regime-aware)** — `fit_vol_model.py` fits, **per maturity
+bucket** (≤9j / 9–16j / >16j), a quadratic skew whose coefficients depend on the **vol regime (DVOL)**:
+```
+IV(K)/IV_ATM = 1 + a(DVOL)·OTM% + b(DVOL)·OTM²,   a(DVOL) = a0 + a1·(DVOL − DVOL_ref)
+```
+- the `b` term captures the convexity the linear model misses;
+- the maturity buckets capture skew steepening at short tenors (term structure);
+- the **DVOL dependence (`a1`, `b1`) deforms the skew by regime** — so when the backtest projects the
+  skew onto a past crash (high DVOL), it applies the steeper skew actually observed in stressed data,
+  not a single calm-day shape. This is the main remaining model-risk fix.
 
-Roadmap: collect ~2–3 weeks → the fit auto-activates and the projected skew improves the historical
-backtest; collect longer → the recent backtest window runs entirely on real recorded IVs, eliminating
-model risk for that period. Scripts: `vol_surface_logger.py`, `vol_surface_data.py`, `fit_vol_model.py`.
+`backtest.py` `skew_factor(otm, dte, dvol)` picks the maturity bucket and evaluates `a(DVOL), b(DVOL)`
+at each historical day's real DVOL. The regime slopes (`a1, b1`) are only fitted once the data spans
+enough DVOL range (`MIN_DVOL_SPREAD = 15` pts); otherwise they are 0 (static skew). `vol_model_fit.json`
+is written only after **≥15 days** (no-op until then → default linear skew). Runs in Actions after the logger.
+
+Roadmap: collect ~2–3 weeks → per-maturity static skew auto-activates; collect across **multiple
+regimes** (calm + a stress episode, ~months) → the regime-aware deformation activates, making the
+projected skew faithful to each historical regime; collect longer → the recent window runs entirely on
+real recorded IVs. Scripts: `vol_surface_logger.py`, `vol_surface_data.py`, `fit_vol_model.py`.
 
 ---
 
