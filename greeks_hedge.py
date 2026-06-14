@@ -68,17 +68,14 @@ ALWAYS_IN_POSITION       = False # C2 : ne PAS forcer l'entrée sur book vide si
 # Poids du score composite (C1 : repondéré vers le skew, backtest 4 ans → MaxDD −20% à PnL neutre).
 # Le yield est le composant le plus risqué (chasse les strikes proches) → réduit ; le skew (options
 # loin OTM, prime de crash riche, moins gap-sensibles) → relevé.
-SCORE_W_IVHV             = 0.20  # poids VRP (IV au bid / HV blend)
-SCORE_W_YIELD            = 0.15  # poids yield ajusté au risque (le plus gap-dangereux → minimisé)
-SCORE_W_SKEW             = 0.65  # poids skew vs ATM — surpondéré : sous le VRAI skew convexe (que le
-                                 # live voit en permanence via les IV Deribit), un aperçu backtest fité
-                                 # sur surface réelle donne Calmar 4.9→7.9. PROVISOIRE : à recalibrer
-                                 # avec plusieurs semaines de vraies surfaces (cf vol_surface_logger).
-SKEW_NORM                = 0.60  # normalisation s_skew = clamp(skew/SKEW_NORM). Relevé de 0.20 : le vrai
-                                 # skew Deribit va jusqu'à ~80% (vs 20% supposé), donc 0.20 saturait s_skew
-                                 # à 1.0 pour tout → signal plat (le poids 0.65 devenait inutile). À 0.60,
-                                 # le score discrimine à nouveau les far-OTM → DD ÷~1.6 dans l'aperçu fité.
-                                 # PROVISOIRE (fit 1 jour) : finaliser avec plusieurs semaines de surfaces.
+# NB : l'expérience skew=0.65 / SKEW_NORM=0.60 a été annulée — sous le vrai skew pentu elle
+# corner-solutionnait sur le put le plus loin OTM passant le plancher de prime (delta −0.05,
+# yield ~6%, prime au plancher), au lieu des trades équilibrés (delta −0.10/−0.15). Retour au
+# couple validé. À re-trancher proprement avec plusieurs semaines de vraies surfaces.
+SCORE_W_IVHV             = 0.30  # poids VRP (IV au bid / HV blend)
+SCORE_W_YIELD            = 0.25  # poids yield ajusté au risque (réduit — le plus gap-dangereux)
+SCORE_W_SKEW             = 0.45  # poids skew vs ATM (relevé, mais pas dominant → évite le coin deep-OTM)
+SKEW_NORM                = 0.20  # normalisation s_skew = clamp(skew/SKEW_NORM)
 
 # Circuit breaker — palier dur (fermeture totale), calibré par backtest 2023-2026
 CB_MOVE_3D_PCT           = 10.0  # ferme tout si move spot 3j < −10% (baisse seule — un pump est inoffensif pour des short puts)

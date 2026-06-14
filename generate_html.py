@@ -925,7 +925,7 @@ def _scan_entry_card() -> str:
       <th>Strike</th><th>TTE</th><th>Delta</th>
       <th title="Δ delta points par 1% move du spot (par contrat)">Γ pts/1%</th>
       <th>IV option</th><th>IV/HV <span style="font-weight:400;color:#484f58">(≥1.10)</span></th>
-      <th title="Richesse de l'IV bid vs ATM de la même échéance (norme : 60% → s_skew = 1.0)">Skew vs ATM</th>
+      <th title="Richesse de l'IV bid vs ATM de la même échéance (norme : 20% → s_skew = 1.0)">Skew vs ATM</th>
       <th title="Distance au strike en écarts-types de vol réalisée : OTM% / (HV×√TTE)">z</th>
       <th>Yield ann.</th><th>B/A <span style="font-weight:400;color:#484f58">(≤50%)</span></th><th title="Prime au bid pour 1 BTC (1 contrat Deribit) — plancher 150$">Prime bid / 1 BTC</th>
     </tr>
@@ -937,7 +937,7 @@ def _scan_entry_card() -> str:
     <b>Diversification</b> : espacement delta ≥ 0.08 entre positions de même expiry · 1 entrée max par cycle
   </div>
   <div style="margin-top:8px;font-size:0.78rem;color:#8b949e;border-top:1px solid #21262d;padding-top:8px">
-    Score = [20% × (IV<sub>bid</sub>/HV<sub>blend</sub> − 1) + 15% × yield ajusté risque + 65% × skew vs ATM] × pénalité gamma ·
+    Score = [30% × (IV<sub>bid</sub>/HV<sub>blend</sub> − 1) + 25% × yield ajusté risque + 45% × skew vs ATM] × pénalité gamma ·
     HV<sub>blend</sub> = ½HV10j + ½HV30j · yield ajusté = yield ann. × z où z = OTM% / (HV×√TTE) · Score brut en gris = avant pénalité gamma ·
     <b>Seuils</b> : score ≥ 0.50 · prime ≥ 150$/BTC · B/A ≤ 50% (anti-illiquidité) · DVOL ≥ 35% ·
     <b>Sizing</b> : round(score<sup>1.5</sup> × (0.5 + 0.5 × rang DVOL 30j), 1) BTC · max 5 BTC
