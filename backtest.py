@@ -30,10 +30,10 @@ YIELD_NORM        = 0.30
 SKEW_NORM         = 0.20
 SIZE_CONVEXITY    = 1.5     # taille ∝ score^1.5 (miroir greeks_hedge.compute_sizing)
 MIN_PREMIUM_USD   = 150.0   # plancher de prime au bid ($/BTC) — anti-poussière (BTC ; backtest Calmar 3.56→4.40)
-# Poids du score (C1 : repondéré vers le skew, miroir greeks_hedge)
-SCORE_W_IVHV      = 0.30
-SCORE_W_YIELD     = 0.25
-SCORE_W_SKEW      = 0.45
+# Poids du score (surpondéré skew, miroir greeks_hedge — provisoire, recalib. avec vraies surfaces)
+SCORE_W_IVHV      = 0.20
+SCORE_W_YIELD     = 0.15
+SCORE_W_SKEW      = 0.65
 
 # ── Paramètres modèle de pricing ───────────────────────────────────────────────
 SKEW_SLOPE        = 0.013   # IV(K) = DVOL × (1 + 0.013 × OTM%) — calibré juin 2026 (~1.3%/pt OTM)

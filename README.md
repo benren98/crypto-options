@@ -44,17 +44,23 @@ Sell OTM BTC puts with short maturities (1–30 days), delta-hedged via a BTC-PE
 Each option receives a score between 0 and 1:
 
 ```
-score_raw = 0.30 × s_iv_hv + 0.25 × s_yield + 0.45 × s_skew
+score_raw = 0.20 × s_iv_hv + 0.15 × s_yield + 0.65 × s_skew
 score     = score_raw × gamma_factor
 ```
 
-> **Weight calibration (skew-weighted, 4-year backtest).** Weights were retuned from the
-> original 0.40/0.30/0.30 toward the **skew** component. Over-weighting `s_yield` is the most
-> dangerous setting (it chases near-the-money high-premium options that blow up on gaps — in
-> backtest it ballooned max drawdown to 18.7k\$); over-weighting `s_skew` selects further-OTM
-> options where the market overpays most for crash fear (richer, less gap-sensitive). The
-> retune (`0.30/0.25/0.45`) cut **max drawdown −20% at neutral PnL** (Calmar 2.23 → 2.77). See
-> `backtest_scoring.py`.
+> **Weight calibration — heavily skew-weighted (provisional).** Weights were retuned toward the
+> **skew** component in two steps. First, `0.40/0.30/0.30 → 0.30/0.25/0.45` (cut max drawdown −20%
+> at neutral PnL under the linear-skew backtest; over-weighting `s_yield` is the most dangerous
+> setting — it chases near-the-money options that blow up on gaps, ballooning MaxDD to 18.7k\$).
+> Then, `→ 0.20/0.15/0.65`: a preview that re-priced the backtest with the **real (convex) skew**
+> fitted from a live surface snapshot showed that under realistic skew, weighting `s_skew` to 0.65
+> lifts Calmar 4.9 → 7.9 — the steep real skew is a strong, real signal the flat model muted. The
+> **live engine already prices on real Deribit IVs**, so this is justified live. ⚠️ **Provisional**:
+> the supporting fit is one calm-regime day; under the *linear* backtest model these weights look
+> *worse* (Calmar 1.89), which is an artifact of the too-flat model, not of live behaviour. Revisit
+> once `vol_surface_logger.py` has multiple weeks of real surfaces (also recalibrate `SKEW_NORM`,
+> which now saturates: the real skew exceeds its 0.20 cap). See `backtest_scoring.py`,
+> `backtest_fitted_preview.py`.
 
 All three components are option-specific (the DVOL rank, identical for every candidate in a scan, was moved out of the score and into the sizing multiplier — see Sizing).
 
@@ -63,7 +69,7 @@ All three components are option-specific (the DVOL rank, identical for every can
 HV_blend = 0.5 × HV_10d + 0.5 × HV_30d
 s_iv_hv  = clamp(bid_IV / HV_blend − 1.0, 0, 1)
 ```
-0 when bid IV = HV (no premium), 1 when bid IV = 2× HV. Uses `bid_iv` (IV implied by the bid price — the price we actually sell at), not mid IV. The blended HV keeps the responsiveness of the 10-day window while damping the cliff effect of a single large day entering/leaving it (HV_10d ranged 20–57% within one month). Weight: **30%**.
+0 when bid IV = HV (no premium), 1 when bid IV = 2× HV. Uses `bid_iv` (IV implied by the bid price — the price we actually sell at), not mid IV. The blended HV keeps the responsiveness of the 10-day window while damping the cliff effect of a single large day entering/leaving it (HV_10d ranged 20–57% within one month). Weight: **20%**.
 
 **Risk-adjusted yield component** — annualised premium scaled by the strike's distance in realised vols:
 ```
@@ -71,14 +77,14 @@ yield_ann = bid_price / DTE_years
 z         = OTM% / (HV_blend × √DTE_years)
 s_yield   = min(1.0, (yield_ann × z) / 0.30)
 ```
-`z` is the distance to the strike expressed in realised-vol standard deviations: a high yield close to the strike is worth less than a moderate yield far from it. Uses `bid_price` (the price we actually receive when selling). Weight: **25%** (reduced — this is the most gap-dangerous component).
+`z` is the distance to the strike expressed in realised-vol standard deviations: a high yield close to the strike is worth less than a moderate yield far from it. Uses `bid_price` (the price we actually receive when selling). Weight: **15%** (minimised — this is the most gap-dangerous component).
 
 **Skew component** — how rich the sold strike is relative to the ATM of the same expiry:
 ```
 atm_IV = mark IV of the put whose strike is closest to spot (same expiry)
 s_skew = clamp((bid_IV / atm_IV − 1) / 0.20, 0, 1)
 ```
-Reaches 1 when the put trades 20% richer than ATM. Between two puts with equal overall scores, this favours the one the market overpays the most relative to the centre of the smile — exactly the premium the strategy sells. Weight: **45%** (raised — steep-skew strikes sit further OTM and are less gap-sensitive).
+Reaches 1 when the put trades 20% richer than ATM. Between two puts with equal overall scores, this favours the one the market overpays the most relative to the centre of the smile — exactly the premium the strategy sells. Weight: **65%** (dominant — under the real convex skew this is the strongest alpha; note the 0.20 normalisation now saturates and is a recalibration candidate).
 
 **Gamma penalty** — discounts the raw score for high-gamma options:
 ```
@@ -407,9 +413,9 @@ MIN_PREMIUM_USD          = 150.0 # min premium at bid ($/BTC) — dust filter; b
                                  # (absolute $ floor, calibrated for BTC — ETH would need a relative % floor)
 
 # Score weights (skew-weighted, C1)
-SCORE_W_IVHV             = 0.30  # VRP (IV/HV) weight
-SCORE_W_YIELD            = 0.25  # risk-adjusted yield weight (reduced — most gap-dangerous)
-SCORE_W_SKEW             = 0.45  # skew vs ATM weight (raised — further-OTM, less gap-sensitive)
+SCORE_W_IVHV             = 0.20  # VRP (IV/HV) weight
+SCORE_W_YIELD            = 0.15  # risk-adjusted yield weight (minimised — most gap-dangerous)
+SCORE_W_SKEW             = 0.65  # skew vs ATM weight (dominant — real convex skew signal; provisional)
 
 # Entry signal
 ENTRY_SCORE_MIN          = 0.50  # minimum composite score (raised with skew weighting)

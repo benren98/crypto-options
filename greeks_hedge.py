@@ -68,9 +68,12 @@ ALWAYS_IN_POSITION       = False # C2 : ne PAS forcer l'entrée sur book vide si
 # Poids du score composite (C1 : repondéré vers le skew, backtest 4 ans → MaxDD −20% à PnL neutre).
 # Le yield est le composant le plus risqué (chasse les strikes proches) → réduit ; le skew (options
 # loin OTM, prime de crash riche, moins gap-sensibles) → relevé.
-SCORE_W_IVHV             = 0.30  # poids VRP (IV au bid / HV blend)
-SCORE_W_YIELD            = 0.25  # poids yield ajusté au risque (réduit de 0.30)
-SCORE_W_SKEW             = 0.45  # poids skew vs ATM (relevé de 0.30)
+SCORE_W_IVHV             = 0.20  # poids VRP (IV au bid / HV blend)
+SCORE_W_YIELD            = 0.15  # poids yield ajusté au risque (le plus gap-dangereux → minimisé)
+SCORE_W_SKEW             = 0.65  # poids skew vs ATM — surpondéré : sous le VRAI skew convexe (que le
+                                 # live voit en permanence via les IV Deribit), un aperçu backtest fité
+                                 # sur surface réelle donne Calmar 4.9→7.9. PROVISOIRE : à recalibrer
+                                 # avec plusieurs semaines de vraies surfaces (cf vol_surface_logger).
 
 # Circuit breaker — palier dur (fermeture totale), calibré par backtest 2023-2026
 CB_MOVE_3D_PCT           = 10.0  # ferme tout si move spot 3j < −10% (baisse seule — un pump est inoffensif pour des short puts)
