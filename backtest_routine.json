@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-14 20:58:31 UTC",
+  "generated_at": "2026-06-14 21:01:19 UTC",
   "years": 4.0,
   "skew_fit": {
     "form": "iv_ratio = 1 + a(DVOL)*OTM% + b(DVOL)*OTM%^2, par bucket de maturité",
@@ -67,7 +67,7 @@
       "days": 1
     },
     "n_snapshots": 1,
-    "fitted_at": "2026-06-14 20:57:16 UTC"
+    "fitted_at": "2026-06-14 21:00:43 UTC"
   },
   "prod_config": {
     "W_IVHV": 0.3,
@@ -93,7 +93,7 @@
     "CB_T1R": 3.0
   },
   "baseline": {
-    "pnl": 74641,
+    "pnl": 74640,
     "maxdd": 5713,
     "calmar": 4.92,
     "sharpe": 5.54,
@@ -3987,7 +3987,7 @@
       ],
       [
         "2026-06-14",
-        74641
+        74640
       ]
     ]
   },
@@ -3996,7 +3996,7 @@
       "param": "SKEW_NORM",
       "results": [
         {
-          "pnl": 66265,
+          "pnl": 66264,
           "maxdd": 6639,
           "calmar": 3.76,
           "sharpe": 4.16,
@@ -4016,7 +4016,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -4036,7 +4036,7 @@
           "is_best": false
         },
         {
-          "pnl": 78173,
+          "pnl": 78172,
           "maxdd": 3558,
           "calmar": 8.27,
           "sharpe": 5.51,
@@ -4056,7 +4056,7 @@
           "is_best": false
         },
         {
-          "pnl": 77573,
+          "pnl": 77572,
           "maxdd": 3160,
           "calmar": 9.24,
           "sharpe": 6.49,
@@ -4106,9 +4106,9 @@
             21.55,
             43.2,
             13.65,
-            10.8
+            10.79
           ],
-          "worst_fold": 10.8,
+          "worst_fold": 10.79,
           "mean_fold": 22.88,
           "trades": 568,
           "label": "0.60",
@@ -4116,7 +4116,7 @@
           "is_best": false
         },
         {
-          "pnl": 82645,
+          "pnl": 82644,
           "maxdd": 1867,
           "calmar": 16.66,
           "sharpe": 7.73,
@@ -4136,7 +4136,7 @@
           "is_best": false
         },
         {
-          "pnl": 82856,
+          "pnl": 82855,
           "maxdd": 2115,
           "calmar": 14.74,
           "sharpe": 7.3,
@@ -4146,9 +4146,9 @@
             17.47,
             48.99,
             20.22,
-            14.24
+            14.23
           ],
-          "worst_fold": 14.24,
+          "worst_fold": 14.23,
           "mean_fold": 29.73,
           "trades": 561,
           "label": "1.00",
@@ -4159,7 +4159,7 @@
           "pnl": 88545,
           "maxdd": 1678,
           "calmar": 19.86,
-          "sharpe": 7.63,
+          "sharpe": 7.62,
           "worst": -1265,
           "folds": [
             45.01,
@@ -4180,7 +4180,7 @@
       "extend": false,
       "best_label": "1.00",
       "best_calmar": 14.74,
-      "best_worst_fold": 14.24,
+      "best_worst_fold": 14.23,
       "best_mean_fold": 29.73,
       "fold_wins": 3,
       "n_folds": 5,
@@ -4211,7 +4211,7 @@
           "is_best": false
         },
         {
-          "pnl": 76785,
+          "pnl": 76784,
           "maxdd": 4995,
           "calmar": 5.78,
           "sharpe": 4.85,
@@ -4231,7 +4231,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -4271,7 +4271,7 @@
           "is_best": false
         },
         {
-          "pnl": 94251,
+          "pnl": 94250,
           "maxdd": 3683,
           "calmar": 9.63,
           "sharpe": 7.81,
@@ -4311,7 +4311,7 @@
           "is_best": false
         },
         {
-          "pnl": 100618,
+          "pnl": 100616,
           "maxdd": 5557,
           "calmar": 6.81,
           "sharpe": 6.16,
@@ -4346,7 +4346,7 @@
       "param": "IV/HV — horizon HV (5/10/30j)",
       "results": [
         {
-          "pnl": 74019,
+          "pnl": 74018,
           "maxdd": 3906,
           "calmar": 7.13,
           "sharpe": 5.93,
@@ -4366,7 +4366,7 @@
           "is_best": false
         },
         {
-          "pnl": 77458,
+          "pnl": 77457,
           "maxdd": 3890,
           "calmar": 7.49,
           "sharpe": 4.93,
@@ -4406,7 +4406,7 @@
           "is_best": true
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -4426,7 +4426,7 @@
           "is_best": false
         },
         {
-          "pnl": 80466,
+          "pnl": 80465,
           "maxdd": 3813,
           "calmar": 7.94,
           "sharpe": 6.26,
@@ -4436,9 +4436,9 @@
             40.75,
             24.62,
             8.77,
-            7.46
+            7.45
           ],
-          "worst_fold": 7.46,
+          "worst_fold": 7.45,
           "mean_fold": 19.07,
           "trades": 631,
           "label": "5/10",
@@ -4446,7 +4446,7 @@
           "is_best": false
         },
         {
-          "pnl": 77242,
+          "pnl": 77241,
           "maxdd": 3789,
           "calmar": 7.67,
           "sharpe": 5.27,
@@ -4521,7 +4521,7 @@
           "is_best": false
         },
         {
-          "pnl": 62395,
+          "pnl": 62394,
           "maxdd": 3608,
           "calmar": 6.51,
           "sharpe": 4.96,
@@ -4541,7 +4541,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -4581,7 +4581,7 @@
           "is_best": false
         },
         {
-          "pnl": 103856,
+          "pnl": 103855,
           "maxdd": 5523,
           "calmar": 7.08,
           "sharpe": 6.48,
@@ -4591,7 +4591,7 @@
             41.22,
             26.6,
             7.55,
-            7.8
+            7.79
           ],
           "worst_fold": 7.55,
           "mean_fold": 21.58,
@@ -4636,7 +4636,7 @@
           "is_best": false
         },
         {
-          "pnl": 74807,
+          "pnl": 74806,
           "maxdd": 5581,
           "calmar": 5.04,
           "sharpe": 5.6,
@@ -4656,7 +4656,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -4696,7 +4696,7 @@
           "is_best": false
         },
         {
-          "pnl": 75117,
+          "pnl": 75116,
           "maxdd": 5248,
           "calmar": 5.39,
           "sharpe": 5.61,
@@ -4706,10 +4706,10 @@
             29.54,
             23.54,
             4.29,
-            7.8
+            7.79
           ],
           "worst_fold": 4.29,
-          "mean_fold": 16.94,
+          "mean_fold": 16.93,
           "trades": 587,
           "label": "0.25/0.2/0.55",
           "is_current": false,
@@ -4736,7 +4736,7 @@
           "is_best": true
         },
         {
-          "pnl": 74372,
+          "pnl": 74371,
           "maxdd": 5356,
           "calmar": 5.23,
           "sharpe": 5.71,
@@ -4756,7 +4756,7 @@
           "is_best": false
         },
         {
-          "pnl": 72198,
+          "pnl": 72197,
           "maxdd": 9593,
           "calmar": 2.83,
           "sharpe": 3.99,
@@ -4811,7 +4811,7 @@
           "is_best": true
         },
         {
-          "pnl": 72402,
+          "pnl": 72401,
           "maxdd": 5306,
           "calmar": 5.13,
           "sharpe": 5.56,
@@ -4831,7 +4831,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -4851,7 +4851,7 @@
           "is_best": false
         },
         {
-          "pnl": 72738,
+          "pnl": 72737,
           "maxdd": 6865,
           "calmar": 3.99,
           "sharpe": 4.59,
@@ -4891,7 +4891,7 @@
           "is_best": false
         },
         {
-          "pnl": 80263,
+          "pnl": 80262,
           "maxdd": 3585,
           "calmar": 8.43,
           "sharpe": 5.43,
@@ -4926,7 +4926,7 @@
       "param": "Seuil d'entrée",
       "results": [
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -4946,7 +4946,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -4966,7 +4966,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -4986,7 +4986,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -5006,7 +5006,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -5026,7 +5026,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -5066,7 +5066,7 @@
           "is_best": true
         },
         {
-          "pnl": 77286,
+          "pnl": 77285,
           "maxdd": 3954,
           "calmar": 7.36,
           "sharpe": 6.01,
@@ -5121,7 +5121,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -5141,7 +5141,7 @@
           "is_best": false
         },
         {
-          "pnl": 78041,
+          "pnl": 78040,
           "maxdd": 5713,
           "calmar": 5.14,
           "sharpe": 5.82,
@@ -5161,7 +5161,7 @@
           "is_best": false
         },
         {
-          "pnl": 78185,
+          "pnl": 78184,
           "maxdd": 5713,
           "calmar": 5.15,
           "sharpe": 5.83,
@@ -5181,7 +5181,7 @@
           "is_best": true
         },
         {
-          "pnl": 78185,
+          "pnl": 78184,
           "maxdd": 5713,
           "calmar": 5.15,
           "sharpe": 5.83,
@@ -5216,7 +5216,7 @@
       "param": "CB — allègement move 3j %",
       "results": [
         {
-          "pnl": 69832,
+          "pnl": 69831,
           "maxdd": 6085,
           "calmar": 4.32,
           "sharpe": 5.51,
@@ -5236,7 +5236,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -5256,7 +5256,7 @@
           "is_best": false
         },
         {
-          "pnl": 78465,
+          "pnl": 78464,
           "maxdd": 5713,
           "calmar": 5.17,
           "sharpe": 5.82,
@@ -5276,7 +5276,7 @@
           "is_best": true
         },
         {
-          "pnl": 76910,
+          "pnl": 76909,
           "maxdd": 5713,
           "calmar": 5.07,
           "sharpe": 5.56,
@@ -5331,7 +5331,7 @@
       "param": "Plancher prime $",
       "results": [
         {
-          "pnl": 67421,
+          "pnl": 67420,
           "maxdd": 5713,
           "calmar": 4.44,
           "sharpe": 4.74,
@@ -5351,7 +5351,7 @@
           "is_best": false
         },
         {
-          "pnl": 71732,
+          "pnl": 71731,
           "maxdd": 5713,
           "calmar": 4.72,
           "sharpe": 5.12,
@@ -5371,7 +5371,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -5391,7 +5391,7 @@
           "is_best": true
         },
         {
-          "pnl": 67848,
+          "pnl": 67847,
           "maxdd": 5713,
           "calmar": 4.47,
           "sharpe": 4.38,
@@ -5411,7 +5411,7 @@
           "is_best": false
         },
         {
-          "pnl": 74011,
+          "pnl": 74010,
           "maxdd": 5713,
           "calmar": 4.87,
           "sharpe": 4.88,
@@ -5431,7 +5431,7 @@
           "is_best": false
         },
         {
-          "pnl": 75204,
+          "pnl": 75205,
           "maxdd": 6397,
           "calmar": 4.42,
           "sharpe": 4.18,
@@ -5486,7 +5486,7 @@
       "param": "CB — fermeture move 3j %",
       "results": [
         {
-          "pnl": 64463,
+          "pnl": 64462,
           "maxdd": 5842,
           "calmar": 4.15,
           "sharpe": 4.53,
@@ -5496,17 +5496,17 @@
             20.41,
             18.3,
             3.23,
-            6.98
+            6.97
           ],
           "worst_fold": 3.23,
-          "mean_fold": 13.4,
+          "mean_fold": 13.39,
           "trades": 570,
           "label": "−8%",
           "is_current": false,
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -5526,7 +5526,7 @@
           "is_best": true
         },
         {
-          "pnl": 73147,
+          "pnl": 73146,
           "maxdd": 6672,
           "calmar": 4.13,
           "sharpe": 4.95,
@@ -5546,7 +5546,7 @@
           "is_best": false
         },
         {
-          "pnl": 73790,
+          "pnl": 73802,
           "maxdd": 6672,
           "calmar": 4.16,
           "sharpe": 4.96,
@@ -5566,7 +5566,7 @@
           "is_best": false
         },
         {
-          "pnl": 74412,
+          "pnl": 74424,
           "maxdd": 6672,
           "calmar": 4.2,
           "sharpe": 5.04,
@@ -5601,7 +5601,7 @@
       "param": "Sizing — convexité",
       "results": [
         {
-          "pnl": 74457,
+          "pnl": 74456,
           "maxdd": 6230,
           "calmar": 4.5,
           "sharpe": 5.56,
@@ -5621,7 +5621,7 @@
           "is_best": false
         },
         {
-          "pnl": 74536,
+          "pnl": 74535,
           "maxdd": 5550,
           "calmar": 5.05,
           "sharpe": 5.49,
@@ -5641,7 +5641,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -5681,7 +5681,7 @@
           "is_best": false
         },
         {
-          "pnl": 75090,
+          "pnl": 75089,
           "maxdd": 5542,
           "calmar": 5.1,
           "sharpe": 5.67,
@@ -5716,7 +5716,7 @@
       "param": "CB — allègement keep",
       "results": [
         {
-          "pnl": 73026,
+          "pnl": 73025,
           "maxdd": 5707,
           "calmar": 4.81,
           "sharpe": 5.42,
@@ -5736,7 +5736,7 @@
           "is_best": true
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -5796,7 +5796,7 @@
           "is_best": false
         },
         {
-          "pnl": 89042,
+          "pnl": 89041,
           "maxdd": 6295,
           "calmar": 5.32,
           "sharpe": 6.23,
@@ -5871,7 +5871,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -5891,7 +5891,7 @@
           "is_best": false
         },
         {
-          "pnl": 74614,
+          "pnl": 74613,
           "maxdd": 5713,
           "calmar": 4.91,
           "sharpe": 5.57,
@@ -5911,7 +5911,7 @@
           "is_best": true
         },
         {
-          "pnl": 74614,
+          "pnl": 74613,
           "maxdd": 5713,
           "calmar": 4.91,
           "sharpe": 5.57,
@@ -5946,7 +5946,7 @@
       "param": "CB — reprise move 3j %",
       "results": [
         {
-          "pnl": 72136,
+          "pnl": 72135,
           "maxdd": 5713,
           "calmar": 4.75,
           "sharpe": 5.32,
@@ -5966,7 +5966,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -6006,7 +6006,7 @@
           "is_best": true
         },
         {
-          "pnl": 77415,
+          "pnl": 77414,
           "maxdd": 5930,
           "calmar": 4.91,
           "sharpe": 5.6,
@@ -6041,7 +6041,7 @@
       "param": "Pénalité gamma (start)",
       "results": [
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -6061,7 +6061,7 @@
           "is_best": true
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -6081,7 +6081,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -6101,7 +6101,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -6121,7 +6121,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
@@ -6141,7 +6141,7 @@
           "is_best": false
         },
         {
-          "pnl": 74641,
+          "pnl": 74640,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
