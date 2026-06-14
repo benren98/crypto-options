@@ -150,7 +150,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pnl_summary.json positions.json pnl_history.json positions_detail.json scan_entry.json docs/index.html orderbook_log.jsonl vol_surface.jsonl vol_model_fit.json 2>/dev/null || git add pnl_summary.json pnl_history.json positions_detail.json scan_entry.json docs/index.html orderbook_log.jsonl vol_surface.jsonl vol_model_fit.json
+          for f in pnl_summary.json positions.json pnl_history.json positions_detail.json scan_entry.json docs/index.html orderbook_log.jsonl vol_surface.jsonl vol_model_fit.json; do
+            if [ -e "$f" ]; then git add "$f"; fi
+          done
           git diff --cached --quiet || git commit -m "chore: pnl snapshot $(date -u '+%Y-%m-%d %H:%M UTC')"
           git push
 
