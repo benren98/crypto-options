@@ -311,6 +311,51 @@ The bid/ask costs are shown separately:
 
 ---
 
+## Approaches Tested and Rejected
+
+A log of levers that were backtested and **did not work**, kept so they aren't re-tried and to justify the current design. Baseline for comparison is the production stack (skew-weighted score + convexity 1.5 + graduated CB): **BTC 4-year backtest ≈ PnL 38–40k$, MaxDD 3.4–4.1k$, Calmar 3.5–4.4.** Reproduce any of these with the named script.
+
+### Drawdown-reduction attempts that failed
+
+| Lever | Result | Why rejected | Script |
+|---|---|---|---|
+| **Trend / momentum sizing overlay** (cut size in down-trends) | Best variant Calmar 2.11 vs 2.23 baseline | Gaps start from *calm/uptrend* states (4 Aug 2024 gapped from normal), so a trend filter can't anticipate them; fires on false alarms that recover → bleeds PnL | `backtest_trend.py` |
+| **Gamma / delta / TTE sweep** (earlier gamma penalty, cap delta, drop 3j) | Identical to baseline | The score already never selects gamma-heavy options (chosen options run g_pts ≈ 1–2, far below any penalty start) | `backtest_a3.py` |
+| **Aggregate gamma budget** (cap portfolio dollar-gamma) | +2k PnL, **zero** DD benefit | Gamma-specific (binds before the notional cap) but only shifts PnL; the entire DD reduction comes from convexity | `backtest_sizing.py`, `diag_gamma.py` |
+| **Permanent put spread** (buy a further-OTM put every trade) | PnL 39k → 7k | ~40k$ of premium drag over 4y to save a few k on the worst days; can't replace the CB; the put skew makes the protective leg expensive (paying VRP in reverse) | `backtest_putspread.py` |
+| **Tactical hedge in the danger zone** (buy protection only near the CB) | Worst day −22% but **MaxDD worse** | Danger zone fires on false alarms → buy/sell whipsaw, net hedge PnL negative; only the tightest trigger was PnL-neutral and even then MaxDD rose | `backtest_tactical.py` |
+| **Vol-target sizing** (size ∝ vol_target / HV) | Calmar 1.07–1.16 | Sizes *up* when realized vol is low — exactly the cheap-gamma setup that precedes gaps | `backtest_sizing.py` |
+| **Reduce the notional cap in high-DVOL regimes** | PnL 19–26k, DD not improved | High DVOL = the richest premium; cutting size there throws away the best carry, and the CB already covers the gap | `backtest_sizing.py` |
+| **DD-throttle** (cut size after losses) | PnL −20%+ | Pro-cyclical: sells low and misses the rebound | `backtest_sizing.py` |
+| **`score^2.0` convexity** | Starves deployment (notional 3.4 vs 3.7), cuts PnL | Overshoots; `^1.5` is the sweet spot | `backtest_sizing.py` |
+
+### Scoring / selection attempts that failed
+
+| Lever | Result | Why rejected |
+|---|---|---|
+| **Yield-weighted score** (raise the yield weight) | MaxDD ballooned to **18.7k**, worst day −14k | Yield chases near-the-money high-premium options that blow up on gaps — it is the most dangerous component, hence *reduced* to 0.25 | `backtest_scoring.py` |
+| **Raise entry threshold alone** (0.45 → 0.50 without the skew reweighting) | Worse PnL and DD | The 0.50 bar only works bundled with the skew-weighted score; in isolation it starves entries | `backtest_scoring.py` |
+| **DVOL-based tier-1 CB trigger** (trim on a DVOL spike) | MaxDD 7.5–8.7k | Trims during the richest selling moments; move-based triggers win | `backtest_cb2.py` |
+
+### Premium / tenor attempts that failed
+
+| Lever | Result | Why rejected |
+|---|---|---|
+| **Lower `MIN_PREMIUM_USD` to 30$ / 10$** | Identical to 50$ | Non-binding: the score never picks an option in that premium band anyway | `backtest_premium.py` |
+| **Adjust or disable the gamma penalty** (to admit short tenors) | Completely inert — identical even fully off | The penalty was never the binding constraint; the score itself excludes short tenors | `backtest_gamma.py` |
+| **Short tenors for theta** (force 3–7j DTE) | 3j-only Calmar **0.41**, 7j-only 1.68 vs 21j-only 3.93 | High theta does *not* compensate the gamma/gap risk — the delta hedge can't keep up on big moves; the score correctly sells 21j | `backtest_gamma.py` |
+
+### Other underlyings
+
+| Lever | Result | Why rejected |
+|---|---|---|
+| **ETH-only** | PnL ~12× lower than BTC, more CB triggers | ETH DVOL is noisier with more downside whipsaws over this period | `backtest_eth.py` |
+| **BTC + ETH mixed** (best score across both) | Better Sharpe but PnL halved | The mix picks ETH too often and dilutes profitability | `backtest_multi.py` |
+
+> Note: several of these (vol-target, cap-reduction-in-stress, DVOL-trim, short-tenor theta) share one root cause — **high volatility is when this strategy earns the most**, so any lever that reduces exposure *because* vol is high fights the edge. Gap protection belongs in the event-triggered circuit breaker (near-zero carry cost), not in always-on de-risking.
+
+---
+
 ## Global Parameters
 
 ```python
