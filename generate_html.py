@@ -1285,17 +1285,26 @@ if pnl_history:
     cb_dvol_js   = _json.dumps(cb_dvol_thr)
     n_pts        = len(pnl_history)
 
-    # Strikes — datasets pour le graphique dédié spot+strikes uniquement
+    # Strikes — datasets pour le graphique dédié spot+strikes uniquement.
+    # Dédoublonnage par valeur de strike : un même strike sur plusieurs maturités (ou
+    # à la fois ouvert et clôturé) ne trace qu'une ligne. Les positions ouvertes passant
+    # avant l'historique, la ligne pleine prime sur la pointillée en cas de collision.
     _strike_colors = ["#f85149", "#d29922", "#a371f7", "#58a6ff", "#3fb950"]
     _strike_datasets_spot = ""
-    for _i, _p in enumerate(positions_list + hist):
+    _seen_strikes = set()
+    _ci = 0
+    for _p in positions_list + hist:
         _strike = _p.get("strike")
         if not _strike:
             continue
-        _instr = _p.get("instrument_name", "")
-        _label = f"Strike {int(_strike):,} ({_instr.split('-')[2] if '-' in _instr else _instr})"
+        _key = round(float(_strike))
+        if _key in _seen_strikes:
+            continue
+        _seen_strikes.add(_key)
         _is_closed = _p in hist
-        _col = _strike_colors[_i % len(_strike_colors)]
+        _label = f"Strike {int(_strike):,}{' (clôturé)' if _is_closed else ''}"
+        _col = _strike_colors[_ci % len(_strike_colors)]
+        _ci += 1
         _dash = "[6,4]" if _is_closed else "[]"
         _data_js = _json.dumps([_strike] * n_pts)
         _strike_datasets_spot += f"""
