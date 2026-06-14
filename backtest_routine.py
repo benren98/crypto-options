@@ -169,8 +169,13 @@ def run(years=4.0):
         # Robuste : pire fold > 0, majorité des régimes, ET (plateau OU tendance monotone au bord)
         robust = ((best.get('worst_fold') or -1) > 0 and wins >= (NFOLDS+1)//2
                   and (plateau or extend))
+        # Gain réel vs la config ACTUELLE (sur le mean_fold robuste) — 0 si on y est déjà
+        cur = next((r for r in results if r.get('is_current')), None)
+        gain = None
+        if cur is not None and best.get('mean_fold') is not None and cur.get('mean_fold') is not None:
+            gain = round(best['mean_fold'] - cur['mean_fold'], 2)
         return dict(param=name, results=results, sensitivity=round(max(cals)-min(cals), 2),
-                    extend=extend,
+                    extend=extend, gain_vs_current=gain, current_is_best=(cur is best),
                     best_label=best['label'], best_calmar=best['calmar'],
                     best_worst_fold=best.get('worst_fold'), best_mean_fold=best.get('mean_fold'),
                     fold_wins=wins, n_folds=NFOLDS, plateau=plateau, robust=robust)
@@ -201,7 +206,7 @@ def run(years=4.0):
 
     ranked = sorted(sweeps, key=lambda s: -s['sensitivity'])
     print(f"  ── Sweeps · {NFOLDS} folds contigus (≈régimes) — maximin & accord inter-folds ──")
-    print(f"  {'Paramètre':<32} {'Δ':>5} {'reco':>12} {'pireFold':>8} {'moyFold':>7} {'gagne':>6}  verdict")
+    print(f"  {'Paramètre':<32} {'Δ':>5} {'reco':>10} {'gain':>7} {'pireFold':>8} {'moyFold':>7} {'gagne':>5}  verdict")
     for s in ranked:
         def g(x): return "—" if x is None else f"{x}"
         if s['sensitivity'] < 0.5:      verdict = "· peu sensible"
@@ -212,7 +217,9 @@ def run(years=4.0):
         elif s.get('extend'):           verdict = "↗ à étendre (tendance monotone au bord)"
         elif not s['plateau']:          verdict = "⚠ pic isolé"
         else:                           verdict = "⚠ limite"
-        print(f"  {s['param']:<32} {s['sensitivity']:>5} {s['best_label']:>12} "
+        gv = s.get('gain_vs_current')
+        gtag = "=actuel" if (s.get('current_is_best') or (gv is not None and gv <= 0.01)) else (f"+{gv}" if gv is not None else "?")
+        print(f"  {s['param']:<32} {s['sensitivity']:>5} {s['best_label']:>10} {gtag:>7} "
               f"{g(s['best_worst_fold']):>8} {g(s['best_mean_fold']):>7} {s['fold_wins']}/{s['n_folds']:>1}  {verdict}")
 
     actionable = [f"{s['param']}→{s['best_label']}" for s in ranked if s['robust'] and s['sensitivity'] >= 1.0]

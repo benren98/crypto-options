@@ -84,9 +84,16 @@ def _sweep_table(s):
     sbadge = "high" if s["sensitivity"] >= 1.0 else "low"
     vtxt, vcl = _verdict(s)
     wins = f' · gagne {s.get("fold_wins","?")}/{s.get("n_folds","?")} folds' if s["sensitivity"] >= 0.5 else ""
+    g = s.get("gain_vs_current")
+    if s.get("current_is_best") or (g is not None and g <= 0.01):
+        gain_html = '<span class="tag best">déjà optimal</span>'
+    elif g is not None:
+        gain_html = f'<span class="tag cur">gain +{g} vs actuel</span>'
+    else:
+        gain_html = ""
     return f"""
     <div class="card">
-      <h3>{s['param']} <span class="sens {sbadge}">ΔCalmar {s['sensitivity']}</span>
+      <h3>{s['param']} {gain_html} <span class="sens {sbadge}">amplitude ΔCalmar {s['sensitivity']}</span>
           <span class="verdict {vcl}">{vtxt}</span><span class="muted">{wins}</span></h3>
       <table><thead><tr><th>config</th><th>PnL</th><th>pire fold</th><th>moy fold</th><th>full</th></tr></thead>
       <tbody>{rows}</tbody></table>
