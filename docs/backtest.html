@@ -18,11 +18,13 @@ th,td{text-align:right;padding:4px 6px;border-bottom:1px solid #21262d} th:first
 .kpi b{font-size:1.2rem}
 .sens{font-size:0.7rem;padding:2px 6px;border-radius:4px;font-weight:400}
 .sens.high{background:#f8514933;color:#f85149} .sens.low{background:#30363d;color:#8b949e}
+.tag{font-size:0.62rem;padding:1px 5px;border-radius:3px}
+.tag.cur{background:#1f6feb33;color:#58a6ff} .tag.best{background:#1f6f3f55;color:#3fb950}
 .muted{color:#484f58;font-size:0.8rem}
 </style></head><body>
 <a class="back" href="index.html">← Dashboard live</a>
 <h1>📊 Backtests &amp; Surface de Skew</h1>
-<p class="muted">Généré 2026-06-14 19:31:39 UTC · surface réelle : 1j (2026-06-14→2026-06-14) · ⚠ provisoire tant que peu de jours collectés</p>
+<p class="muted">Généré 2026-06-14 19:41:43 UTC · surface réelle : 1j (2026-06-14→2026-06-14) · ⚠ provisoire tant que peu de jours collectés</p>
 
 <div class="kpi">
   <div>PnL baseline<br><b class="pos">74,637$</b></div>
@@ -44,34 +46,84 @@ th,td{text-align:right;padding:4px 6px;border-bottom:1px solid #21262d} th:first
 <h2>Sweeps de paramètres — classés par sensibilité (à regarder en priorité)</h2>
 <div class="grid">
     <div class="card">
-      <h3>SKEW_NORM <span class="sens high">ΔCalmar 11.74</span></h3>
+      <h3>SKEW_NORM <span class="sens high">ΔCalmar 12.9</span></h3>
       <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
-      <tbody><tr><td>0.20</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr><td>0.40</td><td>77,568$</td><td>3,160$</td><td class="pos">9.24</td><td>603</td></tr><tr><td>0.60</td><td>78,605$</td><td>2,091$</td><td class="pos">14.14</td><td>568</td></tr><tr style="background:#1f6f3f33"><td>0.80</td><td>82,640$</td><td>1,867$</td><td class="pos">16.66</td><td>567</td></tr></tbody></table>
+      <tbody><tr style=""><td>0.15</td><td>66,261$</td><td>6,639$</td><td class="pos">3.76</td><td>592</td></tr><tr style="border-left:3px solid #58a6ff;"><td>0.20 <span class="tag cur">actuel</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>0.30</td><td>78,169$</td><td>3,558$</td><td class="pos">8.27</td><td>597</td></tr><tr style=""><td>0.40</td><td>77,569$</td><td>3,160$</td><td class="pos">9.24</td><td>603</td></tr><tr style=""><td>0.50</td><td>75,817$</td><td>4,125$</td><td class="pos">6.92</td><td>576</td></tr><tr style=""><td>0.60</td><td>78,606$</td><td>2,091$</td><td class="pos">14.14</td><td>568</td></tr><tr style="background:#1f6f3f33;"><td>0.80 <span class="tag best">meilleur</span></td><td>82,640$</td><td>1,867$</td><td class="pos">16.66</td><td>567</td></tr></tbody></table>
     </div>
     <div class="card">
-      <h3>Poids score (ivhv/yield/skew) <span class="sens high">ΔCalmar 2.97</span></h3>
+      <h3>IV/HV — normalisation <span class="sens high">ΔCalmar 6.73</span></h3>
       <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
-      <tbody><tr><td>0.4/0.3/0.3</td><td>75,098$</td><td>5,581$</td><td class="pos">5.06</td><td>601</td></tr><tr><td>0.3/0.25/0.45</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr><td>0.25/0.2/0.55</td><td>75,111$</td><td>5,248$</td><td class="pos">5.39</td><td>587</td></tr><tr style="background:#1f6f3f33"><td>0.2/0.15/0.65</td><td>80,681$</td><td>3,847$</td><td class="pos">7.89</td><td>585</td></tr></tbody></table>
+      <tbody><tr style=""><td>0.50</td><td>76,414$</td><td>4,766$</td><td class="pos">6.03</td><td>660</td></tr><tr style=""><td>0.75</td><td>76,780$</td><td>4,995$</td><td class="pos">5.78</td><td>635</td></tr><tr style="border-left:3px solid #58a6ff;"><td>1.00 <span class="tag cur">actuel</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style="background:#1f6f3f33;"><td>1.50 <span class="tag best">meilleur</span></td><td>83,813$</td><td>2,706$</td><td class="pos">11.65</td><td>571</td></tr><tr style=""><td>2.00</td><td>94,247$</td><td>3,683$</td><td class="pos">9.63</td><td>590</td></tr></tbody></table>
     </div>
     <div class="card">
-      <h3>Seuil d'entrée <span class="sens high">ΔCalmar 2.4</span></h3>
+      <h3>IV/HV — horizon HV (5/10/30j) <span class="sens high">ΔCalmar 6.01</span></h3>
       <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
-      <tbody><tr><td>0.45</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr><td>0.50</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr><td>0.55</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr><td>0.60</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr><td>0.65</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style="background:#1f6f3f33"><td>0.70</td><td>76,917$</td><td>3,954$</td><td class="pos">7.32</td><td>589</td></tr></tbody></table>
+      <tbody><tr style=""><td>30j</td><td>74,014$</td><td>3,906$</td><td class="pos">7.13</td><td>607</td></tr><tr style=""><td>10j</td><td>77,437$</td><td>3,890$</td><td class="pos">7.49</td><td>613</td></tr><tr style="background:#1f6f3f33;"><td>5j <span class="tag best">meilleur</span></td><td>75,867$</td><td>2,612$</td><td class="pos">10.93</td><td>674</td></tr><tr style="border-left:3px solid #58a6ff;"><td>10/30 <span class="tag cur">actuel</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>5/10</td><td>80,460$</td><td>3,813$</td><td class="pos">7.94</td><td>631</td></tr><tr style=""><td>5/10/30</td><td>77,237$</td><td>3,789$</td><td class="pos">7.67</td><td>616</td></tr><tr style=""><td>10>30</td><td>80,329$</td><td>4,663$</td><td class="pos">6.48</td><td>610</td></tr></tbody></table>
     </div>
     <div class="card">
-      <h3>Convexité sizing <span class="sens low">ΔCalmar 0.6</span></h3>
+      <h3>Sizing — cap notionnel BTC <span class="sens high">ΔCalmar 5.75</span></h3>
       <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
-      <tbody><tr><td>1.0</td><td>74,453$</td><td>6,230$</td><td class="pos">4.5</td><td>587</td></tr><tr><td>1.5</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style="background:#1f6f3f33"><td>2.0</td><td>75,085$</td><td>5,542$</td><td class="pos">5.1</td><td>605</td></tr></tbody></table>
+      <tbody><tr style="background:#1f6f3f33;"><td>3 <span class="tag best">meilleur</span></td><td>50,976$</td><td>1,797$</td><td class="pos">10.67</td><td>446</td></tr><tr style=""><td>4</td><td>62,391$</td><td>3,608$</td><td class="pos">6.51</td><td>532</td></tr><tr style="border-left:3px solid #58a6ff;"><td>5 <span class="tag cur">actuel</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>6</td><td>90,474$</td><td>6,320$</td><td class="pos">5.39</td><td>660</td></tr><tr style=""><td>7</td><td>103,852$</td><td>5,523$</td><td class="pos">7.08</td><td>718</td></tr></tbody></table>
     </div>
     <div class="card">
-      <h3>Plancher prime $ <span class="sens low">ΔCalmar 0.48</span></h3>
+      <h3>Poids score (ivhv/yield/skew) <span class="sens high">ΔCalmar 5.06</span></h3>
       <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
-      <tbody><tr><td>50$</td><td>67,417$</td><td>5,713$</td><td class="pos">4.44</td><td>605</td></tr><tr style="background:#1f6f3f33"><td>150$</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr><td>250$</td><td>74,005$</td><td>5,713$</td><td class="pos">4.87</td><td>570</td></tr><tr><td>350$</td><td>75,504$</td><td>6,303$</td><td class="pos">4.51</td><td>564</td></tr></tbody></table>
+      <tbody><tr style=""><td>0.4/0.3/0.3</td><td>75,098$</td><td>5,581$</td><td class="pos">5.06</td><td>601</td></tr><tr style=""><td>0.35/0.3/0.35</td><td>74,802$</td><td>5,581$</td><td class="pos">5.04</td><td>598</td></tr><tr style="border-left:3px solid #58a6ff;"><td>0.3/0.25/0.45 <span class="tag cur">actuel</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>0.3/0.2/0.5</td><td>79,730$</td><td>3,847$</td><td class="pos">7.8</td><td>586</td></tr><tr style=""><td>0.25/0.2/0.55</td><td>75,112$</td><td>5,248$</td><td class="pos">5.39</td><td>587</td></tr><tr style="background:#1f6f3f33;"><td>0.2/0.15/0.65 <span class="tag best">meilleur</span></td><td>80,682$</td><td>3,847$</td><td class="pos">7.89</td><td>585</td></tr><tr style=""><td>0.5/0.25/0.25</td><td>74,368$</td><td>5,356$</td><td class="pos">5.22</td><td>602</td></tr><tr style=""><td>0.2/0.4/0.4</td><td>72,194$</td><td>9,593$</td><td class="pos">2.83</td><td>600</td></tr></tbody></table>
+    </div>
+    <div class="card">
+      <h3>Sizing — plancher rang DVOL <span class="sens high">ΔCalmar 4.56</span></h3>
+      <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
+      <tbody><tr style="background:#1f6f3f33;"><td>0.30 <span class="tag best">meilleur</span></td><td>79,138$</td><td>3,484$</td><td class="pos">8.55</td><td>693</td></tr><tr style=""><td>0.40</td><td>72,381$</td><td>5,306$</td><td class="pos">5.13</td><td>641</td></tr><tr style="border-left:3px solid #58a6ff;"><td>0.50 <span class="tag cur">actuel</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>0.60</td><td>72,733$</td><td>6,865$</td><td class="pos">3.99</td><td>571</td></tr><tr style=""><td>0.70</td><td>75,833$</td><td>4,725$</td><td class="pos">6.04</td><td>557</td></tr><tr style=""><td>1.00</td><td>80,257$</td><td>3,585$</td><td class="pos">8.42</td><td>483</td></tr></tbody></table>
+    </div>
+    <div class="card">
+      <h3>Seuil d'entrée <span class="sens high">ΔCalmar 2.44</span></h3>
+      <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
+      <tbody><tr style=""><td>0.40</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>0.45</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style="border-left:3px solid #58a6ff;"><td>0.50 <span class="tag cur">actuel</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>0.55</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>0.60</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>0.65</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>0.70</td><td>76,918$</td><td>3,954$</td><td class="pos">7.32</td><td>589</td></tr><tr style="background:#1f6f3f33;"><td>0.75 <span class="tag best">meilleur</span></td><td>77,283$</td><td>3,954$</td><td class="pos">7.36</td><td>584</td></tr></tbody></table>
+    </div>
+    <div class="card">
+      <h3>CB — allègement move 1j % <span class="sens high">ΔCalmar 1.68</span></h3>
+      <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
+      <tbody><tr style="background:#1f6f3f33;"><td>−4% <span class="tag best">meilleur</span></td><td>73,278$</td><td>4,176$</td><td class="pos">6.6</td><td>623</td></tr><tr style="border-left:3px solid #58a6ff;"><td>−5% <span class="tag cur">actuel</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>−6%</td><td>78,037$</td><td>5,713$</td><td class="pos">5.14</td><td>591</td></tr><tr style=""><td>−7%</td><td>78,181$</td><td>5,713$</td><td class="pos">5.15</td><td>591</td></tr><tr style=""><td>OFF</td><td>78,181$</td><td>5,713$</td><td class="pos">5.15</td><td>591</td></tr></tbody></table>
+    </div>
+    <div class="card">
+      <h3>CB — allègement move 3j % <span class="sens high">ΔCalmar 1.15</span></h3>
+      <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
+      <tbody><tr style=""><td>−5%</td><td>69,828$</td><td>6,085$</td><td class="pos">4.32</td><td>605</td></tr><tr style="border-left:3px solid #58a6ff;"><td>−6% <span class="tag cur">actuel</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>−7%</td><td>78,461$</td><td>5,713$</td><td class="pos">5.17</td><td>576</td></tr><tr style=""><td>−8%</td><td>76,906$</td><td>5,713$</td><td class="pos">5.07</td><td>576</td></tr><tr style="background:#1f6f3f33;"><td>OFF <span class="tag best">meilleur</span></td><td>83,002$</td><td>5,713$</td><td class="pos">5.47</td><td>578</td></tr></tbody></table>
+    </div>
+    <div class="card">
+      <h3>Plancher prime $ <span class="sens low">ΔCalmar 0.9</span></h3>
+      <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
+      <tbody><tr style=""><td>50$</td><td>67,417$</td><td>5,713$</td><td class="pos">4.44</td><td>605</td></tr><tr style=""><td>100$</td><td>71,728$</td><td>5,713$</td><td class="pos">4.72</td><td>598</td></tr><tr style="background:#1f6f3f33;border-left:3px solid #58a6ff;"><td>150$ <span class="tag cur">actuel</span> <span class="tag best">meilleur</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>200$</td><td>67,844$</td><td>5,713$</td><td class="pos">4.47</td><td>584</td></tr><tr style=""><td>250$</td><td>74,005$</td><td>5,713$</td><td class="pos">4.87</td><td>570</td></tr><tr style=""><td>300$</td><td>75,214$</td><td>6,397$</td><td class="pos">4.42</td><td>563</td></tr><tr style=""><td>400$</td><td>75,981$</td><td>7,111$</td><td class="pos">4.02</td><td>552</td></tr></tbody></table>
+    </div>
+    <div class="card">
+      <h3>CB — fermeture move 3j % <span class="sens low">ΔCalmar 0.79</span></h3>
+      <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
+      <tbody><tr style=""><td>−8%</td><td>64,459$</td><td>5,842$</td><td class="pos">4.15</td><td>570</td></tr><tr style="background:#1f6f3f33;border-left:3px solid #58a6ff;"><td>−10% <span class="tag cur">actuel</span> <span class="tag best">meilleur</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>−12%</td><td>73,143$</td><td>6,672$</td><td class="pos">4.13</td><td>631</td></tr><tr style=""><td>−15%</td><td>73,872$</td><td>6,672$</td><td class="pos">4.17</td><td>637</td></tr><tr style=""><td>OFF</td><td>74,493$</td><td>6,672$</td><td class="pos">4.2</td><td>645</td></tr></tbody></table>
+    </div>
+    <div class="card">
+      <h3>Sizing — convexité <span class="sens low">ΔCalmar 0.6</span></h3>
+      <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
+      <tbody><tr style=""><td>1.00</td><td>74,453$</td><td>6,230$</td><td class="pos">4.5</td><td>587</td></tr><tr style=""><td>1.25</td><td>74,531$</td><td>5,550$</td><td class="pos">5.05</td><td>588</td></tr><tr style="border-left:3px solid #58a6ff;"><td>1.50 <span class="tag cur">actuel</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>1.75</td><td>74,895$</td><td>5,581$</td><td class="pos">5.05</td><td>598</td></tr><tr style="background:#1f6f3f33;"><td>2.00 <span class="tag best">meilleur</span></td><td>75,085$</td><td>5,542$</td><td class="pos">5.1</td><td>605</td></tr></tbody></table>
+    </div>
+    <div class="card">
+      <h3>CB — allègement keep <span class="sens low">ΔCalmar 0.53</span></h3>
+      <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
+      <tbody><tr style=""><td>20%</td><td>73,022$</td><td>5,707$</td><td class="pos">4.81</td><td>593</td></tr><tr style="border-left:3px solid #58a6ff;"><td>30% <span class="tag cur">actuel</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>40%</td><td>76,630$</td><td>6,023$</td><td class="pos">4.79</td><td>596</td></tr><tr style=""><td>50%</td><td>77,445$</td><td>6,069$</td><td class="pos">4.8</td><td>598</td></tr><tr style="background:#1f6f3f33;"><td>OFF <span class="tag best">meilleur</span></td><td>89,038$</td><td>6,295$</td><td class="pos">5.32</td><td>552</td></tr></tbody></table>
+    </div>
+    <div class="card">
+      <h3>CB — fermeture DVOL 3j pts <span class="sens low">ΔCalmar 0.4</span></h3>
+      <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
+      <tbody><tr style=""><td>+8</td><td>68,703$</td><td>5,713$</td><td class="pos">4.52</td><td>587</td></tr><tr style=""><td>+10</td><td>71,776$</td><td>5,713$</td><td class="pos">4.73</td><td>587</td></tr><tr style="background:#1f6f3f33;border-left:3px solid #58a6ff;"><td>+12 <span class="tag cur">actuel</span> <span class="tag best">meilleur</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>+15</td><td>74,610$</td><td>5,713$</td><td class="pos">4.91</td><td>595</td></tr><tr style=""><td>OFF</td><td>74,610$</td><td>5,713$</td><td class="pos">4.91</td><td>595</td></tr></tbody></table>
+    </div>
+    <div class="card">
+      <h3>CB — reprise move 3j % <span class="sens low">ΔCalmar 0.37</span></h3>
+      <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
+      <tbody><tr style=""><td>2%</td><td>72,132$</td><td>5,713$</td><td class="pos">4.75</td><td>591</td></tr><tr style="border-left:3px solid #58a6ff;"><td>3% <span class="tag cur">actuel</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style="background:#1f6f3f33;"><td>4% <span class="tag best">meilleur</span></td><td>77,741$</td><td>5,713$</td><td class="pos">5.12</td><td>593</td></tr><tr style=""><td>5%</td><td>77,411$</td><td>5,930$</td><td class="pos">4.91</td><td>600</td></tr></tbody></table>
     </div>
     <div class="card">
       <h3>Pénalité gamma (start) <span class="sens low">ΔCalmar 0.0</span></h3>
       <table><thead><tr><th>config</th><th>PnL</th><th>MaxDD</th><th>Calmar</th><th>trades</th></tr></thead>
-      <tbody><tr style="background:#1f6f3f33"><td>3</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr><td>5</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr><td>8</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr><td>OFF</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr></tbody></table>
+      <tbody><tr style="background:#1f6f3f33;"><td>3 <span class="tag best">meilleur</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>4</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style="border-left:3px solid #58a6ff;"><td>5 <span class="tag cur">actuel</span></td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>6</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>8</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr><tr style=""><td>OFF</td><td>74,637$</td><td>5,713$</td><td class="pos">4.92</td><td>592</td></tr></tbody></table>
     </div></div>
 
 <script>

@@ -26,7 +26,7 @@ import vol_surface_data as vs
 
 OUT_FILE        = "vol_model_fit.json"
 MIN_SNAPSHOTS   = 15      # jours min avant d'écrire le fichier de prod
-MIN_POINTS      = 40      # points min par bucket pour le fitter (sinon repli poolé)
+MIN_POINTS      = 24      # points min par bucket pour le fitter (sinon repli poolé) — ~2j de collecte
 MIN_DVOL_SPREAD = 15.0    # amplitude DVOL (pts) min pour activer la dépendance régime
 
 BUCKETS = [(0, 9, "≤9j"), (9, 16, "9-16j"), (16, 45, ">16j")]

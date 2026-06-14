@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-14 19:31:39 UTC",
+  "generated_at": "2026-06-14 19:41:43 UTC",
   "years": 4.0,
   "skew_fit": {
     "form": "iv_ratio = 1 + a(DVOL)*OTM% + b(DVOL)*OTM%^2, par bucket de maturité",
@@ -67,18 +67,30 @@
       "days": 1
     },
     "n_snapshots": 1,
-    "fitted_at": "2026-06-14 19:31:05 UTC"
+    "fitted_at": "2026-06-14 19:40:23 UTC"
   },
   "prod_config": {
     "W_IVHV": 0.3,
     "W_YIELD": 0.25,
     "W_SKEW": 0.45,
     "SKEW_NORM": 0.2,
+    "IVHV_NORM": 1.0,
+    "HV5": 0.0,
+    "HV10": 0.5,
+    "HV30": 0.5,
     "ENTRY": 0.5,
     "PREMIUM": 150.0,
     "GPEN": 5.0,
     "GCAP": 10.0,
-    "CONVEX": 1.5
+    "CONVEX": 1.5,
+    "MAXBTC": 5.0,
+    "RANKFLOOR": 0.5,
+    "CB_T2M": 10.0,
+    "CB_T2D": 12.0,
+    "CB_T1M1": 5.0,
+    "CB_T1M3": 6.0,
+    "CB_T1K": 0.3,
+    "CB_T1R": 3.0
   },
   "baseline": {
     "pnl": 74637,
@@ -3975,31 +3987,70 @@
       "param": "SKEW_NORM",
       "results": [
         {
+          "pnl": 66261,
+          "maxdd": 6639,
+          "calmar": 3.76,
+          "sharpe": 4.16,
+          "worst": -4426,
+          "trades": 592,
+          "label": "0.15",
+          "is_current": false,
+          "is_best": false
+        },
+        {
           "pnl": 74637,
           "maxdd": 5713,
           "calmar": 4.92,
           "sharpe": 5.54,
           "worst": -2552,
           "trades": 592,
-          "label": "0.20"
+          "label": "0.20",
+          "is_current": true,
+          "is_best": false
         },
         {
-          "pnl": 77568,
+          "pnl": 78169,
+          "maxdd": 3558,
+          "calmar": 8.27,
+          "sharpe": 5.51,
+          "worst": -2627,
+          "trades": 597,
+          "label": "0.30",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 77569,
           "maxdd": 3160,
           "calmar": 9.24,
           "sharpe": 6.49,
           "worst": -2286,
           "trades": 603,
-          "label": "0.40"
+          "label": "0.40",
+          "is_current": false,
+          "is_best": false
         },
         {
-          "pnl": 78605,
+          "pnl": 75817,
+          "maxdd": 4125,
+          "calmar": 6.92,
+          "sharpe": 5.62,
+          "worst": -1858,
+          "trades": 576,
+          "label": "0.50",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 78606,
           "maxdd": 2091,
           "calmar": 14.14,
           "sharpe": 7.2,
           "worst": -1675,
           "trades": 568,
-          "label": "0.60"
+          "label": "0.60",
+          "is_current": false,
+          "is_best": false
         },
         {
           "pnl": 82640,
@@ -4008,12 +4059,225 @@
           "sharpe": 7.73,
           "worst": -1429,
           "trades": 567,
-          "label": "0.80"
+          "label": "0.80",
+          "is_current": false,
+          "is_best": true
         }
       ],
-      "sensitivity": 11.74,
+      "sensitivity": 12.9,
       "best_label": "0.80",
       "best_calmar": 16.66
+    },
+    {
+      "param": "IV/HV — normalisation",
+      "results": [
+        {
+          "pnl": 76414,
+          "maxdd": 4766,
+          "calmar": 6.03,
+          "sharpe": 4.7,
+          "worst": -3675,
+          "trades": 660,
+          "label": "0.50",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 76780,
+          "maxdd": 4995,
+          "calmar": 5.78,
+          "sharpe": 4.85,
+          "worst": -4092,
+          "trades": 635,
+          "label": "0.75",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74637,
+          "maxdd": 5713,
+          "calmar": 4.92,
+          "sharpe": 5.54,
+          "worst": -2552,
+          "trades": 592,
+          "label": "1.00",
+          "is_current": true,
+          "is_best": false
+        },
+        {
+          "pnl": 83813,
+          "maxdd": 2706,
+          "calmar": 11.65,
+          "sharpe": 7.26,
+          "worst": -1756,
+          "trades": 571,
+          "label": "1.50",
+          "is_current": false,
+          "is_best": true
+        },
+        {
+          "pnl": 94247,
+          "maxdd": 3683,
+          "calmar": 9.63,
+          "sharpe": 7.81,
+          "worst": -1160,
+          "trades": 590,
+          "label": "2.00",
+          "is_current": false,
+          "is_best": false
+        }
+      ],
+      "sensitivity": 6.73,
+      "best_label": "1.50",
+      "best_calmar": 11.65
+    },
+    {
+      "param": "IV/HV — horizon HV (5/10/30j)",
+      "results": [
+        {
+          "pnl": 74014,
+          "maxdd": 3906,
+          "calmar": 7.13,
+          "sharpe": 5.93,
+          "worst": -2047,
+          "trades": 607,
+          "label": "30j",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 77437,
+          "maxdd": 3890,
+          "calmar": 7.49,
+          "sharpe": 4.93,
+          "worst": -2993,
+          "trades": 613,
+          "label": "10j",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 75867,
+          "maxdd": 2612,
+          "calmar": 10.93,
+          "sharpe": 5.94,
+          "worst": -2003,
+          "trades": 674,
+          "label": "5j",
+          "is_current": false,
+          "is_best": true
+        },
+        {
+          "pnl": 74637,
+          "maxdd": 5713,
+          "calmar": 4.92,
+          "sharpe": 5.54,
+          "worst": -2552,
+          "trades": 592,
+          "label": "10/30",
+          "is_current": true,
+          "is_best": false
+        },
+        {
+          "pnl": 80460,
+          "maxdd": 3813,
+          "calmar": 7.94,
+          "sharpe": 6.26,
+          "worst": -2521,
+          "trades": 631,
+          "label": "5/10",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 77237,
+          "maxdd": 3789,
+          "calmar": 7.67,
+          "sharpe": 5.27,
+          "worst": -2891,
+          "trades": 616,
+          "label": "5/10/30",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 80329,
+          "maxdd": 4663,
+          "calmar": 6.48,
+          "sharpe": 5.82,
+          "worst": -2345,
+          "trades": 610,
+          "label": "10>30",
+          "is_current": false,
+          "is_best": false
+        }
+      ],
+      "sensitivity": 6.01,
+      "best_label": "5j",
+      "best_calmar": 10.93
+    },
+    {
+      "param": "Sizing — cap notionnel BTC",
+      "results": [
+        {
+          "pnl": 50976,
+          "maxdd": 1797,
+          "calmar": 10.67,
+          "sharpe": 5.36,
+          "worst": -1473,
+          "trades": 446,
+          "label": "3",
+          "is_current": false,
+          "is_best": true
+        },
+        {
+          "pnl": 62391,
+          "maxdd": 3608,
+          "calmar": 6.51,
+          "sharpe": 4.96,
+          "worst": -1776,
+          "trades": 532,
+          "label": "4",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74637,
+          "maxdd": 5713,
+          "calmar": 4.92,
+          "sharpe": 5.54,
+          "worst": -2552,
+          "trades": 592,
+          "label": "5",
+          "is_current": true,
+          "is_best": false
+        },
+        {
+          "pnl": 90474,
+          "maxdd": 6320,
+          "calmar": 5.39,
+          "sharpe": 6.04,
+          "worst": -2783,
+          "trades": 660,
+          "label": "6",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 103852,
+          "maxdd": 5523,
+          "calmar": 7.08,
+          "sharpe": 6.48,
+          "worst": -3034,
+          "trades": 718,
+          "label": "7",
+          "is_current": false,
+          "is_best": false
+        }
+      ],
+      "sensitivity": 5.75,
+      "best_label": "3",
+      "best_calmar": 10.67
     },
     {
       "param": "Poids score (ivhv/yield/skew)",
@@ -4025,7 +4289,20 @@
           "sharpe": 5.68,
           "worst": -2345,
           "trades": 601,
-          "label": "0.4/0.3/0.3"
+          "label": "0.4/0.3/0.3",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74802,
+          "maxdd": 5581,
+          "calmar": 5.04,
+          "sharpe": 5.6,
+          "worst": -2531,
+          "trades": 598,
+          "label": "0.35/0.3/0.35",
+          "is_current": false,
+          "is_best": false
         },
         {
           "pnl": 74637,
@@ -4034,30 +4311,143 @@
           "sharpe": 5.54,
           "worst": -2552,
           "trades": 592,
-          "label": "0.3/0.25/0.45"
+          "label": "0.3/0.25/0.45",
+          "is_current": true,
+          "is_best": false
         },
         {
-          "pnl": 75111,
+          "pnl": 79730,
+          "maxdd": 3847,
+          "calmar": 7.8,
+          "sharpe": 6.19,
+          "worst": -2293,
+          "trades": 586,
+          "label": "0.3/0.2/0.5",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 75112,
           "maxdd": 5248,
           "calmar": 5.39,
           "sharpe": 5.61,
           "worst": -2474,
           "trades": 587,
-          "label": "0.25/0.2/0.55"
+          "label": "0.25/0.2/0.55",
+          "is_current": false,
+          "is_best": false
         },
         {
-          "pnl": 80681,
+          "pnl": 80682,
           "maxdd": 3847,
           "calmar": 7.89,
           "sharpe": 6.27,
           "worst": -2445,
           "trades": 585,
-          "label": "0.2/0.15/0.65"
+          "label": "0.2/0.15/0.65",
+          "is_current": false,
+          "is_best": true
+        },
+        {
+          "pnl": 74368,
+          "maxdd": 5356,
+          "calmar": 5.22,
+          "sharpe": 5.71,
+          "worst": -2284,
+          "trades": 602,
+          "label": "0.5/0.25/0.25",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 72194,
+          "maxdd": 9593,
+          "calmar": 2.83,
+          "sharpe": 3.99,
+          "worst": -5445,
+          "trades": 600,
+          "label": "0.2/0.4/0.4",
+          "is_current": false,
+          "is_best": false
         }
       ],
-      "sensitivity": 2.97,
+      "sensitivity": 5.06,
       "best_label": "0.2/0.15/0.65",
       "best_calmar": 7.89
+    },
+    {
+      "param": "Sizing — plancher rang DVOL",
+      "results": [
+        {
+          "pnl": 79138,
+          "maxdd": 3484,
+          "calmar": 8.55,
+          "sharpe": 6.87,
+          "worst": -1883,
+          "trades": 693,
+          "label": "0.30",
+          "is_current": false,
+          "is_best": true
+        },
+        {
+          "pnl": 72381,
+          "maxdd": 5306,
+          "calmar": 5.13,
+          "sharpe": 5.56,
+          "worst": -2372,
+          "trades": 641,
+          "label": "0.40",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74637,
+          "maxdd": 5713,
+          "calmar": 4.92,
+          "sharpe": 5.54,
+          "worst": -2552,
+          "trades": 592,
+          "label": "0.50",
+          "is_current": true,
+          "is_best": false
+        },
+        {
+          "pnl": 72733,
+          "maxdd": 6865,
+          "calmar": 3.99,
+          "sharpe": 4.59,
+          "worst": -2854,
+          "trades": 571,
+          "label": "0.60",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 75833,
+          "maxdd": 4725,
+          "calmar": 6.04,
+          "sharpe": 4.69,
+          "worst": -2748,
+          "trades": 557,
+          "label": "0.70",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 80257,
+          "maxdd": 3585,
+          "calmar": 8.42,
+          "sharpe": 5.43,
+          "worst": -2428,
+          "trades": 483,
+          "label": "1.00",
+          "is_current": false,
+          "is_best": false
+        }
+      ],
+      "sensitivity": 4.56,
+      "best_label": "0.30",
+      "best_calmar": 8.55
     },
     {
       "param": "Seuil d'entrée",
@@ -4069,7 +4459,9 @@
           "sharpe": 5.54,
           "worst": -2552,
           "trades": 592,
-          "label": "0.45"
+          "label": "0.40",
+          "is_current": false,
+          "is_best": false
         },
         {
           "pnl": 74637,
@@ -4078,7 +4470,9 @@
           "sharpe": 5.54,
           "worst": -2552,
           "trades": 592,
-          "label": "0.50"
+          "label": "0.45",
+          "is_current": false,
+          "is_best": false
         },
         {
           "pnl": 74637,
@@ -4087,7 +4481,9 @@
           "sharpe": 5.54,
           "worst": -2552,
           "trades": 592,
-          "label": "0.55"
+          "label": "0.50",
+          "is_current": true,
+          "is_best": false
         },
         {
           "pnl": 74637,
@@ -4096,7 +4492,9 @@
           "sharpe": 5.54,
           "worst": -2552,
           "trades": 592,
-          "label": "0.60"
+          "label": "0.55",
+          "is_current": false,
+          "is_best": false
         },
         {
           "pnl": 74637,
@@ -4105,33 +4503,61 @@
           "sharpe": 5.54,
           "worst": -2552,
           "trades": 592,
-          "label": "0.65"
+          "label": "0.60",
+          "is_current": false,
+          "is_best": false
         },
         {
-          "pnl": 76917,
+          "pnl": 74637,
+          "maxdd": 5713,
+          "calmar": 4.92,
+          "sharpe": 5.54,
+          "worst": -2552,
+          "trades": 592,
+          "label": "0.65",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 76918,
           "maxdd": 3954,
           "calmar": 7.32,
           "sharpe": 5.87,
           "worst": -2549,
           "trades": 589,
-          "label": "0.70"
+          "label": "0.70",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 77283,
+          "maxdd": 3954,
+          "calmar": 7.36,
+          "sharpe": 6.01,
+          "worst": -2542,
+          "trades": 584,
+          "label": "0.75",
+          "is_current": false,
+          "is_best": true
         }
       ],
-      "sensitivity": 2.4,
-      "best_label": "0.70",
-      "best_calmar": 7.32
+      "sensitivity": 2.44,
+      "best_label": "0.75",
+      "best_calmar": 7.36
     },
     {
-      "param": "Convexité sizing",
+      "param": "CB — allègement move 1j %",
       "results": [
         {
-          "pnl": 74453,
-          "maxdd": 6230,
-          "calmar": 4.5,
-          "sharpe": 5.56,
-          "worst": -2494,
-          "trades": 587,
-          "label": "1.0"
+          "pnl": 73278,
+          "maxdd": 4176,
+          "calmar": 6.6,
+          "sharpe": 5.71,
+          "worst": -3440,
+          "trades": 623,
+          "label": "−4%",
+          "is_current": false,
+          "is_best": true
         },
         {
           "pnl": 74637,
@@ -4140,21 +4566,110 @@
           "sharpe": 5.54,
           "worst": -2552,
           "trades": 592,
-          "label": "1.5"
+          "label": "−5%",
+          "is_current": true,
+          "is_best": false
         },
         {
-          "pnl": 75085,
-          "maxdd": 5542,
-          "calmar": 5.1,
-          "sharpe": 5.67,
-          "worst": -2445,
-          "trades": 605,
-          "label": "2.0"
+          "pnl": 78037,
+          "maxdd": 5713,
+          "calmar": 5.14,
+          "sharpe": 5.82,
+          "worst": -2552,
+          "trades": 591,
+          "label": "−6%",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 78181,
+          "maxdd": 5713,
+          "calmar": 5.15,
+          "sharpe": 5.83,
+          "worst": -2552,
+          "trades": 591,
+          "label": "−7%",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 78181,
+          "maxdd": 5713,
+          "calmar": 5.15,
+          "sharpe": 5.83,
+          "worst": -2552,
+          "trades": 591,
+          "label": "OFF",
+          "is_current": false,
+          "is_best": false
         }
       ],
-      "sensitivity": 0.6,
-      "best_label": "2.0",
-      "best_calmar": 5.1
+      "sensitivity": 1.68,
+      "best_label": "−4%",
+      "best_calmar": 6.6
+    },
+    {
+      "param": "CB — allègement move 3j %",
+      "results": [
+        {
+          "pnl": 69828,
+          "maxdd": 6085,
+          "calmar": 4.32,
+          "sharpe": 5.51,
+          "worst": -2567,
+          "trades": 605,
+          "label": "−5%",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74637,
+          "maxdd": 5713,
+          "calmar": 4.92,
+          "sharpe": 5.54,
+          "worst": -2552,
+          "trades": 592,
+          "label": "−6%",
+          "is_current": true,
+          "is_best": false
+        },
+        {
+          "pnl": 78461,
+          "maxdd": 5713,
+          "calmar": 5.17,
+          "sharpe": 5.82,
+          "worst": -2558,
+          "trades": 576,
+          "label": "−7%",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 76906,
+          "maxdd": 5713,
+          "calmar": 5.07,
+          "sharpe": 5.56,
+          "worst": -2558,
+          "trades": 576,
+          "label": "−8%",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 83002,
+          "maxdd": 5713,
+          "calmar": 5.47,
+          "sharpe": 6.16,
+          "worst": -2012,
+          "trades": 578,
+          "label": "OFF",
+          "is_current": false,
+          "is_best": true
+        }
+      ],
+      "sensitivity": 1.15,
+      "best_label": "OFF",
+      "best_calmar": 5.47
     },
     {
       "param": "Plancher prime $",
@@ -4166,7 +4681,20 @@
           "sharpe": 4.74,
           "worst": -3127,
           "trades": 605,
-          "label": "50$"
+          "label": "50$",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 71728,
+          "maxdd": 5713,
+          "calmar": 4.72,
+          "sharpe": 5.12,
+          "worst": -3127,
+          "trades": 598,
+          "label": "100$",
+          "is_current": false,
+          "is_best": false
         },
         {
           "pnl": 74637,
@@ -4175,7 +4703,20 @@
           "sharpe": 5.54,
           "worst": -2552,
           "trades": 592,
-          "label": "150$"
+          "label": "150$",
+          "is_current": true,
+          "is_best": true
+        },
+        {
+          "pnl": 67844,
+          "maxdd": 5713,
+          "calmar": 4.47,
+          "sharpe": 4.38,
+          "worst": -2898,
+          "trades": 584,
+          "label": "200$",
+          "is_current": false,
+          "is_best": false
         },
         {
           "pnl": 74005,
@@ -4184,21 +4725,340 @@
           "sharpe": 4.88,
           "worst": -2898,
           "trades": 570,
-          "label": "250$"
+          "label": "250$",
+          "is_current": false,
+          "is_best": false
         },
         {
-          "pnl": 75504,
-          "maxdd": 6303,
-          "calmar": 4.51,
-          "sharpe": 3.97,
+          "pnl": 75214,
+          "maxdd": 6397,
+          "calmar": 4.42,
+          "sharpe": 4.18,
+          "worst": -2616,
+          "trades": 563,
+          "label": "300$",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 75981,
+          "maxdd": 7111,
+          "calmar": 4.02,
+          "sharpe": 4.1,
           "worst": -3812,
-          "trades": 564,
-          "label": "350$"
+          "trades": 552,
+          "label": "400$",
+          "is_current": false,
+          "is_best": false
         }
       ],
-      "sensitivity": 0.48,
+      "sensitivity": 0.9,
       "best_label": "150$",
       "best_calmar": 4.92
+    },
+    {
+      "param": "CB — fermeture move 3j %",
+      "results": [
+        {
+          "pnl": 64459,
+          "maxdd": 5842,
+          "calmar": 4.15,
+          "sharpe": 4.53,
+          "worst": -2799,
+          "trades": 570,
+          "label": "−8%",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74637,
+          "maxdd": 5713,
+          "calmar": 4.92,
+          "sharpe": 5.54,
+          "worst": -2552,
+          "trades": 592,
+          "label": "−10%",
+          "is_current": true,
+          "is_best": true
+        },
+        {
+          "pnl": 73143,
+          "maxdd": 6672,
+          "calmar": 4.13,
+          "sharpe": 4.95,
+          "worst": -2795,
+          "trades": 631,
+          "label": "−12%",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 73872,
+          "maxdd": 6672,
+          "calmar": 4.17,
+          "sharpe": 4.96,
+          "worst": -2795,
+          "trades": 637,
+          "label": "−15%",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74493,
+          "maxdd": 6672,
+          "calmar": 4.2,
+          "sharpe": 5.04,
+          "worst": -2795,
+          "trades": 645,
+          "label": "OFF",
+          "is_current": false,
+          "is_best": false
+        }
+      ],
+      "sensitivity": 0.79,
+      "best_label": "−10%",
+      "best_calmar": 4.92
+    },
+    {
+      "param": "Sizing — convexité",
+      "results": [
+        {
+          "pnl": 74453,
+          "maxdd": 6230,
+          "calmar": 4.5,
+          "sharpe": 5.56,
+          "worst": -2494,
+          "trades": 587,
+          "label": "1.00",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74531,
+          "maxdd": 5550,
+          "calmar": 5.05,
+          "sharpe": 5.49,
+          "worst": -2619,
+          "trades": 588,
+          "label": "1.25",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74637,
+          "maxdd": 5713,
+          "calmar": 4.92,
+          "sharpe": 5.54,
+          "worst": -2552,
+          "trades": 592,
+          "label": "1.50",
+          "is_current": true,
+          "is_best": false
+        },
+        {
+          "pnl": 74895,
+          "maxdd": 5581,
+          "calmar": 5.05,
+          "sharpe": 5.61,
+          "worst": -2533,
+          "trades": 598,
+          "label": "1.75",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 75085,
+          "maxdd": 5542,
+          "calmar": 5.1,
+          "sharpe": 5.67,
+          "worst": -2445,
+          "trades": 605,
+          "label": "2.00",
+          "is_current": false,
+          "is_best": true
+        }
+      ],
+      "sensitivity": 0.6,
+      "best_label": "2.00",
+      "best_calmar": 5.1
+    },
+    {
+      "param": "CB — allègement keep",
+      "results": [
+        {
+          "pnl": 73022,
+          "maxdd": 5707,
+          "calmar": 4.81,
+          "sharpe": 5.42,
+          "worst": -2852,
+          "trades": 593,
+          "label": "20%",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74637,
+          "maxdd": 5713,
+          "calmar": 4.92,
+          "sharpe": 5.54,
+          "worst": -2552,
+          "trades": 592,
+          "label": "30%",
+          "is_current": true,
+          "is_best": false
+        },
+        {
+          "pnl": 76630,
+          "maxdd": 6023,
+          "calmar": 4.79,
+          "sharpe": 5.68,
+          "worst": -3014,
+          "trades": 596,
+          "label": "40%",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 77445,
+          "maxdd": 6069,
+          "calmar": 4.8,
+          "sharpe": 5.84,
+          "worst": -2389,
+          "trades": 598,
+          "label": "50%",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 89038,
+          "maxdd": 6295,
+          "calmar": 5.32,
+          "sharpe": 6.23,
+          "worst": -2528,
+          "trades": 552,
+          "label": "OFF",
+          "is_current": false,
+          "is_best": true
+        }
+      ],
+      "sensitivity": 0.53,
+      "best_label": "OFF",
+      "best_calmar": 5.32
+    },
+    {
+      "param": "CB — fermeture DVOL 3j pts",
+      "results": [
+        {
+          "pnl": 68703,
+          "maxdd": 5713,
+          "calmar": 4.52,
+          "sharpe": 5.0,
+          "worst": -2808,
+          "trades": 587,
+          "label": "+8",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 71776,
+          "maxdd": 5713,
+          "calmar": 4.73,
+          "sharpe": 5.3,
+          "worst": -2552,
+          "trades": 587,
+          "label": "+10",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74637,
+          "maxdd": 5713,
+          "calmar": 4.92,
+          "sharpe": 5.54,
+          "worst": -2552,
+          "trades": 592,
+          "label": "+12",
+          "is_current": true,
+          "is_best": true
+        },
+        {
+          "pnl": 74610,
+          "maxdd": 5713,
+          "calmar": 4.91,
+          "sharpe": 5.57,
+          "worst": -2552,
+          "trades": 595,
+          "label": "+15",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74610,
+          "maxdd": 5713,
+          "calmar": 4.91,
+          "sharpe": 5.57,
+          "worst": -2552,
+          "trades": 595,
+          "label": "OFF",
+          "is_current": false,
+          "is_best": false
+        }
+      ],
+      "sensitivity": 0.4,
+      "best_label": "+12",
+      "best_calmar": 4.92
+    },
+    {
+      "param": "CB — reprise move 3j %",
+      "results": [
+        {
+          "pnl": 72132,
+          "maxdd": 5713,
+          "calmar": 4.75,
+          "sharpe": 5.32,
+          "worst": -2999,
+          "trades": 591,
+          "label": "2%",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74637,
+          "maxdd": 5713,
+          "calmar": 4.92,
+          "sharpe": 5.54,
+          "worst": -2552,
+          "trades": 592,
+          "label": "3%",
+          "is_current": true,
+          "is_best": false
+        },
+        {
+          "pnl": 77741,
+          "maxdd": 5713,
+          "calmar": 5.12,
+          "sharpe": 5.62,
+          "worst": -3203,
+          "trades": 593,
+          "label": "4%",
+          "is_current": false,
+          "is_best": true
+        },
+        {
+          "pnl": 77411,
+          "maxdd": 5930,
+          "calmar": 4.91,
+          "sharpe": 5.6,
+          "worst": -3172,
+          "trades": 600,
+          "label": "5%",
+          "is_current": false,
+          "is_best": false
+        }
+      ],
+      "sensitivity": 0.37,
+      "best_label": "4%",
+      "best_calmar": 5.12
     },
     {
       "param": "Pénalité gamma (start)",
@@ -4210,7 +5070,9 @@
           "sharpe": 5.54,
           "worst": -2552,
           "trades": 592,
-          "label": "3"
+          "label": "3",
+          "is_current": false,
+          "is_best": true
         },
         {
           "pnl": 74637,
@@ -4219,7 +5081,9 @@
           "sharpe": 5.54,
           "worst": -2552,
           "trades": 592,
-          "label": "5"
+          "label": "4",
+          "is_current": false,
+          "is_best": false
         },
         {
           "pnl": 74637,
@@ -4228,7 +5092,9 @@
           "sharpe": 5.54,
           "worst": -2552,
           "trades": 592,
-          "label": "8"
+          "label": "5",
+          "is_current": true,
+          "is_best": false
         },
         {
           "pnl": 74637,
@@ -4237,7 +5103,31 @@
           "sharpe": 5.54,
           "worst": -2552,
           "trades": 592,
-          "label": "OFF"
+          "label": "6",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74637,
+          "maxdd": 5713,
+          "calmar": 4.92,
+          "sharpe": 5.54,
+          "worst": -2552,
+          "trades": 592,
+          "label": "8",
+          "is_current": false,
+          "is_best": false
+        },
+        {
+          "pnl": 74637,
+          "maxdd": 5713,
+          "calmar": 4.92,
+          "sharpe": 5.54,
+          "worst": -2552,
+          "trades": 592,
+          "label": "OFF",
+          "is_current": false,
+          "is_best": false
         }
       ],
       "sensitivity": 0.0,

@@ -55,10 +55,18 @@ def _equity_chart(base):
 def _sweep_table(s):
     rows = ""
     for r in s["results"]:
-        is_best = r["label"] == s["best_label"]
-        style = ' style="background:#1f6f3f33"' if is_best else ""
+        is_best = r.get("is_best", r["label"] == s.get("best_label"))
+        is_cur = r.get("is_current", False)
+        # actuel = bordure bleue à gauche ; meilleur = fond vert
+        style = ' style="'
+        if is_best: style += 'background:#1f6f3f33;'
+        if is_cur:  style += 'border-left:3px solid #58a6ff;'
+        style += '"'
+        tags = ""
+        if is_cur:  tags += ' <span class="tag cur">actuel</span>'
+        if is_best: tags += ' <span class="tag best">meilleur</span>'
         cal_cl = "pos" if r["calmar"] >= 2 else ("warn" if r["calmar"] >= 1 else "neg")
-        rows += (f'<tr{style}><td>{r["label"]}</td><td>{r["pnl"]:,}$</td>'
+        rows += (f'<tr{style}><td>{r["label"]}{tags}</td><td>{r["pnl"]:,}$</td>'
                  f'<td>{r["maxdd"]:,}$</td><td class="{cal_cl}">{r["calmar"]}</td>'
                  f'<td>{r.get("trades","-")}</td></tr>')
     badge = "high" if s["sensitivity"] >= 1.0 else "low"
@@ -105,6 +113,8 @@ th,td{{text-align:right;padding:4px 6px;border-bottom:1px solid #21262d}} th:fir
 .kpi b{{font-size:1.2rem}}
 .sens{{font-size:0.7rem;padding:2px 6px;border-radius:4px;font-weight:400}}
 .sens.high{{background:#f8514933;color:#f85149}} .sens.low{{background:#30363d;color:#8b949e}}
+.tag{{font-size:0.62rem;padding:1px 5px;border-radius:3px}}
+.tag.cur{{background:#1f6feb33;color:#58a6ff}} .tag.best{{background:#1f6f3f55;color:#3fb950}}
 .muted{{color:#484f58;font-size:0.8rem}}
 </style></head><body>
 <a class="back" href="index.html">← Dashboard live</a>

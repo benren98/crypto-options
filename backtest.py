@@ -28,6 +28,9 @@ GAMMA_SCORE_CAP   = 10.0
 DVOL_MIN          = 35.0
 YIELD_NORM        = 0.30
 SKEW_NORM         = 0.20
+IVHV_NORM         = 1.0      # normalisation s_iv_hv = clamp((bid_iv/HV_ref − 1)/IVHV_NORM, 0,1)
+HV_W5, HV_W10, HV_W30 = 0.0, 0.5, 0.5   # pondération de l'HV de référence (5j/10j/30j)
+RANK_FLOOR        = 0.5      # plancher du multiplicateur de rang DVOL (sizing)
 SIZE_CONVEXITY    = 1.5     # taille ∝ score^1.5 (miroir greeks_hedge.compute_sizing)
 MIN_PREMIUM_USD   = 150.0   # plancher de prime au bid ($/BTC) — anti-poussière (BTC ; backtest Calmar 3.56→4.40)
 # Poids du score (skew-pondéré, miroir greeks_hedge ; expérience 0.65/SKEW_NORM 0.60 annulée)
@@ -138,7 +141,12 @@ def strike_for_delta(S, T, sigma_atm, target_delta):
     return K
 
 # ── Données historiques ────────────────────────────────────────────────────────
+_HIST_CACHE = {}   # mémoïse le fetch (la routine rejoue ~100 backtests → 1 seul fetch)
+
 def fetch_history(years: float):
+    _key = round(years, 2)
+    if _key in _HIST_CACHE:
+        return _HIST_CACHE[_key]
     end_ts   = now_ms()
     start_ts = end_ts - int(years * 365 * 24 * 3600 * 1000)
     spot_d = get('get_tradingview_chart_data', {
@@ -152,6 +160,7 @@ def fetch_history(years: float):
         d = datetime.fromtimestamp(tick/1000, tz=timezone.utc).date()
         if d in dvol_by_day and close:
             days.append({'date': d, 'spot': close, 'dvol': dvol_by_day[d]})
+    _HIST_CACHE[_key] = days
     return days
 
 def hv_from(closes, n):
@@ -163,8 +172,8 @@ def hv_from(closes, n):
 
 # ── Backtest ───────────────────────────────────────────────────────────────────
 def rank_mult_linear(iv_rank: float) -> float:
-    """Multiplicateur actuel : monotone 0.5 -> 1.0."""
-    return 0.5 + 0.5 * iv_rank
+    """Multiplicateur de rang DVOL : monotone RANK_FLOOR -> 1.0."""
+    return RANK_FLOOR + (1.0 - RANK_FLOOR) * iv_rank
 
 def rank_mult_bell(iv_rank: float) -> float:
     """Profil en cloche : 0.5 en bas de range, pic 1.0 vers rank 0.65,
@@ -214,7 +223,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         if hv10 is None or hv30 is None or len(dvol_30) < 10:
             continue
         hv5 = hv_from(closes_hist, 5)
-        hv_blend = 0.5 * hv10 + 0.5 * hv30
+        hv_blend = HV_W5 * (hv5 if hv5 else hv10) + HV_W10 * hv10 + HV_W30 * hv30
         iv_rank  = max(0.0, min(1.0, (dvol - min(dvol_30)) / max(max(dvol_30) - min(dvol_30), 5)))
         move_3d  = abs(S / closes_hist[-4] - 1) * 100 if len(closes_hist) >= 4 else 0.0
         dvol_chg_3d = dvol - dvol_hist[-4] if len(dvol_hist) >= 4 else 0.0
@@ -331,7 +340,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                     if price < MIN_PREMIUM_USD:   # plancher de prime ($/BTC au bid)
                         continue
                     yield_a = (price / S) / T
-                    s_ivhv  = max(0.0, min(1.0, bid_iv / hv_blend - 1.0))
+                    s_ivhv  = max(0.0, min(1.0, (bid_iv / hv_blend - 1.0) / IVHV_NORM))
                     z       = (otm/100) / max(hv_blend/100 * math.sqrt(T), 1e-9)
                     s_yield = min(1.0, yield_a * z / YIELD_NORM)
                     skew    = bid_iv / atm_iv - 1.0
