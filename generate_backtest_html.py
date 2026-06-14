@@ -53,40 +53,40 @@ def _equity_chart(base):
 
 
 def _verdict(s):
-    if s["sensitivity"] < 0.5:        return ("· peu sensible", "low")
-    if s.get("robust"):               return ("✅ robuste (IS=OOS)", "ok")
-    if not s.get("is_oos_agree"):     return ("⛔ overfit (opt. IS≠OOS)", "bad")
-    if not s.get("plateau"):          return ("⚠ pic isolé", "warn")
-    return ("⚠ une année porte tout", "warn")
+    if s["sensitivity"] < 0.5:                                    return ("· peu sensible", "low")
+    if s.get("robust"):                                           return ("✅ robuste (multi-régimes)", "ok")
+    if (s.get("best_worst_fold") or -1) <= 0:                     return ("⛔ s'effondre ≥1 régime", "bad")
+    if s.get("fold_wins", 0) < (s.get("n_folds", 5)+1)//2:        return ("⛔ un régime porte tout", "bad")
+    if not s.get("plateau"):                                      return ("⚠ pic isolé", "warn")
+    return ("⚠ limite", "warn")
 
 
 def _sweep_table(s):
     rows = ""
     for r in s["results"]:
-        is_best = r.get("is_best", False)       # = optimum OOS (recommandé)
+        is_best = r.get("is_best", False)       # = recommandé (maximin multi-régimes)
         is_cur = r.get("is_current", False)
-        is_isb = r.get("is_is_best", False)     # optimum in-sample
         style = ' style="'
         if is_best: style += 'background:#1f6f3f33;'
         if is_cur:  style += 'border-left:3px solid #58a6ff;'
         style += '"'
         tags = ""
         if is_cur:  tags += ' <span class="tag cur">actuel</span>'
-        if is_best: tags += ' <span class="tag best">OOS★</span>'
-        if is_isb and not is_best: tags += ' <span class="tag isb">IS★</span>'
+        if is_best: tags += ' <span class="tag best">reco★</span>'
         def cl(c): return "pos" if (c or 0) >= 2 else ("warn" if (c or 0) >= 1 else "neg")
-        oos = r.get("calmar_oos"); ins = r.get("calmar_is")
+        wf = r.get("worst_fold"); mf = r.get("mean_fold")
         rows += (f'<tr{style}><td>{r["label"]}{tags}</td><td>{r["pnl"]:,}$</td>'
-                 f'<td class="{cl(ins)}">{"—" if ins is None else ins}</td>'
-                 f'<td class="{cl(oos)}">{"—" if oos is None else oos}</td>'
+                 f'<td class="{cl(wf)}">{"—" if wf is None else wf}</td>'
+                 f'<td class="{cl(mf)}">{"—" if mf is None else mf}</td>'
                  f'<td class="{cl(r["calmar"])}">{r["calmar"]}</td></tr>')
     sbadge = "high" if s["sensitivity"] >= 1.0 else "low"
     vtxt, vcl = _verdict(s)
+    wins = f' · gagne {s.get("fold_wins","?")}/{s.get("n_folds","?")} folds' if s["sensitivity"] >= 0.5 else ""
     return f"""
     <div class="card">
       <h3>{s['param']} <span class="sens {sbadge}">ΔCalmar {s['sensitivity']}</span>
-          <span class="verdict {vcl}">{vtxt}</span></h3>
-      <table><thead><tr><th>config</th><th>PnL</th><th>Calmar IS</th><th>Calmar OOS</th><th>full</th></tr></thead>
+          <span class="verdict {vcl}">{vtxt}</span><span class="muted">{wins}</span></h3>
+      <table><thead><tr><th>config</th><th>PnL</th><th>pire fold</th><th>moy fold</th><th>full</th></tr></thead>
       <tbody>{rows}</tbody></table>
     </div>"""
 
@@ -156,11 +156,12 @@ th,td{{text-align:right;padding:4px 6px;border-bottom:1px solid #21262d}} th:fir
 </div>
 
 <h2>Sweeps de paramètres — classés par sensibilité</h2>
-<p class="muted">Anti-overfit : <b>IS</b> = in-sample (60% initiaux, tuning) · <b>OOS</b> = out-of-sample
-(40% jamais vus). <span class="tag best">OOS★</span> optimum hors-échantillon (recommandé) ·
-<span class="tag isb">IS★</span> optimum in-sample · <span class="tag cur">actuel</span> config prod.
-✅ robuste = l'optimum IS et OOS coïncident (+ plateau) → fiable. ⛔ overfit = ils divergent → ne pas
-suivre. Règle : changer 1-2 params à la fois, confirmer sur ETH, ne jamais empiler tous les optima.</p>
+<p class="muted">Anti-overfit : la période est découpée en <b>5 folds contigus</b> (≈ régimes de vol).
+On ne juge pas sur la meilleure perf globale (biaisée par 2024) mais sur le <b>pire fold</b> (maximin)
+et l'<b>accord du vainqueur entre folds</b>. <span class="tag best">reco★</span> = valeur recommandée
+(meilleure moyenne sans s'effondrer dans aucun régime) · <span class="tag cur">actuel</span> config prod.
+✅ robuste = gagne dans la majorité des régimes + plateau · ⛔ = un seul régime porte le résultat (overfit).
+Règle : changer 1-2 params à la fois, confirmer sur ETH, ne jamais empiler tous les optima.</p>
 <div class="grid">{sweeps_html}</div>
 
 <script>

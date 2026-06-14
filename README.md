@@ -410,17 +410,21 @@ threshold, premium floor, gamma penalty, sizing (convexity, notional cap, rank f
 circuit-breaker parameter — then writes `backtest_routine.json` and the `docs/backtest.html` dashboard.
 
 Because sweeping ~16 parameter families and picking the best is a textbook overfitting trap, every
-sweep is judged out-of-sample, not just on the full period:
-- **IS / OOS split** — each config's Calmar is computed on the first 60% (in-sample) **and** the last
-  40% (out-of-sample). The recommended value is the **OOS** optimum, not the full-period one.
-- **IS vs OOS agreement** — a parameter is only flagged **robuste** if its in-sample optimum *equals*
-  its out-of-sample optimum. If they diverge it is flagged **⛔ overfit** and ignored. (This correctly
-  flagged the `0.20/0.15/0.65` weights as overfit — IS likes 0.65, OOS likes 0.50.)
-- **Plateau check** — the optimum must have neighbouring values that are also strong (a plateau), not
-  an isolated spike.
-- **Per-year consistency** — Calmar per calendar year + the worst year; an edge that rests on one
-  lucky year is rejected.
-- **Reading discipline** (documented in the dashboard): change 1–2 params at a time, confirm on ETH
+sweep is judged across **regimes**, not on the full period. A single contiguous 60/40 split was
+rejected: the first 60% is dominated by the exceptionally good 2024, so it conflates "overfit" with
+"different regime". Instead:
+- **K contiguous folds (5)** — the timeline is cut into 5 contiguous blocks (~6 months each), each a
+  different vol regime. Contiguous (not shuffled) so the path-dependency (positions, hedge, CB) is
+  preserved. Calmar is computed per fold.
+- **Maximin recommendation** — the recommended value is the one with the best *mean* fold Calmar
+  **among those whose worst fold stays positive** — i.e. good on average without collapsing in any
+  single regime.
+- **Cross-fold agreement** — a parameter is flagged **robuste** only if its recommended value wins
+  the majority of folds (≥3/5) and sits on a plateau. If a value only wins 1–2 folds it is flagged
+  **⛔ "un régime porte tout"** (one regime carries it) and ignored. (This correctly flags the
+  `0.20/0.15/0.65` weights and most aggressive optima — they only win the 2024-heavy folds.)
+- **Plateau check** — the optimum must have neighbouring values that are also strong, not an isolated spike.
+- **Reading discipline** (shown on the dashboard): change 1–2 params at a time, confirm on ETH
   (`backtest_eth.py`), never stack all individual optima. A bootstrap confidence band is a future add.
 
 ---
