@@ -44,6 +44,47 @@ TTE_CHOICES       = [3, 7, 14, 21]       # échéances candidates (jours) — in
 # Le plancher de prime ($50) écarte ensuite ceux trop bon marché.
 DELTA_TARGETS     = [-0.05, -0.08, -0.12, -0.16, -0.20, -0.25]
 
+# ── Surface de vol : réelle quand disponible, sinon modèle (skew fité ou linéaire) ──
+# Le skew quadratique est lu depuis vol_model_fit.json (fitté sur les vraies surfaces
+# par fit_vol_model.py) ; à défaut, skew linéaire 0.013 = comportement d'origine.
+SKEW_A, SKEW_B = SKEW_SLOPE, 0.0
+try:
+    import json as _json_fit
+    _fit = _json_fit.load(open("vol_model_fit.json", encoding="utf-8"))
+    SKEW_A, SKEW_B = float(_fit.get("a", SKEW_SLOPE)), float(_fit.get("b", 0.0))
+    print(f"[backtest] skew fité chargé : 1 + {SKEW_A:.4f}·OTM + {SKEW_B:.6f}·OTM² "
+          f"(R²={_fit.get('r2')}, {_fit.get('n_snapshots')}j)")
+except Exception:
+    pass
+
+USE_REAL_SURFACE = True   # utilise les vraies IV enregistrées pour les dates couvertes
+try:
+    import vol_surface_data as _vs
+    _vs_cov = _vs.coverage()
+    if _vs_cov:
+        print(f"[backtest] surface réelle disponible : {_vs_cov['start']}→{_vs_cov['end']} "
+              f"({_vs_cov['days']}j) — utilisée pour ces dates, modèle ailleurs")
+except Exception:
+    _vs = None
+
+
+def skew_factor(otm_pct: float) -> float:
+    """Multiplicateur de skew IV(K)/IV_ATM. Quadratique si fité, sinon linéaire."""
+    o = otm_pct if otm_pct > 0 else 0.0
+    return 1.0 + SKEW_A * o + SKEW_B * o * o
+
+
+def iv_pct(S, K, dvol, date=None, dte=None):
+    """mark IV (%) : réelle si la date est couverte par le dataset enregistré,
+    sinon modèle (DVOL × skew). Bascule automatique → supprime le risque modèle
+    sur la période enregistrée."""
+    if USE_REAL_SURFACE and _vs is not None and date is not None and dte is not None:
+        riv = _vs.iv_for(date, dte, K / S)
+        if riv is not None:
+            return riv
+    otm = (S - K) / S * 100
+    return dvol * skew_factor(otm)
+
 N = lambda x: 0.5 * (1 + math.erf(x / math.sqrt(2)))
 n_pdf = lambda x: math.exp(-0.5 * x * x) / math.sqrt(2 * math.pi)
 
@@ -67,7 +108,7 @@ def strike_for_delta(S, T, sigma_atm, target_delta):
     for _ in range(60):
         K = 0.5 * (lo + hi)
         otm = max((S - K) / S * 100, 0.0)
-        sig = sigma_atm * (1 + SKEW_SLOPE * otm)
+        sig = sigma_atm * skew_factor(otm)   # candidate generation : modèle (skew fité/linéaire)
         _, d, _ = bs_put(S, K, T, sig)
         if abs(d - target_delta) < 0.0005:
             break
@@ -170,7 +211,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                 for p in positions:
                     T = p['tte_left'] / 365
                     otm = (S - p['strike']) / S * 100
-                    sig = (dvol * (1 + SKEW_SLOPE * max(otm, 0)) + BA_HAIRCUT_VOLPTS) / 100
+                    sig = (iv_pct(S, p['strike'], dvol, day['date'], p['tte_left']) + BA_HAIRCUT_VOLPTS) / 100
                     price, _, _ = bs_put(S, p['strike'], T, sig)
                     cash += p['entry_premium_usd'] - price * p['contracts']
                     day_pnl += p['entry_premium_usd'] - price * p['contracts']
@@ -189,7 +230,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                     sell = p['contracts'] * (1.0 - CB_T1_KEEP)
                     T = p['tte_left'] / 365
                     otm = (S - p['strike']) / S * 100
-                    sig = (dvol * (1 + SKEW_SLOPE * max(otm, 0)) + BA_HAIRCUT_VOLPTS) / 100
+                    sig = (iv_pct(S, p['strike'], dvol, day['date'], p['tte_left']) + BA_HAIRCUT_VOLPTS) / 100
                     price, _, _ = bs_put(S, p['strike'], T, sig)
                     cash += p['entry_premium_usd'] * (1.0 - CB_T1_KEEP) - price * sell
                     day_pnl += p['entry_premium_usd'] * (1.0 - CB_T1_KEEP) - price * sell
@@ -223,8 +264,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         mtm_value = 0.0     # valeur de rachat des puts vendus ($, négatif pour nous)
         for p in positions:
             T = p['tte_left'] / 365
-            otm = (S - p['strike']) / S * 100
-            sig = dvol/100 * (1 + SKEW_SLOPE * max(otm, 0))
+            sig = iv_pct(S, p['strike'], dvol, day['date'], p['tte_left']) / 100
             price, delta, gamma = bs_put(S, p['strike'], T, sig)
             net_delta += delta * p['contracts']
             mtm_value += price * p['contracts']
@@ -266,7 +306,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                     otm = (S - K) / S * 100
                     if otm < 2:
                         continue
-                    mark_iv = dvol * (1 + SKEW_SLOPE * otm)
+                    mark_iv = iv_pct(S, K, dvol, day['date'], tte)   # réelle si couverte, sinon modèle
                     bid_iv  = mark_iv - BA_HAIRCUT_VOLPTS
                     price, delta, gamma = bs_put(S, K, T, bid_iv/100)
                     if price < MIN_PREMIUM_USD:   # plancher de prime ($/BTC au bid)

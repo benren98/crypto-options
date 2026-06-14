@@ -91,6 +91,12 @@ jobs:
       - name: Snapshot order-book / OI / volume (B1, collecte forward)
         run: python orderbook_logger.py || echo "orderbook_logger non bloquant"
 
+      - name: Snapshot surface de vol réelle (collecte forward, 1/jour)
+        run: python vol_surface_logger.py || echo "vol_surface_logger non bloquant"
+
+      - name: Re-fit du modèle de skew sur données réelles (no-op tant que < 15j)
+        run: python fit_vol_model.py || echo "fit_vol_model non bloquant"
+
       - name: Extraire pnl_summary.json depuis le CSV frais
         run: |
           python - <<'EOF'
@@ -144,7 +150,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pnl_summary.json positions.json pnl_history.json positions_detail.json scan_entry.json docs/index.html orderbook_log.jsonl 2>/dev/null || git add pnl_summary.json pnl_history.json positions_detail.json scan_entry.json docs/index.html orderbook_log.jsonl
+          git add pnl_summary.json positions.json pnl_history.json positions_detail.json scan_entry.json docs/index.html orderbook_log.jsonl vol_surface.jsonl vol_model_fit.json 2>/dev/null || git add pnl_summary.json pnl_history.json positions_detail.json scan_entry.json docs/index.html orderbook_log.jsonl vol_surface.jsonl vol_model_fit.json
           git diff --cached --quiet || git commit -m "chore: pnl snapshot $(date -u '+%Y-%m-%d %H:%M UTC')"
           git push
 

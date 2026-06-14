@@ -356,6 +356,41 @@ A log of levers that were backtested and **did not work**, kept so they aren't r
 
 ---
 
+## Real Data Collection & Model-Risk Reduction
+
+The backtest reconstructs option prices from a Black-Scholes model with a **linear** skew
+(`IV(K) = DVOL × (1 + 0.013 × OTM%)`). This is model risk: the *real* put skew is steeper and
+**convex** — a live snapshot showed a 22%-OTM put at IV 79.8% vs ATM 40.7% (ratio **1.96**),
+where the linear model predicts only 1.29. To remove this risk over time, the system collects
+real data forward and auto-substitutes it into the backtest.
+
+**Collection** — `vol_surface_logger.py` records one snapshot per UTC day (deduplicated) of the
+real put smile: for the nearest 3 expiries in the 4–35 DTE window, every OTM strike's `mark_iv`,
+`bid_iv`, delta, gamma, bid/ask, OI and 24h volume → `vol_surface.jsonl`. Runs in the hourly
+Actions pipeline (writes only the first run of each day).
+
+**Auto-switch trigger** — `backtest.py` prices via `iv_pct(S, K, dvol, date, dte)`:
+- if the date is **covered** by the recorded surface → use the real interpolated IV
+  (`vol_surface_data.iv_for`, linear in moneyness, nearest expiry in DTE);
+- otherwise → fall back to the model.
+
+This is backward-compatible: until the dataset covers backtest dates, every call hits the model and
+results are unchanged. As the dataset grows, the recent backtest window silently becomes real-data-based,
+**from the start of recording**, with zero code change. `USE_REAL_SURFACE = False` disables it.
+
+**Fit & project to the past** — `fit_vol_model.py` fits a quadratic skew on the real surfaces,
+`IV(K)/IV_ATM = 1 + a·OTM% + b·OTM²` (the `b` term captures the convexity the linear model misses),
+and writes `vol_model_fit.json`. `backtest.py` reads it at import and replaces the linear `0.013`
+with the fitted curve **for the model (pre-recording) portion** — i.e. it projects the real-shaped
+skew backward in time. It writes the file only after **≥15 days** are collected (no-op until then,
+so the default linear skew stands). The fit step runs in Actions after the logger.
+
+Roadmap: collect ~2–3 weeks → the fit auto-activates and the projected skew improves the historical
+backtest; collect longer → the recent backtest window runs entirely on real recorded IVs, eliminating
+model risk for that period. Scripts: `vol_surface_logger.py`, `vol_surface_data.py`, `fit_vol_model.py`.
+
+---
+
 ## Global Parameters
 
 ```python
