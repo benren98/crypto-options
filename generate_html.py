@@ -937,8 +937,11 @@ def _scan_entry_card() -> str:
     <b>Diversification</b> : espacement delta ≥ 0.08 entre positions de même expiry · 1 entrée max par cycle
   </div>
   <div style="margin-top:8px;font-size:0.78rem;color:#8b949e;border-top:1px solid #21262d;padding-top:8px">
-    Score = [30% × (IV<sub>bid</sub>/HV<sub>blend</sub> − 1) + 25% × yield ajusté risque + 45% × skew vs ATM] × pénalité gamma ·
-    HV<sub>blend</sub> = ½HV10j + ½HV30j · yield ajusté = yield ann. × z où z = OTM% / (HV×√TTE) · Score brut en gris = avant pénalité gamma ·
+    Score = [0.30·s<sub>iv/hv</sub> + 0.25·s<sub>yield</sub> + 0.45·s<sub>skew</sub>] × pénalité gamma · chaque composante clampée dans [0,1] :
+    <br>&nbsp;&nbsp;s<sub>iv/hv</sub> = clamp((IV<sub>bid</sub>/HV<sub>blend</sub> − 1) / <b>1.50</b>) ·
+    s<sub>yield</sub> = clamp(yield<sub>ann</sub> × z / <b>0.30</b>), z = OTM% / (HV<sub>blend</sub>×√TTE) ·
+    s<sub>skew</sub> = clamp((IV<sub>bid</sub>/IV<sub>ATM</sub> − 1) / <b>0.60</b>)
+    <br>&nbsp;&nbsp;HV<sub>blend</sub> = ½HV10j + ½HV30j · les dénominateurs (1.50 / 0.30 / 0.60) sont les normalisations : la composante atteint 1.0 à cette valeur · Score brut (gris) = avant pénalité gamma ·
     <b>Seuils</b> : score ≥ 0.45 · prime ≥ 150$/BTC · B/A ≤ 50% (anti-illiquidité) · DVOL ≥ 35% ·
     <b>Sizing</b> : round(score<sup>1.5</sup> × (0.5 + 0.5 × rang DVOL 30j), 1) BTC · max 5 BTC
   </div>
