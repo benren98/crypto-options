@@ -32,7 +32,6 @@ h1 { font-size: 1.4rem; color: #58a6ff; margin-bottom: 10px; }
 .card h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: .1em; color: #8b949e;
   border-bottom: 1px solid #21262d; padding-bottom: 10px; margin-bottom: 14px; }
 .total-card { border-color: #388bfd44; }
-.alert-card { border-color: #f8514944; }
 .pos2-card  { border-color: #3fb95033; }
 
 /* tables */
@@ -81,7 +80,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
 <body>
 
 <h1>📊 VRP Monitor — 9 position(s) ouverte(s) (11 lots)</h1>
-<div class="subtitle">Données : 2026-06-14 00:07 EDT · Généré : 2026-06-14 00:07 EDT · ↻ auto-refresh 5min</div>
+<div class="subtitle">Données : 2026-06-14 00:07 EDT · Généré : 2026-06-14 00:21 EDT · ↻ auto-refresh 5min</div>
 
 <div class="header-bar">
   <div class="chip">
@@ -112,7 +111,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
   <div class="chip">
     <span class="chip-label">Circuit breaker</span>
     <span class="chip-value ok" style="font-size:0.9rem">armé</span>
-    <span class="chip-delta ok">move 3j +2.9% / −10%</span><span class="chip-delta ok">DVOL 3j -5.7pt / +12pt</span>
+    <span class="chip-delta ok">move 3j +2.9% / −6% · −10%</span><span class="chip-delta ok">DVOL 3j -5.7pt / +12pt</span>
   </div>
   <div class="chip">
     <span class="chip-label">Positions</span>
@@ -1336,7 +1335,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
     <a href="#" id="hh-toggle" style="color:#58a6ff;font-size:0.8rem;text-decoration:none"
        onclick="event.preventDefault();var o=document.querySelectorAll('.hh-old');var show=o[0].style.display==='none';o.forEach(r=>r.style.display=show?'':'none');this.textContent=show?'▲ Réduire (3 derniers jours)':'▼ Voir tout (19 exécutions plus anciennes)';">▼ Voir tout (19 exécutions plus anciennes)</a>
   </div>
-</div><div class="card alert-card full"><h2>🚨 Alertes</h2><table><tr><td class="val ok" style="width:28%">✅ Roll OK</td><td style="color:#8b949e">TTE min = 2.16j</td></tr><tr><td class="val ok" style="width:28%">✅ Hedge OK</td><td style="color:#8b949e">Drift = 2.75% < seuil 4.2%</td></tr><tr><td class="val ok" style="width:28%">✅ IV OK</td><td style="color:#8b949e">ΔIV = +0.0pts</td></tr><tr><td class="val ok" style="width:28%">✅ Stop OK</td><td style="color:#8b949e">Perte latente -163$ / prime 3,925$</td></tr></table></div><div class="card full">
+</div><div class="card full">
   <h2>📈 Positions clôturées — 4 roll(s)</h2>
   <table class="tbl">
     <tr><th style="text-align:left">Instrument</th><th style="text-align:left">Entrée</th>
@@ -1387,7 +1386,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
 </div>
 
 <div class="chart-card">
-  <h2>&#x20BF; Spot BTC &amp; Strikes <span style="font-weight:400;color:#484f58;font-size:0.72rem">· seuil circuit breaker −10% vs spot 3j</span></h2>
+  <h2>&#x20BF; Spot BTC &amp; Strikes <span style="font-weight:400;color:#484f58;font-size:0.72rem">· CB : allègement −6% / fermeture −10% vs spot 3j</span></h2>
   <div class="chart-wrap"><canvas id="chartSpot"></canvas></div>
 </div>
 
@@ -1455,7 +1454,9 @@ new Chart(document.getElementById("chartSpot"), {
   data:{ labels:LABELS, datasets:[
     { label:"Spot BTC ($)", data:["61549.65", "61555.65", "61560.31", "61557.18", "61592.43", "61596.57", "61599.42", "61608.29", "61664.63", "61580.94", "61564.03", "61565.2", "61643.18", "61728.4", "61720.74", "61835.8", "61805.43", "61784.61", "61845.42", "61706.8", "61693.58", "61819.61", "61732.12", "61732.01", "61909.35", "62285.92", "62222.63", "61880.69", "61765.81", "61876.07", 61811.78, 61843.91, 62039.25, 62018.52, 62061.75, 62171.84, 62203.28, 62193.89, 62062.78, 62291.14, 62242.03, 62224.64, 62188.72, 62145.01, 62207.64, 62200.34, 61897.4, 61398.86, 61377.87, 61179.41, 63170.19, 63329.54, 63279.8, 63068.12, 62940.68, 63383.77, 63773.7, 63475.76, 63329.64, 63214.17, 63081.54, 62758.25, 62764.76, 62764.63, 62825.37, 62817.05, 62942.32, 62784.87, 63327.68, 62712.81, 62550.92, 62146.91, 60941.23, 61795.63, 61820.74, 61625.18, 61610.94, 61531.4, 61429.38, 61343.11, 61230.49, 61352.39, 61330.13, 61442.14, 61488.38, 61494.52, 61514.25, 61432.58, 61310.84, 62267.28, 61829.52, 61896.88, 61754.37, 61417.49, 61548.35, 61955.65, 62000.29, 62085.19, 62077.94, 62019.62, 62631.63, 62814.51, 62875.83, 63380.48, 63425.06, 63356.48, 63242.48, 63503.09, 62974.44, 63621.28, 63648.63, 63739.53, 63571.98, 63522.45, 63582.84, 63473.7, 63606.95, 63657.86, 63687.94, 63664.54, 63722.5, 63867.21, 63909.92, 64108.46, 64197.13, 64250.98, 63983.42, 63891.13, 63920.47, 64216.85, 64140.85, 64261.09, 64226.37, 64284.69, 64440.64, 64423.57, 64633.41, 64497.58], borderColor:"#d29922", backgroundColor:"rgba(210,153,34,0.06)",
       tension:0.3, pointRadius:PT_R, borderWidth:2.5, fill:true },
-    { label:"Seuil CB (−10% / 3j)", data:[null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55433.0, 55447.0, 55498.0, 55661.0, 55536.0, 55559.0, 55718.0, 56002.0, 55061.0, 56853.0, 56952.0, 56761.0, 56761.0, 56761.0, 56761.0, 56761.0, 56647.0, 57045.0, 57396.0, 57128.0, 56893.0, 56773.0, 56482.0, 56543.0, 56995.0, 56442.0, 55932.0, 54847.0, 55616.0, 55639.0, 55463.0, 55463.0, 55450.0, 55450.0, 55286.0, 55289.0, 55180.0, 55180.0, 55180.0, 56041.0, 56041.0, 55647.0, 55707.0, 55707.0, 55707.0, 55707.0, 55579.0, 55579.0, 55579.0, 55579.0, 55276.0, 55394.0, 55394.0, 55818.0], borderColor:"rgba(248,81,73,0.8)", backgroundColor:"transparent",
+    { label:"CB allègement (−6% / 3j)", data:[null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 57857.0, 57857.0, 57857.0, 57857.0, 57857.0, 57857.0, 57857.0, 57857.0, 57857.0, 57857.0, 57857.0, 57857.0, 57897.0, 57912.0, 57965.0, 58135.0, 58004.0, 58028.0, 58195.0, 58491.0, 57509.0, 59380.0, 59483.0, 59284.0, 59284.0, 59284.0, 59284.0, 59284.0, 59164.0, 59581.0, 59947.0, 59667.0, 59421.0, 59297.0, 58993.0, 59056.0, 59528.0, 58950.0, 58418.0, 57285.0, 58088.0, 58111.0, 57928.0, 57928.0, 57914.0, 57914.0, 57744.0, 57747.0, 57632.0, 57632.0, 57632.0, 58531.0, 58531.0, 58120.0, 58183.0, 58183.0, 58183.0, 58183.0, 58049.0, 58049.0, 58049.0, 58049.0, 57732.0, 57855.0, 57855.0, 58298.0], borderColor:"rgba(210,153,34,0.7)", backgroundColor:"transparent",
+      tension:0.2, pointRadius:0, borderWidth:1.5, borderDash:[4,4], spanGaps:false },
+    { label:"CB fermeture (−10% / 3j)", data:[null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55395.0, 55433.0, 55447.0, 55498.0, 55661.0, 55536.0, 55559.0, 55718.0, 56002.0, 55061.0, 56853.0, 56952.0, 56761.0, 56761.0, 56761.0, 56761.0, 56761.0, 56647.0, 57045.0, 57396.0, 57128.0, 56893.0, 56773.0, 56482.0, 56543.0, 56995.0, 56442.0, 55932.0, 54847.0, 55616.0, 55639.0, 55463.0, 55463.0, 55450.0, 55450.0, 55286.0, 55289.0, 55180.0, 55180.0, 55180.0, 56041.0, 56041.0, 55647.0, 55707.0, 55707.0, 55707.0, 55707.0, 55579.0, 55579.0, 55579.0, 55579.0, 55276.0, 55394.0, 55394.0, 55818.0], borderColor:"rgba(248,81,73,0.8)", backgroundColor:"transparent",
       tension:0.2, pointRadius:0, borderWidth:1.5, borderDash:[8,4], spanGaps:false },
     { label:"Strike 58,000 (58000)", data:[58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0, 58000.0], borderColor:"#f85149", backgroundColor:"transparent",
       tension:0, pointRadius:0, borderWidth:1.5, borderDash:[] },
@@ -1523,5 +1524,5 @@ new Chart(document.getElementById("chartVol"), {
 });
 </script>
 
-<footer>VRP Monitor · Généré le 2026-06-14 00:07 EDT · GitHub Actions · Auto-refresh 5 min</footer>
+<footer>VRP Monitor · Généré le 2026-06-14 00:21 EDT · GitHub Actions · Auto-refresh 5 min</footer>
 </body></html>

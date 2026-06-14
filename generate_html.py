@@ -280,7 +280,6 @@ h1 { font-size: 1.4rem; color: #58a6ff; margin-bottom: 10px; }
 .card h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: .1em; color: #8b949e;
   border-bottom: 1px solid #21262d; padding-bottom: 10px; margin-bottom: 14px; }
 .total-card { border-color: #388bfd44; }
-.alert-card { border-color: #f8514944; }
 .pos2-card  { border-color: #3fb95033; }
 
 /* tables */
@@ -945,27 +944,6 @@ def _scan_entry_card() -> str:
   </div>
 </div>"""
 
-# ── Alertes ────────────────────────────────────────────────────────────────────
-def _alerts_card() -> str:
-    tte_min  = min((float(pd_map.get(p.get("instrument_name",""),{}).get("tte_days", 99)) for p in positions_list), default=99)
-    div_main = float(s.get("iv_change", 0))
-    total_prem = sum(float(p.get("entry_price",0))*float(p.get("entry_spot",spot)) for p in positions_list)
-    alerts = []
-    if tte_min <= 1:  alerts.append(("neg", "⚠️ ROLLER",        f"TTE min = {f(tte_min,2)}j"))
-    else:             alerts.append(("ok",  "✅ Roll OK",        f"TTE min = {f(tte_min,2)}j"))
-    if _drift_abs > hedge_thr_btc:
-                      alerts.append(("neg", "⚠️ REBALANCER",    f"Drift = {f(_drift_pct,2)}% > seuil {f(hedge_thr_pct,1)}%"))
-    else:             alerts.append(("ok",  "✅ Hedge OK",       f"Drift = {f(_drift_pct,2)}% < seuil {f(hedge_thr_pct,1)}%"))
-    if div_main > 10: alerts.append(("neg", "🚨 IV SPIKE",       f"ΔIV = {f(div_main,1,True)}pts"))
-    elif div_main > 5:alerts.append(("warn","⚠️ IV élevée",      f"ΔIV = {f(div_main,1,True)}pts"))
-    else:             alerts.append(("ok",  "✅ IV OK",          f"ΔIV = {f(div_main,1,True)}pts"))
-    if pnl_open < -total_prem:
-                      alerts.append(("neg", "🚨 STOP-LOSS",      f"Perte {f(pnl_open,0,True)}$"))
-    else:             alerts.append(("ok",  "✅ Stop OK",        f"Perte latente {f(pnl_open,0,True)}$ / prime {f(total_prem,0)}$"))
-    rows = "".join(f'<tr><td class="val {cl}" style="width:28%">{lbl}</td><td style="color:#8b949e">{det}</td></tr>'
-                   for cl, lbl, det in alerts)
-    return f'<div class="card alert-card full"><h2>🚨 Alertes</h2><table>{rows}</table></div>'
-
 # ── HTML ───────────────────────────────────────────────────────────────────────
 title    = f"VRP Monitor — {n_instruments} position(s)" if positions_list else "VRP Monitor"
 _spot_cl = "pos" if (_delta_spot or 0) >= 0 else "neg"
@@ -1007,9 +985,11 @@ def _vol_chip_delta(move_abs):
 _dvol_1d_html = _vol_chip_delta(_dvol_1d_chg)
 _hv_1d_html   = _vol_chip_delta(_hv_1d_chg)
 
-# ── Circuit breaker ────────────────────────────────────────────────────────────
+# ── Circuit breaker (gradué : allègement −5%/1j ou −6%/3j → trim 30% ; fermeture −10%/+12pts) ──
 _cb_risk_off = bool(_ctx_mc.get("risk_off", pos_raw.get("risk_off", False)))
+_cb_reduced  = bool(_ctx_mc.get("cb_reduced", pos_raw.get("cb_reduced", False)))
 _cb_move_3d  = _ctx_mc.get("cb_move_3d")
+_cb_move_1d  = _ctx_mc.get("cb_move_1d")
 _cb_dvol_3d  = _ctx_mc.get("cb_dvol_3d")
 
 def _cb_chip() -> str:
@@ -1023,20 +1003,30 @@ def _cb_chip() -> str:
     <span class="chip-delta neu">re-entrée : HV5 &lt; HV10 et |move 3j| &lt; 4%</span>
   </div>"""
     parts = []
+    # Palier 1 (allègement) : chute 1j < −5% OU 3j < −6%
+    if _cb_move_1d is not None:
+        mv1 = float(_cb_move_1d)
+        cl = "neg" if mv1 < -5 else ("warn" if mv1 < -3.5 else "ok")
+        parts.append(f'<span class="chip-delta {cl}">move 1j {mv1:+.1f}% / −5%</span>')
     if _cb_move_3d is not None:
         mv = float(_cb_move_3d)
-        # seul le downside compte (short puts) : un move haussier est inoffensif
-        cl = "neg" if mv < -8 else ("warn" if mv < -6 else "ok")
-        parts.append(f'<span class="chip-delta {cl}">move 3j {mv:+.1f}% / −10%</span>')
+        # seuils : −6% (allègement) puis −10% (fermeture totale)
+        cl = "neg" if mv < -10 else ("warn" if mv < -6 else "ok")
+        parts.append(f'<span class="chip-delta {cl}">move 3j {mv:+.1f}% / −6% · −10%</span>')
     if _cb_dvol_3d is not None:
         dv = float(_cb_dvol_3d)
         cl = "neg" if dv > 9 else ("warn" if dv > 6 else "ok")
         parts.append(f'<span class="chip-delta {cl}">DVOL 3j {dv:+.1f}pt / +12pt</span>')
     if not parts:
         return ""
-    return f"""<div class="chip">
+    if _cb_reduced:
+        head = ('<span class="chip-value" style="font-size:0.9rem;color:#d29922">ALLÉGÉ 30%</span>'
+                '<span class="chip-delta neu">reprise : |move 3j| &lt; 3%</span>')
+    else:
+        head = '<span class="chip-value ok" style="font-size:0.9rem">armé</span>'
+    return f"""<div class="chip"{' style="border-color:#d2992244"' if _cb_reduced else ''}>
     <span class="chip-label">Circuit breaker</span>
-    <span class="chip-value ok" style="font-size:0.9rem">armé</span>
+    {head}
     {''.join(parts)}
   </div>"""
 
@@ -1197,7 +1187,6 @@ else:
     html += "</div>\n<div class=\"grid\" style=\"margin-top:16px\">\n"
     html += _scan_entry_card()
     html += _hedge_history_card()
-    html += _alerts_card()
 
     # Historique des clôtures
     if hist:
@@ -1250,7 +1239,7 @@ if pnl_history:
     # ── Seuils circuit breaker (référence = snapshot le plus proche de 72h avant)
     # Spot : ±10% vs spot d'il y a 3j · DVOL : +12 pts vs DVOL d'il y a 3j
     _ts_parsed = [_parse_ts(p.get("ts")) for p in pnl_history]
-    cb_spot_low, cb_dvol_thr = [], []
+    cb_spot_low, cb_spot_low_t1, cb_dvol_thr = [], [], []
     for _i, _dt in enumerate(_ts_parsed):
         _ref_idx = None
         if _dt is not None:
@@ -1273,10 +1262,11 @@ if pnl_history:
                 _ref_dvol = float(dvol_data[_ref_idx]) if dvol_data[_ref_idx] is not None else None
             except (TypeError, ValueError):
                 _ref_dvol = None
-            cb_spot_low.append(round(_ref_spot * 0.90, 0) if _ref_spot else None)
+            cb_spot_low.append(round(_ref_spot * 0.90, 0) if _ref_spot else None)     # −10% : fermeture
+            cb_spot_low_t1.append(round(_ref_spot * 0.94, 0) if _ref_spot else None)  # −6% : allègement
             cb_dvol_thr.append(round(_ref_dvol + 12, 1) if _ref_dvol else None)
         else:
-            cb_spot_low.append(None); cb_dvol_thr.append(None)
+            cb_spot_low.append(None); cb_spot_low_t1.append(None); cb_dvol_thr.append(None)
 
     labels_js    = _json.dumps(labels)
     delta_js     = _json.dumps(delta_data)
@@ -1291,6 +1281,7 @@ if pnl_history:
     hv10_js      = _json.dumps(hv10_data)
     hv30_js      = _json.dumps(hv30_data)
     cb_low_js    = _json.dumps(cb_spot_low)
+    cb_low_t1_js = _json.dumps(cb_spot_low_t1)
     cb_dvol_js   = _json.dumps(cb_dvol_thr)
     n_pts        = len(pnl_history)
 
@@ -1325,7 +1316,7 @@ if pnl_history:
 </div>
 
 <div class="chart-card">
-  <h2>&#x20BF; Spot BTC &amp; Strikes <span style="font-weight:400;color:#484f58;font-size:0.72rem">· seuil circuit breaker −10% vs spot 3j</span></h2>
+  <h2>&#x20BF; Spot BTC &amp; Strikes <span style="font-weight:400;color:#484f58;font-size:0.72rem">· CB : allègement −6% / fermeture −10% vs spot 3j</span></h2>
   <div class="chart-wrap"><canvas id="chartSpot"></canvas></div>
 </div>
 
@@ -1393,7 +1384,9 @@ new Chart(document.getElementById("chartSpot"), {{
   data:{{ labels:LABELS, datasets:[
     {{ label:"Spot BTC ($)", data:{spot_js}, borderColor:"#d29922", backgroundColor:"rgba(210,153,34,0.06)",
       tension:0.3, pointRadius:PT_R, borderWidth:2.5, fill:true }},
-    {{ label:"Seuil CB (−10% / 3j)", data:{cb_low_js}, borderColor:"rgba(248,81,73,0.8)", backgroundColor:"transparent",
+    {{ label:"CB allègement (−6% / 3j)", data:{cb_low_t1_js}, borderColor:"rgba(210,153,34,0.7)", backgroundColor:"transparent",
+      tension:0.2, pointRadius:0, borderWidth:1.5, borderDash:[4,4], spanGaps:false }},
+    {{ label:"CB fermeture (−10% / 3j)", data:{cb_low_js}, borderColor:"rgba(248,81,73,0.8)", backgroundColor:"transparent",
       tension:0.2, pointRadius:0, borderWidth:1.5, borderDash:[8,4], spanGaps:false }},{_strike_datasets_spot}
   ]}},
   options:{{ responsive:true, maintainAspectRatio:false,
