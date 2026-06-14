@@ -88,6 +88,9 @@ jobs:
           echo "GIST_ID=$GIST_ID" >> .env
           python greeks_hedge.py --run
 
+      - name: Snapshot order-book / OI / volume (B1, collecte forward)
+        run: python orderbook_logger.py || echo "orderbook_logger non bloquant"
+
       - name: Extraire pnl_summary.json depuis le CSV frais
         run: |
           python - <<'EOF'
@@ -141,7 +144,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pnl_summary.json positions.json pnl_history.json positions_detail.json scan_entry.json docs/index.html 2>/dev/null || git add pnl_summary.json pnl_history.json positions_detail.json scan_entry.json docs/index.html
+          git add pnl_summary.json positions.json pnl_history.json positions_detail.json scan_entry.json docs/index.html orderbook_log.jsonl 2>/dev/null || git add pnl_summary.json pnl_history.json positions_detail.json scan_entry.json docs/index.html orderbook_log.jsonl
           git diff --cached --quiet || git commit -m "chore: pnl snapshot $(date -u '+%Y-%m-%d %H:%M UTC')"
           git push
 
