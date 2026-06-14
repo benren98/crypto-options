@@ -27,7 +27,7 @@ GAMMA_PEN_START   = 5.0
 GAMMA_SCORE_CAP   = 10.0
 DVOL_MIN          = 35.0
 YIELD_NORM        = 0.30
-SKEW_NORM         = 0.20
+SKEW_NORM         = 0.60     # relevé de 0.20 : le vrai skew sature s_skew à 0.20 (cf backtest_threshold.py)
 SIZE_CONVEXITY    = 1.5     # taille ∝ score^1.5 (miroir greeks_hedge.compute_sizing)
 MIN_PREMIUM_USD   = 150.0   # plancher de prime au bid ($/BTC) — anti-poussière (BTC ; backtest Calmar 3.56→4.40)
 # Poids du score (surpondéré skew, miroir greeks_hedge — provisoire, recalib. avec vraies surfaces)

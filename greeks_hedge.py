@@ -74,6 +74,11 @@ SCORE_W_SKEW             = 0.65  # poids skew vs ATM — surpondéré : sous le 
                                  # live voit en permanence via les IV Deribit), un aperçu backtest fité
                                  # sur surface réelle donne Calmar 4.9→7.9. PROVISOIRE : à recalibrer
                                  # avec plusieurs semaines de vraies surfaces (cf vol_surface_logger).
+SKEW_NORM                = 0.60  # normalisation s_skew = clamp(skew/SKEW_NORM). Relevé de 0.20 : le vrai
+                                 # skew Deribit va jusqu'à ~80% (vs 20% supposé), donc 0.20 saturait s_skew
+                                 # à 1.0 pour tout → signal plat (le poids 0.65 devenait inutile). À 0.60,
+                                 # le score discrimine à nouveau les far-OTM → DD ÷~1.6 dans l'aperçu fité.
+                                 # PROVISOIRE (fit 1 jour) : finaliser avec plusieurs semaines de surfaces.
 
 # Circuit breaker — palier dur (fermeture totale), calibré par backtest 2023-2026
 CB_MOVE_3D_PCT           = 10.0  # ferme tout si move spot 3j < −10% (baisse seule — un pump est inoffensif pour des short puts)
@@ -1512,7 +1517,7 @@ def fetch_scored_candidates(currency: str, spot: float,
         # 2) Skew : richesse du strike vs ATM de la même échéance
         atm_iv  = atm_iv_by_exp.get(r["expiry_ts"], curr_iv) or curr_iv
         skew    = bid_iv / atm_iv - 1.0
-        s_skew  = max(0.0, min(1.0, skew / 0.20))   # 1.0 quand le put paie 20% de plus que l'ATM
+        s_skew  = max(0.0, min(1.0, skew / SKEW_NORM))   # 1.0 quand le put paie SKEW_NORM de plus que l'ATM
 
         # 3) Yield ajusté au risque : yield annualisé × distance au strike en vols réalisées
         #    z = OTM% / (HV × √TTE) — un yield élevé proche du strike vaut moins

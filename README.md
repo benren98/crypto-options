@@ -58,9 +58,11 @@ score     = score_raw × gamma_factor
 > **live engine already prices on real Deribit IVs**, so this is justified live. ⚠️ **Provisional**:
 > the supporting fit is one calm-regime day; under the *linear* backtest model these weights look
 > *worse* (Calmar 1.89), which is an artifact of the too-flat model, not of live behaviour. Revisit
-> once `vol_surface_logger.py` has multiple weeks of real surfaces (also recalibrate `SKEW_NORM`,
-> which now saturates: the real skew exceeds its 0.20 cap). See `backtest_scoring.py`,
-> `backtest_fitted_preview.py`.
+> once `vol_surface_logger.py` has multiple weeks of real surfaces. **`SKEW_NORM` was raised 0.20 →
+> 0.60** alongside this: the 0.65 weight is worthless on a saturated signal, and the real skew (≤~80%)
+> saturated the old 0.20 cap. The entry threshold was checked too and left at 0.50 — under the real
+> skew it is inert across 0.45–0.70 (the VRP signal always clears it). See `backtest_scoring.py`,
+> `backtest_fitted_preview.py`, `backtest_threshold.py`.
 
 All three components are option-specific (the DVOL rank, identical for every candidate in a scan, was moved out of the score and into the sizing multiplier — see Sizing).
 
@@ -82,9 +84,9 @@ s_yield   = min(1.0, (yield_ann × z) / 0.30)
 **Skew component** — how rich the sold strike is relative to the ATM of the same expiry:
 ```
 atm_IV = mark IV of the put whose strike is closest to spot (same expiry)
-s_skew = clamp((bid_IV / atm_IV − 1) / 0.20, 0, 1)
+s_skew = clamp((bid_IV / atm_IV − 1) / 0.60, 0, 1)
 ```
-Reaches 1 when the put trades 20% richer than ATM. Between two puts with equal overall scores, this favours the one the market overpays the most relative to the centre of the smile — exactly the premium the strategy sells. Weight: **65%** (dominant — under the real convex skew this is the strongest alpha; note the 0.20 normalisation now saturates and is a recalibration candidate).
+Reaches 1 when the put trades 60% richer than ATM. Between two puts with equal overall scores, this favours the one the market overpays the most relative to the centre of the smile — exactly the premium the strategy sells. Weight: **65%** (dominant — under the real convex skew this is the strongest alpha). The normalisation was **raised 0.20 → 0.60**: the real Deribit skew reaches ~80% (vs the 20% originally assumed), so the old 0.20 cap pinned `s_skew = 1.0` for nearly every strike — a flat signal that made the 0.65 weight useless. At 0.60 the score discriminates far-OTM strikes again (real-skew preview: MaxDD ÷~1.6, Calmar 7.9 → 12.3). Provisional (1-day fit).
 
 **Gamma penalty** — discounts the raw score for high-gamma options:
 ```
@@ -114,7 +116,7 @@ The component spans 0 → 0.8 within a single month even with the blended HV, so
 
 **s_yield — normalised at 30% annualised.** Distribution of raw annualised yields across 54 scannable OTM puts (3–25% OTM, 1–30 DTE, June 2026): min 0.5%, P25 6.4%, median 18.7%, P75 40.3%, P90 57.5%, max 113.5%. The original 20% norm saturated half the universe at 1.0 (non-discriminating); 60% (~P90) was considered but compressed existing scores too much; 30% was chosen as the compromise. Note the component is applied to `yield × z`, not raw yield, which pulls high-yield/near-strike candidates back down.
 
-**s_skew — normalised at 20%.** Observed skew richness vs same-expiry ATM in the 4–13% OTM hunting zone (June 2026): 4.4% (3.7% OTM) → 18.9% (13.1% OTM). The 20% norm means the component spreads ~0.2–0.95 across the zone without saturating in normal regimes, while panic regimes (skew can reach 30–50%) saturate at 1.0 — correctly flagging "exceptionally rich skew, sell it".
+**s_skew — normalised at 60% (raised from 20%).** The original 20% was calibrated to *mark-IV* skew estimates; the real collected Deribit surface shows the bid-IV put skew is far steeper (ratio reaching ~1.8 at 22% OTM, i.e. ~80% richer than ATM). At 0.20 the component saturated to 1.0 for almost every strike, which — combined with the 0.65 weight — made the score nearly constant across candidates (no discrimination). At **0.60** the component spans the real trading zone again and the score ranks far-OTM strikes by genuine richness. Provisional, calibrated on a one-day surface fit; finalise with multi-week data (`fit_vol_model.py`).
 
 **Gamma penalty thresholds (5 → 10 pts).** In the hunting zone, far-OTM medium-dated puts run 1–3 pts; near-ATM or short-dated puts run 5–10+ pts. The 5-pt start avoids penalising normal candidates; the 10-pt elimination kills only the genuinely dangerous gamma profiles.
 

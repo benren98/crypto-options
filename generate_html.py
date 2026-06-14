@@ -925,7 +925,7 @@ def _scan_entry_card() -> str:
       <th>Strike</th><th>TTE</th><th>Delta</th>
       <th title="Δ delta points par 1% move du spot (par contrat)">Γ pts/1%</th>
       <th>IV option</th><th>IV/HV <span style="font-weight:400;color:#484f58">(≥1.10)</span></th>
-      <th title="Richesse de l'IV bid vs ATM de la même échéance (norme : 20% → s_skew = 1.0)">Skew vs ATM</th>
+      <th title="Richesse de l'IV bid vs ATM de la même échéance (norme : 60% → s_skew = 1.0)">Skew vs ATM</th>
       <th title="Distance au strike en écarts-types de vol réalisée : OTM% / (HV×√TTE)">z</th>
       <th>Yield ann.</th><th>B/A <span style="font-weight:400;color:#484f58">(≤50%)</span></th><th title="Prime au bid pour 1 BTC (1 contrat Deribit) — plancher 150$">Prime bid / 1 BTC</th>
     </tr>
