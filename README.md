@@ -78,7 +78,7 @@ s_yield   = min(1.0, (yield_ann × z) / 0.30)
 **Skew component** — how rich the sold strike is relative to the ATM of the same expiry:
 ```
 atm_IV = mark IV of the put whose strike is closest to spot (same expiry)
-s_skew = clamp((bid_IV / atm_IV − 1) / 0.20, 0, 1)
+s_skew = clamp((bid_IV / atm_IV − 1) / 0.60, 0, 1)
 ```
 Reaches 1 when the put trades 20% richer than ATM. Between two puts with equal overall scores, this favours the one the market overpays the most relative to the centre of the smile — exactly the premium the strategy sells. Weight: **45%** (raised — steep-skew strikes sit further OTM and are less gap-sensitive). Note: the real Deribit skew exceeds this 0.20 cap, so `s_skew` saturates for deep-OTM strikes — acceptable at weight 0.45, but a higher norm paired with a 0.65 weight was tried and reverted (it corner-solutioned to the deepest OTM; see rejected-approaches log). Recalibrate the norm with multi-week real surfaces.
 
@@ -122,7 +122,7 @@ All conditions must be met simultaneously for opportunistic entries:
 
 | Condition | Threshold |
 |---|---|
-| Composite score (after gamma penalty) | ≥ 0.50 |
+| Composite score (after gamma penalty) | ≥ 0.45 |
 | IV/HV ratio (per option, bid IV) | ≥ 1.10 |
 | Premium collected at bid | ≥ $50 / BTC |
 | Bid/ask spread | ≤ 50% of mark |
@@ -448,10 +448,11 @@ MIN_PREMIUM_USD          = 150.0 # min premium at bid ($/BTC) — dust filter; b
 SCORE_W_IVHV             = 0.30  # VRP (IV/HV) weight
 SCORE_W_YIELD            = 0.25  # risk-adjusted yield weight (reduced — most gap-dangerous)
 SCORE_W_SKEW             = 0.45  # skew vs ATM weight (raised, not dominant — avoids deep-OTM corner)
-SKEW_NORM                = 0.20  # s_skew normalisation (skew/SKEW_NORM, clamped to 1)
+SKEW_NORM                = 0.60  # s_skew normalisation (skew/SKEW_NORM, clamped to 1) — partial de-saturation
+IVHV_NORM                = 1.50  # s_iv_hv normalisation ((bid_iv/HV−1)/IVHV_NORM, clamped to 1)
 
 # Entry signal
-ENTRY_SCORE_MIN          = 0.50  # minimum composite score (raised with skew weighting)
+ENTRY_SCORE_MIN          = 0.45  # minimum composite score — lowered to match the SKEW_NORM/IVHV_NORM rescale
 ALWAYS_IN_POSITION       = False # C2: do NOT force entry on an empty book if nothing clears the gate
 ENTRY_IV_HV_MIN          = 1.10  # minimum bid IV/HV ratio (per option)
 

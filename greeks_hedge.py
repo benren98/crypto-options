@@ -62,7 +62,8 @@ MIN_PREMIUM_USD          = 150.0 # prime min encaissée au bid (par BTC) — éc
                                  # (positions à ~38$ encaissés) : backtest 4 ans → Calmar 3.56→4.40, DD −17%.
                                  # NB : plancher en $ ABSOLU, calibré BTC. Pour ETH (sous-jacent ~20× moins
                                  # cher) il faudrait un plancher relatif (% du spot), sinon il bloque tout.
-ENTRY_SCORE_MIN          = 0.50  # score minimum pour entrée (recalibré scoring skew-pondéré C1, backtest 4 ans)
+ENTRY_SCORE_MIN          = 0.45  # score minimum pour entrée — abaissé avec SKEW_NORM=0.60/IVHV_NORM=1.50
+                                 # (ces normes dé-saturent donc baissent l'échelle des scores → le seuil suit)
 ALWAYS_IN_POSITION       = False # C2 : ne PAS forcer l'entrée sur book vide si aucun candidat ne passe le seuil
                                  # (rester à plat les jours faibles → MaxDD −28% à PnL neutre, voir README)
 # Poids du score composite (C1 : repondéré vers le skew, backtest 4 ans → MaxDD −20% à PnL neutre).
@@ -75,7 +76,9 @@ ALWAYS_IN_POSITION       = False # C2 : ne PAS forcer l'entrée sur book vide si
 SCORE_W_IVHV             = 0.30  # poids VRP (IV au bid / HV blend)
 SCORE_W_YIELD            = 0.25  # poids yield ajusté au risque (réduit — le plus gap-dangereux)
 SCORE_W_SKEW             = 0.45  # poids skew vs ATM (relevé, mais pas dominant → évite le coin deep-OTM)
-SKEW_NORM                = 0.20  # normalisation s_skew = clamp(skew/SKEW_NORM)
+SKEW_NORM                = 0.60  # normalisation s_skew = clamp(skew/SKEW_NORM) — entre-deux (dé-sature
+                                 # partiellement vs 0.20 ; le vrai skew Deribit va jusqu'à ~80%)
+IVHV_NORM                = 1.50  # normalisation s_iv_hv = clamp((bid_iv/HV−1)/IVHV_NORM, 0,1) — entre-deux
 
 # Circuit breaker — palier dur (fermeture totale), calibré par backtest 2023-2026
 CB_MOVE_3D_PCT           = 10.0  # ferme tout si move spot 3j < −10% (baisse seule — un pump est inoffensif pour des short puts)
@@ -1509,7 +1512,7 @@ def fetch_scored_candidates(currency: str, spot: float,
         mark    = r["mark_price"]
 
         # 1) VRP : IV au bid vs vol réalisée (HV blend 10j/30j)
-        s_iv_hv = max(0.0, min(1.0, (bid_iv / hv_ref - 1.0)))
+        s_iv_hv = max(0.0, min(1.0, (bid_iv / hv_ref - 1.0) / IVHV_NORM))
 
         # 2) Skew : richesse du strike vs ATM de la même échéance
         atm_iv  = atm_iv_by_exp.get(r["expiry_ts"], curr_iv) or curr_iv

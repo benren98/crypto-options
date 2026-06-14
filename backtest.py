@@ -21,14 +21,14 @@ from datetime import datetime, timezone
 from greeks_hedge import get, now_ms
 
 # ── Paramètres stratégie (miroir de greeks_hedge.py) ──────────────────────────
-ENTRY_SCORE_MIN   = 0.50    # C2 : seuil relevé (scoring skew-pondéré)
+ENTRY_SCORE_MIN   = 0.45    # abaissé avec SKEW_NORM=0.60/IVHV_NORM=1.50 (échelle des scores plus basse)
 MAX_PORTFOLIO_BTC = 5.0
 GAMMA_PEN_START   = 5.0
 GAMMA_SCORE_CAP   = 10.0
 DVOL_MIN          = 35.0
 YIELD_NORM        = 0.30
-SKEW_NORM         = 0.20
-IVHV_NORM         = 1.0      # normalisation s_iv_hv = clamp((bid_iv/HV_ref − 1)/IVHV_NORM, 0,1)
+SKEW_NORM         = 0.60     # entre-deux (dé-sature partiellement vs 0.20)
+IVHV_NORM         = 1.50     # entre-deux — normalisation s_iv_hv = clamp((bid_iv/HV−1)/IVHV_NORM, 0,1)
 HV_W5, HV_W10, HV_W30 = 0.0, 0.5, 0.5   # pondération de l'HV de référence (5j/10j/30j)
 RANK_FLOOR        = 0.5      # plancher du multiplicateur de rang DVOL (sizing)
 SIZE_CONVEXITY    = 1.5     # taille ∝ score^1.5 (miroir greeks_hedge.compute_sizing)

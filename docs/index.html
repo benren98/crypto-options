@@ -81,21 +81,21 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
 
 <h1>📊 VRP Monitor — 9 position(s) ouverte(s) (11 lots)
   <a href="backtest.html" style="float:right;font-size:0.6em;font-weight:500;color:#58a6ff;text-decoration:none;border:1px solid #30363d;border-radius:6px;padding:5px 12px;background:#161b22">📊 Backtests &amp; Skew →</a></h1>
-<div class="subtitle">Données : 2026-06-14 15:26 EDT · Généré : 2026-06-14 15:27 EDT · ↻ auto-refresh 5min</div>
+<div class="subtitle">Données : 2026-06-14 15:26 EDT · Généré : 2026-06-14 17:23 EDT · ↻ auto-refresh 5min</div>
 
 <div class="header-bar">
   <div class="chip">
     <span class="chip-label">Spot BTC</span>
     <span class="chip-value">$63,777</span>
     <span class="chip-delta pos">+43$ (+0.07%) vs snapshot préc.</span>
-    <span class="chip-delta neg">4h -0.37% (-234$)</span>
-    <span class="chip-delta neg">1j -0.57% (-364$)</span>
+    <span class="chip-delta neg">4h -0.21% (-132$)</span>
+    <span class="chip-delta neg">1j -0.79% (-507$)</span>
   </div>
   <div class="chip" title="Latent = MtM des positions ouvertes (option latente + hedge flottant). Réalisé = options clôturées + rebalancements hedge déjà encaissés. Total = somme.">
     <span class="chip-label">PnL ouvert (latent)</span>
     <span class="chip-value pos">+777$</span>
     <span class="chip-delta neg">-4$ vs snapshot préc.</span>
-    <span class="chip-delta neg">-2$ sur 1j</span>
+    <span class="chip-delta pos">+1$ sur 1j</span>
     <span class="chip-delta neg">Réalisé cumulé -116$</span>
     <span class="chip-delta pos" style="border-top:1px solid #21262d;padding-top:2px;margin-top:2px">Total stratégie <b>+661$</b></span>
   </div>
@@ -914,7 +914,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
       <th>Strike</th><th>TTE</th><th>Delta</th>
       <th title="Δ delta points par 1% move du spot (par contrat)">Γ pts/1%</th>
       <th>IV option</th><th>IV/HV <span style="font-weight:400;color:#484f58">(≥1.10)</span></th>
-      <th title="Richesse de l'IV bid vs ATM de la même échéance (norme : 20% → s_skew = 1.0)">Skew vs ATM</th>
+      <th title="Richesse de l'IV bid vs ATM de la même échéance (norme : 60% → s_skew = 1.0)">Skew vs ATM</th>
       <th title="Distance au strike en écarts-types de vol réalisée : OTM% / (HV×√TTE)">z</th>
       <th>Yield ann.</th><th>B/A <span style="font-weight:400;color:#484f58">(≤50%)</span></th><th title="Prime au bid pour 1 BTC (1 contrat Deribit) — plancher 150$">Prime bid / 1 BTC</th>
     </tr>
@@ -1040,7 +1040,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
   <div style="margin-top:8px;font-size:0.78rem;color:#8b949e;border-top:1px solid #21262d;padding-top:8px">
     Score = [30% × (IV<sub>bid</sub>/HV<sub>blend</sub> − 1) + 25% × yield ajusté risque + 45% × skew vs ATM] × pénalité gamma ·
     HV<sub>blend</sub> = ½HV10j + ½HV30j · yield ajusté = yield ann. × z où z = OTM% / (HV×√TTE) · Score brut en gris = avant pénalité gamma ·
-    <b>Seuils</b> : score ≥ 0.50 · prime ≥ 150$/BTC · B/A ≤ 50% (anti-illiquidité) · DVOL ≥ 35% ·
+    <b>Seuils</b> : score ≥ 0.45 · prime ≥ 150$/BTC · B/A ≤ 50% (anti-illiquidité) · DVOL ≥ 35% ·
     <b>Sizing</b> : round(score<sup>1.5</sup> × (0.5 + 0.5 × rang DVOL 30j), 1) BTC · max 5 BTC
   </div>
 </div><div class="card full">
@@ -1524,5 +1524,5 @@ new Chart(document.getElementById("chartVol"), {
 });
 </script>
 
-<footer>VRP Monitor · Généré le 2026-06-14 15:27 EDT · GitHub Actions · Auto-refresh 5 min</footer>
+<footer>VRP Monitor · Généré le 2026-06-14 17:23 EDT · GitHub Actions · Auto-refresh 5 min</footer>
 </body></html>

@@ -23,9 +23,9 @@ OUT_FILE = "backtest_routine.json"
 # Config de PRODUCTION actuelle (référence des sweeps + ligne mise en avant)
 PROD = dict(
     W_IVHV=0.30, W_YIELD=0.25, W_SKEW=0.45,
-    SKEW_NORM=0.20, IVHV_NORM=1.0,
+    SKEW_NORM=0.60, IVHV_NORM=1.50,
     HV5=0.0, HV10=0.5, HV30=0.5,
-    ENTRY=0.50, PREMIUM=150.0, GPEN=5.0, GCAP=10.0,
+    ENTRY=0.45, PREMIUM=150.0, GPEN=5.0, GCAP=10.0,
     CONVEX=1.5, MAXBTC=5.0, RANKFLOOR=0.5,
     CB_T2M=10.0, CB_T2D=12.0, CB_T1M1=5.0, CB_T1M3=6.0, CB_T1K=0.30, CB_T1R=3.0,
 )
