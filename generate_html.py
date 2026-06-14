@@ -1121,7 +1121,8 @@ if no_position:
     html += "<h1>Aucune position ouverte.</h1></body></html>"
 else:
     html += f"""
-<h1>📊 VRP Monitor — {n_instruments} position(s) ouverte(s){_lots_suffix}</h1>
+<h1>📊 VRP Monitor — {n_instruments} position(s) ouverte(s){_lots_suffix}
+  <a href="backtest.html" style="float:right;font-size:0.6em;font-weight:500;color:#58a6ff;text-decoration:none;border:1px solid #30363d;border-radius:6px;padding:5px 12px;background:#161b22">📊 Backtests &amp; Skew →</a></h1>
 <div class="subtitle">Données : {ts} · Généré : {generated} · ↻ auto-refresh 5min</div>
 
 <div class="header-bar">

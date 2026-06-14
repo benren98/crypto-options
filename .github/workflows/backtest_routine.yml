@@ -1,0 +1,50 @@
+name: Backtest Routine — sweeps & skew surface
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'      # tous les lundis 06:00 UTC
+  workflow_dispatch:          # déclenchement manuel
+
+jobs:
+  routine:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: backtest-routine
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install numpy
+
+      - name: Re-fit de la surface de skew (écrit vol_model_fit.json si >=15j)
+        run: python fit_vol_model.py || echo "fit non bloquant"
+
+      - name: Routine de backtests (sweeps sous skew réel)
+        run: python backtest_routine.py --years 4
+
+      - name: Générer le dashboard backtests
+        run: python generate_backtest_html.py
+
+      - name: Commit des résultats
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          for f in backtest_routine.json docs/backtest.html vol_model_fit.json; do
+            if [ -e "$f" ]; then git add "$f"; fi
+          done
+          git diff --cached --quiet || git commit -m "chore: backtest routine $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git pull --no-edit --rebase || true
+          git push

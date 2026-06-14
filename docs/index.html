@@ -79,22 +79,23 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
 </head>
 <body>
 
-<h1>📊 VRP Monitor — 9 position(s) ouverte(s) (11 lots)</h1>
-<div class="subtitle">Données : 2026-06-14 10:43 EDT · Généré : 2026-06-14 11:15 EDT · ↻ auto-refresh 5min</div>
+<h1>📊 VRP Monitor — 9 position(s) ouverte(s) (11 lots)
+  <a href="backtest.html" style="float:right;font-size:0.6em;font-weight:500;color:#58a6ff;text-decoration:none;border:1px solid #30363d;border-radius:6px;padding:5px 12px;background:#161b22">📊 Backtests &amp; Skew →</a></h1>
+<div class="subtitle">Données : 2026-06-14 10:43 EDT · Généré : 2026-06-14 15:22 EDT · ↻ auto-refresh 5min</div>
 
 <div class="header-bar">
   <div class="chip">
     <span class="chip-label">Spot BTC</span>
     <span class="chip-value">$63,863</span>
     <span class="chip-delta neg">-370$ (-0.58%) vs snapshot préc.</span>
-    <span class="chip-delta neg">4h -0.99% (-640$)</span>
-    <span class="chip-delta neg">1j -0.60% (-388$)</span>
+    <span class="chip-delta neg">4h -0.58% (-370$)</span>
+    <span class="chip-delta neg">1j -0.43% (-278$)</span>
   </div>
   <div class="chip" title="Latent = MtM des positions ouvertes (option latente + hedge flottant). Réalisé = options clôturées + rebalancements hedge déjà encaissés. Total = somme.">
     <span class="chip-label">PnL ouvert (latent)</span>
     <span class="chip-value pos">+788$</span>
     <span class="chip-delta neg">-41$ vs snapshot préc.</span>
-    <span class="chip-delta neg">-34$ sur 1j</span>
+    <span class="chip-delta pos">+5$ sur 1j</span>
     <span class="chip-delta neg">Réalisé cumulé -116$</span>
     <span class="chip-delta pos" style="border-top:1px solid #21262d;padding-top:2px;margin-top:2px">Total stratégie <b>+672$</b></span>
   </div>
@@ -1029,7 +1030,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
     <b>Sizing</b> : round(score<sup>1.5</sup> × (0.5 + 0.5 × rang DVOL 30j), 1) BTC · max 5 BTC
   </div>
 </div><div class="card full">
-  <h2>🔄 Historique hedge — 6 récente(s) / 26 au total  <span style="font-weight:400;color:#484f58">VWAP actuel $62,571.16 · Qty -0.26049 BTC</span></h2>
+  <h2>🔄 Historique hedge — 5 récente(s) / 26 au total  <span style="font-weight:400;color:#484f58">VWAP actuel $62,571.16 · Qty -0.26049 BTC</span></h2>
   <div style="overflow-x:auto">
   <table class="tbl">
     <tr>
@@ -1094,7 +1095,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
       <td><b>$61,821.17</b></td>
       <td><span style="color:#484f58">—</span></td>
       <td class="muted" style="font-size:0.75rem">entree opportuniste BTC-3JUL26-55000-P</td>
-    </tr><tr>
+    </tr><tr class="hh-old" style="display:none">
       <td class="left muted" style="font-size:0.78rem">2026-06-11 14:06 EDT</td>
       <td class="pos"><b>BUY</b></td>
       <td class="pos">+0.11676 BTC</td>
@@ -1330,7 +1331,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
   </div>
   <div style="margin-top:8px">
     <a href="#" id="hh-toggle" style="color:#58a6ff;font-size:0.8rem;text-decoration:none"
-       onclick="event.preventDefault();var o=document.querySelectorAll('.hh-old');var show=o[0].style.display==='none';o.forEach(r=>r.style.display=show?'':'none');this.textContent=show?'▲ Réduire (3 derniers jours)':'▼ Voir tout (20 exécutions plus anciennes)';">▼ Voir tout (20 exécutions plus anciennes)</a>
+       onclick="event.preventDefault();var o=document.querySelectorAll('.hh-old');var show=o[0].style.display==='none';o.forEach(r=>r.style.display=show?'':'none');this.textContent=show?'▲ Réduire (3 derniers jours)':'▼ Voir tout (21 exécutions plus anciennes)';">▼ Voir tout (21 exécutions plus anciennes)</a>
   </div>
 </div><div class="card full">
   <h2>📈 Positions clôturées — 4 roll(s)</h2>
@@ -1509,5 +1510,5 @@ new Chart(document.getElementById("chartVol"), {
 });
 </script>
 
-<footer>VRP Monitor · Généré le 2026-06-14 11:15 EDT · GitHub Actions · Auto-refresh 5 min</footer>
+<footer>VRP Monitor · Généré le 2026-06-14 15:22 EDT · GitHub Actions · Auto-refresh 5 min</footer>
 </body></html>
