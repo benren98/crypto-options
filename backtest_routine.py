@@ -23,7 +23,7 @@ OUT_FILE = "backtest_routine.json"
 # Config de PRODUCTION actuelle (référence des sweeps + ligne mise en avant)
 PROD = dict(
     W_IVHV=0.30, W_YIELD=0.25, W_SKEW=0.45,
-    SKEW_NORM=0.60, IVHV_NORM=1.50,
+    SKEW_NORM=0.60, IVHV_NORM=1.50, YLDNORM=0.30,
     HV5=0.0, HV10=0.5, HV30=0.5,
     ENTRY=0.45, PREMIUM=150.0, GPEN=5.0, GCAP=10.0,
     CONVEX=1.5, MAXBTC=5.0, RANKFLOOR=0.5,
@@ -33,7 +33,7 @@ PROD = dict(
 
 def _apply(c):
     bt.SCORE_W_IVHV, bt.SCORE_W_YIELD, bt.SCORE_W_SKEW = c['W_IVHV'], c['W_YIELD'], c['W_SKEW']
-    bt.SKEW_NORM, bt.IVHV_NORM = c['SKEW_NORM'], c['IVHV_NORM']
+    bt.SKEW_NORM, bt.IVHV_NORM, bt.YIELD_NORM = c['SKEW_NORM'], c['IVHV_NORM'], c['YLDNORM']
     bt.HV_W5, bt.HV_W10, bt.HV_W30 = c['HV5'], c['HV10'], c['HV30']
     bt.ENTRY_SCORE_MIN, bt.MIN_PREMIUM_USD = c['ENTRY'], c['PREMIUM']
     bt.GAMMA_PEN_START, bt.GAMMA_SCORE_CAP = c['GPEN'], c['GCAP']
@@ -186,6 +186,7 @@ def run(years=4.0):
                (0.25,0.20,0.55),(0.20,0.15,0.65),(0.50,0.25,0.25),(0.20,0.40,0.40)]),
         sweep("SKEW_NORM", 'SKEW_NORM', [0.15,0.20,0.30,0.40,0.50,0.60,0.80,1.0,1.2], lambda v:f"{v:.2f}"),
         sweep("IV/HV — normalisation", 'IVHV_NORM', [0.5,0.75,1.0,1.5,2.0,2.5,3.0], lambda v:f"{v:.2f}"),
+        sweep("Yield — normalisation", 'YLDNORM', [0.15,0.20,0.30,0.40,0.50,0.60], lambda v:f"{v:.2f}"),
         sweep("IV/HV — horizon HV (5/10/30j)", 'HV',
               [(0,0,1.0),(0,1.0,0),(1.0,0,0),(0,0.5,0.5),(0.5,0.5,0),(0.34,0.33,0.33),(0,0.7,0.3)],
               lambda v:{(0,0,1.0):"30j",(0,1.0,0):"10j",(1.0,0,0):"5j",(0,0.5,0.5):"10/30",
