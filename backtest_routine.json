@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-15 00:03:02 UTC",
+  "generated_at": "2026-06-15 00:09:36 UTC",
   "years": 4.0,
   "skew_fit": {
     "form": "iv_ratio = 1 + a(DVOL)*OTM% + b(DVOL)*OTM%^2, par bucket de maturité",
@@ -67,7 +67,7 @@
       "days": 1
     },
     "n_snapshots": 1,
-    "fitted_at": "2026-06-15 00:01:40 UTC"
+    "fitted_at": "2026-06-15 00:08:16 UTC"
   },
   "prod_config": {
     "W_IVHV": 0.3,
@@ -3993,7 +3993,7 @@
       "param": "SKEW_NORM",
       "results": [
         {
-          "pnl": 84897,
+          "pnl": 84898,
           "maxdd": 2706,
           "calmar": 11.82,
           "sharpe": 7.43,
@@ -4013,7 +4013,7 @@
           "is_best": false
         },
         {
-          "pnl": 84865,
+          "pnl": 84866,
           "maxdd": 2706,
           "calmar": 11.81,
           "sharpe": 7.43,
@@ -4177,6 +4177,8 @@
       "extend": false,
       "gain_vs_current": 0.0,
       "current_is_best": true,
+      "recommend_change": false,
+      "opt_label": "0.60",
       "best_label": "0.60",
       "best_calmar": 16.14,
       "best_worst_fold": 12.91,
@@ -4334,6 +4336,8 @@
       "extend": false,
       "gain_vs_current": 0.0,
       "current_is_best": true,
+      "recommend_change": false,
+      "opt_label": "10/30",
       "best_label": "10/30",
       "best_calmar": 16.14,
       "best_worst_fold": 12.91,
@@ -4407,7 +4411,7 @@
           "is_best": false
         },
         {
-          "pnl": 84750,
+          "pnl": 84751,
           "maxdd": 2085,
           "calmar": 15.31,
           "sharpe": 8.0,
@@ -4447,7 +4451,7 @@
           "is_best": true
         },
         {
-          "pnl": 79206,
+          "pnl": 79205,
           "maxdd": 4522,
           "calmar": 6.6,
           "sharpe": 6.05,
@@ -4467,7 +4471,7 @@
           "is_best": false
         },
         {
-          "pnl": 84258,
+          "pnl": 84257,
           "maxdd": 4664,
           "calmar": 6.81,
           "sharpe": 5.87,
@@ -4491,7 +4495,9 @@
       "extend": false,
       "gain_vs_current": 1.87,
       "current_is_best": false,
-      "best_label": "250$",
+      "recommend_change": false,
+      "opt_label": "250$",
+      "best_label": "150$",
       "best_calmar": 11.12,
       "best_worst_fold": 7.34,
       "best_mean_fold": 30.88,
@@ -4504,7 +4510,7 @@
       "param": "IV/HV — normalisation",
       "results": [
         {
-          "pnl": 77403,
+          "pnl": 77402,
           "maxdd": 2298,
           "calmar": 12.69,
           "sharpe": 6.96,
@@ -4544,7 +4550,7 @@
           "is_best": false
         },
         {
-          "pnl": 78064,
+          "pnl": 78065,
           "maxdd": 2091,
           "calmar": 14.06,
           "sharpe": 7.11,
@@ -4648,7 +4654,9 @@
       "extend": false,
       "gain_vs_current": 7.44,
       "current_is_best": false,
-      "best_label": "2.50",
+      "recommend_change": false,
+      "opt_label": "2.50",
+      "best_label": "1.50",
       "best_calmar": 20.69,
       "best_worst_fold": 12.52,
       "best_mean_fold": 36.45,
@@ -4661,7 +4669,7 @@
       "param": "CB — fermeture move 3j %",
       "results": [
         {
-          "pnl": 73698,
+          "pnl": 73699,
           "maxdd": 3214,
           "calmar": 8.64,
           "sharpe": 6.68,
@@ -4701,7 +4709,7 @@
           "is_best": false
         },
         {
-          "pnl": 81467,
+          "pnl": 81468,
           "maxdd": 3695,
           "calmar": 8.3,
           "sharpe": 6.85,
@@ -4721,7 +4729,7 @@
           "is_best": false
         },
         {
-          "pnl": 83269,
+          "pnl": 83263,
           "maxdd": 3695,
           "calmar": 8.49,
           "sharpe": 7.06,
@@ -4741,7 +4749,7 @@
           "is_best": false
         },
         {
-          "pnl": 85293,
+          "pnl": 85287,
           "maxdd": 3992,
           "calmar": 8.05,
           "sharpe": 7.6,
@@ -4751,9 +4759,9 @@
             52.75,
             40.41,
             24.68,
-            4.4
+            4.39
           ],
-          "worst_fold": 4.4,
+          "worst_fold": 4.39,
           "mean_fold": 32.83,
           "trades": 667,
           "label": "OFF",
@@ -4765,9 +4773,11 @@
       "extend": false,
       "gain_vs_current": 3.82,
       "current_is_best": false,
-      "best_label": "OFF",
+      "recommend_change": false,
+      "opt_label": "OFF",
+      "best_label": "−10%",
       "best_calmar": 8.05,
-      "best_worst_fold": 4.4,
+      "best_worst_fold": 4.39,
       "best_mean_fold": 32.83,
       "fold_wins": 1,
       "n_folds": 5,
@@ -4902,7 +4912,9 @@
       "extend": false,
       "gain_vs_current": 3.24,
       "current_is_best": false,
-      "best_label": "0.40",
+      "recommend_change": false,
+      "opt_label": "0.40",
+      "best_label": "0.30",
       "best_calmar": 20.47,
       "best_worst_fold": 14.26,
       "best_mean_fold": 32.25,
@@ -5019,7 +5031,9 @@
       "extend": true,
       "gain_vs_current": 3.59,
       "current_is_best": false,
-      "best_label": "7",
+      "recommend_change": false,
+      "opt_label": "7",
+      "best_label": "5",
       "best_calmar": 17.14,
       "best_worst_fold": 11.36,
       "best_mean_fold": 32.6,
@@ -5152,7 +5166,7 @@
           "is_best": false
         },
         {
-          "pnl": 84511,
+          "pnl": 84512,
           "maxdd": 2435,
           "calmar": 13.07,
           "sharpe": 7.46,
@@ -5172,7 +5186,7 @@
           "is_best": false
         },
         {
-          "pnl": 85170,
+          "pnl": 85171,
           "maxdd": 2347,
           "calmar": 13.67,
           "sharpe": 7.23,
@@ -5196,7 +5210,9 @@
       "extend": false,
       "gain_vs_current": 3.81,
       "current_is_best": false,
-      "best_label": "0.40",
+      "recommend_change": false,
+      "opt_label": "0.40",
+      "best_label": "0.50",
       "best_calmar": 17.94,
       "best_worst_fold": 12.38,
       "best_mean_fold": 32.82,
@@ -5313,7 +5329,9 @@
       "extend": false,
       "gain_vs_current": 0.78,
       "current_is_best": false,
-      "best_label": "+15",
+      "recommend_change": false,
+      "opt_label": "+15",
+      "best_label": "+12",
       "best_calmar": 16.26,
       "best_worst_fold": 12.91,
       "best_mean_fold": 29.79,
@@ -5446,7 +5464,7 @@
           "is_best": true
         },
         {
-          "pnl": 84073,
+          "pnl": 84074,
           "maxdd": 1678,
           "calmar": 18.87,
           "sharpe": 8.16,
@@ -5490,7 +5508,9 @@
       "extend": false,
       "gain_vs_current": 0.49,
       "current_is_best": false,
-      "best_label": "0.65",
+      "recommend_change": false,
+      "opt_label": "0.65",
+      "best_label": "0.45",
       "best_calmar": 16.81,
       "best_worst_fold": 14.45,
       "best_mean_fold": 29.5,
@@ -5603,7 +5623,7 @@
           "is_best": false
         },
         {
-          "pnl": 83686,
+          "pnl": 83687,
           "maxdd": 2162,
           "calmar": 14.58,
           "sharpe": 7.77,
@@ -5623,7 +5643,7 @@
           "is_best": false
         },
         {
-          "pnl": 85079,
+          "pnl": 85080,
           "maxdd": 1730,
           "calmar": 18.52,
           "sharpe": 8.35,
@@ -5645,7 +5665,7 @@
         {
           "pnl": 83765,
           "maxdd": 1783,
-          "calmar": 17.69,
+          "calmar": 17.7,
           "sharpe": 8.05,
           "worst": -1341,
           "folds": [
@@ -5667,7 +5687,9 @@
       "extend": false,
       "gain_vs_current": 3.36,
       "current_is_best": false,
-      "best_label": "0.35/0.3/0.35",
+      "recommend_change": false,
+      "opt_label": "0.35/0.3/0.35",
+      "best_label": "0.3/0.25/0.45",
       "best_calmar": 18.51,
       "best_worst_fold": 12.84,
       "best_mean_fold": 32.37,
@@ -5700,7 +5722,7 @@
           "is_best": false
         },
         {
-          "pnl": 82763,
+          "pnl": 82764,
           "maxdd": 1976,
           "calmar": 15.78,
           "sharpe": 7.68,
@@ -5784,7 +5806,9 @@
       "extend": false,
       "gain_vs_current": 3.28,
       "current_is_best": false,
-      "best_label": "1.75",
+      "recommend_change": false,
+      "opt_label": "1.75",
+      "best_label": "1.50",
       "best_calmar": 18.17,
       "best_worst_fold": 12.7,
       "best_mean_fold": 32.29,
@@ -5797,7 +5821,7 @@
       "param": "CB — allègement move 3j %",
       "results": [
         {
-          "pnl": 81789,
+          "pnl": 81790,
           "maxdd": 2409,
           "calmar": 12.79,
           "sharpe": 7.97,
@@ -5857,7 +5881,7 @@
           "is_best": false
         },
         {
-          "pnl": 84916,
+          "pnl": 84917,
           "maxdd": 2012,
           "calmar": 15.89,
           "sharpe": 7.9,
@@ -5901,6 +5925,8 @@
       "extend": false,
       "gain_vs_current": 0.0,
       "current_is_best": true,
+      "recommend_change": false,
+      "opt_label": "−6%",
       "best_label": "−6%",
       "best_calmar": 16.14,
       "best_worst_fold": 12.91,
@@ -5954,7 +5980,7 @@
           "is_best": true
         },
         {
-          "pnl": 86199,
+          "pnl": 86200,
           "maxdd": 2038,
           "calmar": 15.94,
           "sharpe": 8.14,
@@ -6018,6 +6044,8 @@
       "extend": false,
       "gain_vs_current": 0.0,
       "current_is_best": true,
+      "recommend_change": false,
+      "opt_label": "30%",
       "best_label": "30%",
       "best_calmar": 16.14,
       "best_worst_fold": 12.91,
@@ -6135,7 +6163,9 @@
       "extend": false,
       "gain_vs_current": 2.07,
       "current_is_best": false,
-      "best_label": "−4%",
+      "recommend_change": false,
+      "opt_label": "−4%",
+      "best_label": "−5%",
       "best_calmar": 17.47,
       "best_worst_fold": 12.03,
       "best_mean_fold": 31.08,
@@ -6232,7 +6262,9 @@
       "extend": false,
       "gain_vs_current": 0.27,
       "current_is_best": false,
-      "best_label": "4%",
+      "recommend_change": false,
+      "opt_label": "4%",
+      "best_label": "3%",
       "best_calmar": 16.28,
       "best_worst_fold": 11.91,
       "best_mean_fold": 29.28,
@@ -6369,7 +6401,9 @@
       "extend": true,
       "gain_vs_current": 0.0,
       "current_is_best": false,
-      "best_label": "3",
+      "recommend_change": false,
+      "opt_label": "3",
+      "best_label": "5",
       "best_calmar": 16.14,
       "best_worst_fold": 12.91,
       "best_mean_fold": 29.01,

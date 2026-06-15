@@ -174,9 +174,16 @@ def run(years=4.0):
         gain = None
         if cur is not None and best.get('mean_fold') is not None and cur.get('mean_fold') is not None:
             gain = round(best['mean_fold'] - cur['mean_fold'], 2)
+        # On ne RECOMMANDE un changement que s'il est robuste ET significatif (≥1.0 de Calmar).
+        # Sinon « garder l'actuel » — évite de suggérer du bruit (ex. seuil 0.65 inerte).
+        MIN_GAIN = 1.0
+        recommend_change = bool(robust and gain is not None and gain >= MIN_GAIN)
         return dict(param=name, results=results, sensitivity=round(max(cals)-min(cals), 2),
                     extend=extend, gain_vs_current=gain, current_is_best=(cur is best),
-                    best_label=best['label'], best_calmar=best['calmar'],
+                    recommend_change=recommend_change,
+                    opt_label=best['label'],                              # optimum sous fit (info)
+                    best_label=(best['label'] if recommend_change else (cur['label'] if cur else best['label'])),
+                    best_calmar=best['calmar'],
                     best_worst_fold=best.get('worst_fold'), best_mean_fold=best.get('mean_fold'),
                     fold_wins=wins, n_folds=NFOLDS, plateau=plateau, robust=robust)
 
@@ -219,12 +226,17 @@ def run(years=4.0):
         elif not s['plateau']:          verdict = "⚠ pic isolé"
         else:                           verdict = "⚠ limite"
         gv = s.get('gain_vs_current')
-        gtag = "=actuel" if (s.get('current_is_best') or (gv is not None and gv <= 0.01)) else (f"+{gv}" if gv is not None else "?")
+        if s.get('recommend_change'):
+            gtag = f"+{gv}"
+        elif s.get('current_is_best') or (gv is not None and gv <= 0.01):
+            gtag = "=actuel"
+        else:
+            gtag = "garder"     # un optimum existe mais non robuste/marginal → ne pas suivre
         print(f"  {s['param']:<32} {s['sensitivity']:>5} {s['best_label']:>10} {gtag:>7} "
               f"{g(s['best_worst_fold']):>8} {g(s['best_mean_fold']):>7} {s['fold_wins']}/{s['n_folds']:>1}  {verdict}")
 
-    actionable = [f"{s['param']}→{s['best_label']}" for s in ranked if s['robust'] and s['sensitivity'] >= 1.0]
-    print(f"\n  → À ajuster en priorité (robuste sur la majorité des régimes, plateau, sensible) :")
+    actionable = [f"{s['param']}→{s['opt_label']} (+{s['gain_vs_current']})" for s in ranked if s.get('recommend_change')]
+    print(f"\n  → À ajuster en priorité (robuste, gain ≥1.0 vs actuel, multi-régimes) :")
     print(f"     {chr(10)+'     '.join(actionable) if actionable else 'aucun — données insuffisantes / pas de gain robuste'}")
     print(f"  Rappel anti-overfit : changer 1-2 params à la fois, confirmer sur ETH, ne pas empiler les optima.")
 

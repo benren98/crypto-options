@@ -64,17 +64,19 @@ def _verdict(s):
 
 
 def _sweep_table(s):
+    rec = s.get("recommend_change", False)
     rows = ""
     for r in s["results"]:
-        is_best = r.get("is_best", False)       # = recommandé (maximin multi-régimes)
+        is_opt = r.get("is_best", False)        # optimum maximin sous le fit
         is_cur = r.get("is_current", False)
         style = ' style="'
-        if is_best: style += 'background:#1f6f3f33;'
-        if is_cur:  style += 'border-left:3px solid #58a6ff;'
+        if is_opt and rec: style += 'background:#1f6f3f33;'   # vert seulement si on l'adopte
+        if is_cur:         style += 'border-left:3px solid #58a6ff;'
         style += '"'
         tags = ""
         if is_cur:  tags += ' <span class="tag cur">actuel</span>'
-        if is_best: tags += ' <span class="tag best">reco★</span>'
+        if is_opt and rec:       tags += ' <span class="tag best">✓ adopter</span>'
+        elif is_opt and not is_cur: tags += ' <span class="tag isb">opt. (non suivi)</span>'
         def cl(c): return "pos" if (c or 0) >= 2 else ("warn" if (c or 0) >= 1 else "neg")
         wf = r.get("worst_fold"); mf = r.get("mean_fold")
         rows += (f'<tr{style}><td>{r["label"]}{tags}</td><td>{r["pnl"]:,}$</td>'
@@ -85,12 +87,12 @@ def _sweep_table(s):
     vtxt, vcl = _verdict(s)
     wins = f' · gagne {s.get("fold_wins","?")}/{s.get("n_folds","?")} folds' if s["sensitivity"] >= 0.5 else ""
     g = s.get("gain_vs_current")
-    if s.get("current_is_best") or (g is not None and g <= 0.01):
+    if rec:
+        gain_html = f'<span class="tag best">→ adopter {s.get("opt_label")} (+{g})</span>'
+    elif s.get("current_is_best") or (g is not None and g <= 0.01):
         gain_html = '<span class="tag best">déjà optimal</span>'
-    elif g is not None:
-        gain_html = f'<span class="tag cur">gain +{g} vs actuel</span>'
     else:
-        gain_html = ""
+        gain_html = '<span class="tag isb">garder l\'actuel (opt. non robuste)</span>'
     return f"""
     <div class="card">
       <h3>{s['param']} {gain_html} <span class="sens {sbadge}">amplitude ΔCalmar {s['sensitivity']}</span>
