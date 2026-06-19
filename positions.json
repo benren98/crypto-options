@@ -362,10 +362,10 @@
     }
   ],
   "hedge": {
-    "qty": -0.151,
+    "qty": -0.09607,
     "avg_entry": 63286.44,
-    "rebalances": 31,
-    "realized_pnl_usd": -1520.51,
+    "rebalances": 32,
+    "realized_pnl_usd": -1518.24,
     "history": [
       {
         "ts": "2026-06-07 03:32:05 UTC",
@@ -793,6 +793,21 @@
         "realized_cumul_usd": -1520.51,
         "delta_net_after_pct": -0.0,
         "note": "hedge net apr\u00e8s entr\u00e9e (BTC-26JUN26-55000-P) \u00b7 rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
+      },
+      {
+        "ts": "2026-06-19 22:44:59 UTC",
+        "side": "BUY",
+        "qty": 0.05493,
+        "spot": 63245.13,
+        "qty_before": -0.151,
+        "qty_after": -0.09607,
+        "vwap_before": 63286.44,
+        "vwap_after": 63286.44,
+        "drift": 0.05493,
+        "realized_pnl_usd": 2.27,
+        "realized_cumul_usd": -1518.24,
+        "delta_net_after_pct": 0.0,
+        "note": "rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
       }
     ]
   },
@@ -1617,23 +1632,5 @@
     "ts": "2026-06-18 16:53:38 UTC",
     "move_1d_pct": -5.25,
     "move_3d_pct": -6.34
-  },
-  "open": {
-    "instrument_name": "BTC-26JUN26-58000-P",
-    "strike": 58000.0,
-    "expiry_dt": "2026-06-26 08:00:00+00:00",
-    "tte_at_entry": 17.27,
-    "delta_at_entry": -0.21608,
-    "gamma_at_entry": 4e-05,
-    "vega_at_entry": 40.06,
-    "theta_at_entry": -58.2482,
-    "iv_at_entry": 50.37,
-    "entry_price": 0.014,
-    "entry_mark_price": 0.0143,
-    "entry_price_usd": 879.69,
-    "entry_spot": 62835.18,
-    "contracts": 0.3,
-    "entry_ts": "2026-06-09 01:28:42 UTC",
-    "note": "Position fictive ouverte manuellement le 2026-06-09"
   }
 }
