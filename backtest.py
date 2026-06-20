@@ -37,6 +37,8 @@ MIN_PREMIUM_USD   = 150.0   # plancher de prime au bid ($/BTC) — anti-poussiè
 SCORE_W_IVHV      = 0.30
 SCORE_W_YIELD     = 0.25
 SCORE_W_SKEW      = 0.45
+ENTRY_SCORE_REENTRY_BOOST = 0.05  # marge au-dessus du score d'entrée pour recharger un instrument tenu
+DELTA_MIN_SPACING         = 0.04  # filtre diversification : exclut candidat si |delta − delta_tenu| < seuil
 
 # ── Paramètres modèle de pricing ───────────────────────────────────────────────
 SKEW_SLOPE        = 0.013   # IV(K) = DVOL × (1 + 0.013 × OTM%) — calibré juin 2026 (~1.3%/pt OTM)
@@ -325,6 +327,24 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         eff_cap = MAX_PORTFOLIO_BTC * (CB_T1_KEEP if cb_reduced else 1.0)   # cap réduit si allègement
         must_open = always_one and not positions and not risk_off
         if not risk_off and ((dvol >= DVOL_MIN and used < eff_cap) or must_open):
+            # Résumé des positions tenues pour filtres de diversification et ré-entrée
+            # (approximation delta via OTM, pas d'accès au delta exact en backtest)
+            held = {}  # strike → {delta_approx, score_entry, tte_left}
+            for p in positions:
+                otm_p = (S - p['strike']) / S * 100
+                _, d_p, _ = bs_put(S, p['strike'], p['tte_left']/365, dvol/100)
+                held[p['strike']] = {'delta': d_p, 'score': p.get('score_entry', ENTRY_SCORE_MIN),
+                                     'tte': p['tte_left']}
+
+            def _allowed(K_c, delta_c, score_c, tte_c):
+                """Filtre proximité + boost ré-entrée (miroir greeks_hedge._candidate_allowed)."""
+                if K_c in held:
+                    return score_c > held[K_c]['score'] + ENTRY_SCORE_REENTRY_BOOST
+                for h in held.values():
+                    if h['tte'] == tte_c and abs(delta_c - h['delta']) < DELTA_MIN_SPACING:
+                        return False
+                return True
+
             best = None
             for tte in TTE_CHOICES:
                 T = tte / 365
@@ -348,8 +368,11 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                     g_pts   = gamma * S * 0.01 * 100
                     g_fac   = max(0.0, 1.0 - max(0.0, g_pts - GAMMA_PEN_START) / (GAMMA_SCORE_CAP - GAMMA_PEN_START))
                     score   = (SCORE_W_IVHV*s_ivhv + SCORE_W_YIELD*s_yield + SCORE_W_SKEW*s_skew) * g_fac
+                    if not _allowed(K, delta, score, tte):
+                        continue
                     if best is None or score > best['score']:
-                        best = {'score': score, 'K': K, 'tte': tte, 'price': price, 'otm': otm}
+                        best = {'score': score, 'K': K, 'tte': tte, 'price': price, 'otm': otm,
+                                'delta': delta}
             ok = best and (best['score'] >= ENTRY_SCORE_MIN or must_open)
             if ok:
                 size = round(best['score'] ** SIZE_CONVEXITY * rank_mult(iv_rank), 1)
@@ -358,6 +381,8 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                     positions.append({
                         'strike': best['K'], 'tte_left': best['tte'], 'contracts': size,
                         'entry_premium_usd': best['price'] * size,
+                        'score_entry': best['score'],
+                        'delta_entry': best['delta'],
                     })
                     n_trades += 1
 

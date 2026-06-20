@@ -28,6 +28,7 @@ PROD = dict(
     ENTRY=0.45, PREMIUM=150.0, GPEN=5.0, GCAP=10.0,
     CONVEX=1.5, MAXBTC=5.0, RANKFLOOR=0.5,
     CB_T2M=10.0, CB_T2D=12.0, CB_T1M1=5.0, CB_T1M3=6.0, CB_T1K=0.30, CB_T1R=3.0,
+    REENTRY_BOOST=0.05,
 )
 
 
@@ -41,6 +42,7 @@ def _apply(c):
     bt.CB_MOVE_3D_PCT, bt.CB_DVOL_3D_PTS = c['CB_T2M'], c['CB_T2D']
     bt.CB_T1_MOVE_1D, bt.CB_T1_MOVE_3D = c['CB_T1M1'], c['CB_T1M3']
     bt.CB_T1_KEEP, bt.CB_T1_RESTORE = c['CB_T1K'], c['CB_T1R']
+    bt.ENTRY_SCORE_REENTRY_BOOST = c['REENTRY_BOOST']
 
 
 def _stats(ec):
@@ -210,6 +212,7 @@ def run(years=4.0):
         sweep("CB — allègement move 3j %", 'CB_T1M3', [5.0,6.0,7.0,8.0,100.0], lambda v:"OFF" if v>=100 else f"−{int(v)}%"),
         sweep("CB — allègement keep", 'CB_T1K', [0.2,0.3,0.4,0.5,1.0], lambda v:"OFF" if v>=1 else f"{v:.0%}"),
         sweep("CB — reprise move 3j %", 'CB_T1R', [2.0,3.0,4.0,5.0], lambda v:f"{v:.0f}%"),
+        sweep("Re-entrée boost", 'REENTRY_BOOST', [0.0,0.03,0.05,0.08,0.10,0.15], lambda v:f"+{v:.2f}"),
     ]
 
     ranked = sorted(sweeps, key=lambda s: -s['sensitivity'])
