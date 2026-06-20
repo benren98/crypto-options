@@ -1192,30 +1192,89 @@ else:
     html += _scan_entry_card()
     html += _hedge_history_card()
 
-    # Historique des clôtures
+    # Historique des clôtures — n'affiche que les 7 derniers jours, le reste repliable ;
+    # chaque ligne est cliquable pour déplier le détail complet de la position clôturée.
     if hist:
-        h_rows = ""
-        for h in hist:
-            pnl_h = float(h.get("pnl_usd",0))
-            h_rows += f"""<tr>
+        CLOSED_HISTORY_DAYS = 7
+        REASON_LABEL = {
+            "circuit_breaker": "🛑 Circuit breaker (fermeture totale)",
+            "cb_tier1_trim":   "⚠️ CB palier 1 (allègement)",
+            "expiry":          "⏱️ Expiration",
+            "roll":            "🔁 Roll",
+            "expired":         "⏱️ Expiration",
+        }
+        c_cutoff = datetime.now(timezone.utc) - timedelta(days=CLOSED_HISTORY_DAYS)
+
+        def _closed_detail(h) -> str:
+            entry_p  = float(h.get("entry_price", 0))
+            exit_p   = float(h.get("exit_price", 0))
+            entry_s  = float(h.get("entry_spot", 0))
+            exit_s   = float(h.get("exit_spot", 0))
+            ctr      = float(h.get("contracts", 1))
+            strike   = h.get("strike")
+            pnl_btc  = h.get("pnl_btc")
+            items = [
+                ("Contrats", f"{f(ctr,4)}"),
+                ("Strike", f"${f(strike,0)}" if strike else "—"),
+                ("Prime entrée (bid)", f"{f(entry_p,5)} BTC  (${f(entry_p*entry_s,0)})"),
+                ("Prix sortie (ask)", f"{f(exit_p,5)} BTC  (${f(exit_p*exit_s,0)})"),
+                ("Spot entrée", f"${f(entry_s,0)}"),
+                ("Spot sortie", f"${f(exit_s,0)}"),
+                ("Entrée", str(h.get("entry_ts",""))[:16].replace("T"," ")),
+                ("Sortie", str(h.get("exit_ts",""))[:16].replace("T"," ")),
+                ("PnL (BTC)", f"{f(pnl_btc,6,True)}" if pnl_btc is not None else "—"),
+                ("PnL (USD)", f"{f(float(h.get('pnl_usd',0)),2,True)}$"),
+            ]
+            cells = "".join(
+                f'<div style="display:flex;justify-content:space-between;gap:12px;padding:2px 0">'
+                f'<span style="color:#8b949e">{k}</span><span>{v}</span></div>'
+                for k, v in items)
+            return (f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));'
+                    f'gap:4px 24px;padding:8px 12px;font-size:0.8rem">{cells}</div>')
+
+        def _closed_row(h, idx, hidden=False):
+            pnl_h  = float(h.get("pnl_usd", 0))
+            reason = h.get("exit_reason", "—")
+            r_lbl  = REASON_LABEL.get(reason, reason)
+            cls    = ' class="ch-old" style="display:none"' if hidden else ""
+            dcls   = ' class="ch-old"' if hidden else ""
+            return f"""<tr{cls} style="cursor:pointer" onclick="var d=document.getElementById('cd-{idx}');d.style.display=d.style.display==='none'?'table-row':'none';">
           <td class="left">{h.get("instrument_name","?")}</td>
           <td class="muted">{str(h.get("entry_ts",""))[:10]}</td>
           <td class="muted">{str(h.get("exit_ts",""))[:10]}</td>
           <td class="{color(pnl_h)}"><b>{f(pnl_h,0,True)}$</b></td>
-          <td class="muted">{h.get("exit_reason","—")}</td>
-        </tr>"""
+          <td class="muted">{r_lbl} <span style="color:#58a6ff;font-size:0.72rem">▾ détail</span></td>
+        </tr>
+        <tr id="cd-{idx}"{dcls} style="display:none"><td colspan="5" style="background:#0d1117;padding:0">{_closed_detail(h)}</td></tr>"""
+
+        h_sorted = sorted(hist, key=lambda h: (_parse_ts(h.get("exit_ts")) or datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
+        recent = [h for h in h_sorted if (_parse_ts(h.get("exit_ts")) or c_cutoff) >= c_cutoff]
+        older  = [h for h in h_sorted if h not in recent]
+
+        h_rows = "".join(_closed_row(h, i) for i, h in enumerate(recent))
+        h_rows += "".join(_closed_row(h, len(recent)+i, hidden=True) for i, h in enumerate(older))
+
+        toggle = ""
+        if older:
+            older_pnl = sum(float(h.get("pnl_usd",0)) for h in older)
+            toggle = f"""<div style="margin-top:8px">
+    <a href="#" id="ch-toggle" style="color:#58a6ff;font-size:0.8rem;text-decoration:none"
+       onclick="event.preventDefault();var o=document.querySelectorAll('.ch-old');var show=o[0].style.display==='none';o.forEach(r=>{{if(r.id&&r.id.indexOf('cd-')===0){{r.style.display='none';}}else{{r.style.display=show?'':'none';}}}});this.textContent=show?'▲ Réduire (7 derniers jours)':'▼ Voir tout ({len(older)} clôture(s) plus anciennes · {f(older_pnl,0,True)}$)';">▼ Voir tout ({len(older)} clôture(s) plus anciennes · {f(older_pnl,0,True)}$)</a>
+  </div>"""
+
         html += f"""<div class="card full">
-  <h2>📈 Positions clôturées — {len(hist)} roll(s)</h2>
+  <h2>📈 Positions clôturées — {len(recent)} sur 7j / {len(hist)} au total</h2>
   <table class="tbl">
     <tr><th style="text-align:left">Instrument</th><th style="text-align:left">Entrée</th>
         <th style="text-align:left">Sortie</th><th>PnL</th><th style="text-align:left">Raison</th></tr>
     {h_rows}
     <tr style="border-top:1px solid #30363d;font-weight:600">
-      <td colspan="3">TOTAL RÉALISÉ</td>
+      <td colspan="3">TOTAL RÉALISÉ ({len(hist)} clôture(s))</td>
       <td class="{color(pnl_hist_total)}">{f(pnl_hist_total,0,True)}$</td>
       <td></td>
     </tr>
   </table>
+  {toggle}
 </div>"""
 
     html += "</div>\n"  # ferme la grille
@@ -1231,7 +1290,19 @@ if pnl_history:
     iv_data      = [p.get("iv_pct",0)       for p in pnl_history]
     pnl_opt      = [p.get("pnl_option",0)   for p in pnl_history]
     pnl_hdg      = [p.get("pnl_hedge",0)    for p in pnl_history]
-    pnl_tot      = [p.get("pnl_total",0)    for p in pnl_history]
+    # pnl_total des snapshots = latent options ouvertes + hedge (flottant+réalisé) + funding.
+    # Il EXCLUT le réalisé des options clôturées (history) → diverge du header/card
+    # « Total stratégie » dès qu'une position est clôturée (expiry, CB). On le ré-aligne en
+    # ajoutant, à chaque snapshot, le réalisé-options cumulé jusqu'à son timestamp.
+    _closed_opts = sorted(
+        ((_parse_ts(h.get("exit_ts")), float(h.get("pnl_usd", 0))) for h in hist),
+        key=lambda x: (x[0] or datetime.min.replace(tzinfo=timezone.utc)))
+    def _realized_opt_upto(ts_dt):
+        if ts_dt is None:
+            return 0.0
+        return sum(p for (t, p) in _closed_opts if t is not None and t <= ts_dt)
+    pnl_tot      = [round(float(p.get("pnl_total", 0)) + _realized_opt_upto(_parse_ts(p.get("ts"))), 2)
+                    for p in pnl_history]
     spot_data    = [p.get("spot",0)         for p in pnl_history]
     n_pos_data   = [p.get("n_positions",1)  for p in pnl_history]
 
