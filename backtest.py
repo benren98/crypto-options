@@ -337,12 +337,14 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                                      'tte': p['tte_left']}
 
             def _allowed(K_c, delta_c, score_c, tte_c):
-                """Filtre proximité + boost ré-entrée (miroir greeks_hedge._candidate_allowed)."""
+                """Filtre ré-entrée unifié (miroir greeks_hedge._candidate_allowed).
+                Même instrument ou delta proche sur même expiry → autorisé seulement si
+                score nettement meilleur que la position similaire tenue (+ boost)."""
                 if K_c in held:
                     return score_c > held[K_c]['score'] + ENTRY_SCORE_REENTRY_BOOST
                 for h in held.values():
                     if h['tte'] == tte_c and abs(delta_c - h['delta']) < DELTA_MIN_SPACING:
-                        return False
+                        return score_c > h['score'] + ENTRY_SCORE_REENTRY_BOOST
                 return True
 
             best = None

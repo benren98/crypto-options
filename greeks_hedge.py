@@ -1062,10 +1062,11 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         if name in held_info:
             return c_score > held_info[name]["score"] + ENTRY_SCORE_REENTRY_BOOST
 
-        # Diversification : exclure si trop proche d'une position tenue (même expiry + delta proche)
+        # Diversification : candidat proche en delta sur même expiry → traité comme ré-entrée implicite
+        # (autorisé seulement si score nettement meilleur que la position similaire tenue)
         for h in held_info.values():
             if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING:
-                return False
+                return c_score > h["score"] + ENTRY_SCORE_REENTRY_BOOST
         return True
 
     # Cap effectif réduit pendant l'allègement gradué (CB tier 1)
@@ -1293,7 +1294,8 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                 return "held_reentry" if reentry_ok else "held"
             for h in _held_info.values():
                 if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING:
-                    return "filtered"  # trop proche d'une position tenue
+                    reentry_ok = c_score > h["score"] + ENTRY_SCORE_REENTRY_BOOST
+                    return "held_reentry" if reentry_ok else "filtered"
             return "eligible"
 
         if not _scan_candidates.empty:
