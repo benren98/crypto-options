@@ -1042,18 +1042,21 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     used_btc_now = sum(float(p.get("contracts", 1)) for p in open_positions_now)
 
     # Infos des positions tenues pour filtres de diversification et re-entrée.
-    # Plusieurs lots du même instrument possible (CB trim + ré-entrée) : on garde le score MAX
-    # pour que la ré-entrée doive battre le meilleur lot déjà tenu.
-    held_info: dict = {}
+    # Plusieurs lots du même instrument possible (CB trim + ré-entrée) : score = moyenne pondérée
+    # par contrats (coût moyen de la position agrégée).
+    _held_acc: dict = {}   # name → {expiry, delta, sum_sc_x_ctr, sum_ctr}
     for p in open_positions_now:
         name = p["instrument_name"]
         sc   = float(p.get("entry_score", ENTRY_SCORE_MIN))
-        if name not in held_info or sc > held_info[name]["score"]:
-            held_info[name] = {
-                "expiry": str(p.get("expiry_dt", ""))[:10],
-                "delta":  float(p.get("delta_at_entry", 0)),
-                "score":  sc,
-            }
+        ctr  = float(p.get("contracts", 1))
+        if name not in _held_acc:
+            _held_acc[name] = {"expiry": str(p.get("expiry_dt", ""))[:10],
+                               "delta": float(p.get("delta_at_entry", 0)),
+                               "sum_sc": 0.0, "sum_ctr": 0.0}
+        _held_acc[name]["sum_sc"]  += sc * ctr
+        _held_acc[name]["sum_ctr"] += ctr
+    held_info = {name: {**v, "score": v["sum_sc"] / v["sum_ctr"]}
+                 for name, v in _held_acc.items()}
 
     def _candidate_allowed(row) -> bool:
         """Renvoie True si le candidat peut être entré (diversification + re-entrée)."""
@@ -1067,11 +1070,12 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             return c_score > held_info[name]["score"] + ENTRY_SCORE_REENTRY_BOOST
 
         # Diversification : candidat proche en delta sur même expiry → traité comme ré-entrée implicite.
-        # On compare au MAX score parmi tous les lots proches (le plus dur à battre).
-        close_scores = [h["score"] for h in held_info.values()
-                        if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING]
-        if close_scores:
-            return c_score > max(close_scores) + ENTRY_SCORE_REENTRY_BOOST
+        # On compare au score moyen pondéré des lots proches (coût moyen agrégé).
+        close = [(h["score"], h.get("sum_ctr", 1.0)) for h in held_info.values()
+                 if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING]
+        if close:
+            wavg = sum(s * w for s, w in close) / sum(w for _, w in close)
+            return c_score > wavg + ENTRY_SCORE_REENTRY_BOOST
         return True
 
     # Cap effectif réduit pendant l'allègement gradué (CB tier 1)
@@ -1275,16 +1279,19 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     # ── Sauvegarder scan_entry.json (top opportunités pour le dashboard) ─────────
     try:
         _positions_now = state.get("positions", [])
-        _held_info: dict = {}
+        _held_acc2: dict = {}
         for _p in _positions_now:
             _name = _p["instrument_name"]
             _sc   = float(_p.get("entry_score", ENTRY_SCORE_MIN))
-            if _name not in _held_info or _sc > _held_info[_name]["score"]:
-                _held_info[_name] = {
-                    "expiry": str(_p.get("expiry_dt", ""))[:10],
-                    "delta":  float(_p.get("delta_at_entry", 0)),
-                    "score":  _sc,
-                }
+            _ctr  = float(_p.get("contracts", 1))
+            if _name not in _held_acc2:
+                _held_acc2[_name] = {"expiry": str(_p.get("expiry_dt", ""))[:10],
+                                     "delta": float(_p.get("delta_at_entry", 0)),
+                                     "sum_sc": 0.0, "sum_ctr": 0.0}
+            _held_acc2[_name]["sum_sc"]  += _sc * _ctr
+            _held_acc2[_name]["sum_ctr"] += _ctr
+        _held_info = {n: {**v, "score": v["sum_sc"] / v["sum_ctr"]}
+                      for n, v in _held_acc2.items()}
         _scan_candidates = fetch_scored_candidates(
             currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
@@ -1299,10 +1306,11 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                 held_score = _held_info[name]["score"]
                 reentry_ok = c_score > held_score + ENTRY_SCORE_REENTRY_BOOST
                 return "held_reentry" if reentry_ok else "held"
-            close_sc = [h["score"] for h in _held_info.values()
-                        if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING]
-            if close_sc:
-                reentry_ok = c_score > max(close_sc) + ENTRY_SCORE_REENTRY_BOOST
+            close2 = [(h["score"], h.get("sum_ctr", 1.0)) for h in _held_info.values()
+                      if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING]
+            if close2:
+                wavg2 = sum(s * w for s, w in close2) / sum(w for _, w in close2)
+                reentry_ok = c_score > wavg2 + ENTRY_SCORE_REENTRY_BOOST
                 return "held_reentry" if reentry_ok else "filtered"
             return "eligible"
 
@@ -1314,10 +1322,10 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             c_delta = float(row.get("delta", 0))
             if name in _held_info:
                 return _held_info[name]["score"]
-            close_sc = [h["score"] for h in _held_info.values()
-                        if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING]
-            if close_sc:
-                return max(close_sc)
+            close3 = [(h["score"], h.get("sum_ctr", 1.0)) for h in _held_info.values()
+                      if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING]
+            if close3:
+                return sum(s * w for s, w in close3) / sum(w for _, w in close3)
             return None
 
         if not _scan_candidates.empty:
