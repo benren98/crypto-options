@@ -1041,15 +1041,19 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     open_positions_now = state.get("positions", [])
     used_btc_now = sum(float(p.get("contracts", 1)) for p in open_positions_now)
 
-    # Infos des positions tenues pour filtres de diversification et re-entrée
-    held_info = {
-        p["instrument_name"]: {
-            "expiry": str(p.get("expiry_dt", ""))[:10],
-            "delta":  float(p.get("delta_at_entry", 0)),
-            "score":  float(p.get("entry_score", ENTRY_SCORE_MIN)),
-        }
-        for p in open_positions_now
-    }
+    # Infos des positions tenues pour filtres de diversification et re-entrée.
+    # Plusieurs lots du même instrument possible (CB trim + ré-entrée) : on garde le score MAX
+    # pour que la ré-entrée doive battre le meilleur lot déjà tenu.
+    held_info: dict = {}
+    for p in open_positions_now:
+        name = p["instrument_name"]
+        sc   = float(p.get("entry_score", ENTRY_SCORE_MIN))
+        if name not in held_info or sc > held_info[name]["score"]:
+            held_info[name] = {
+                "expiry": str(p.get("expiry_dt", ""))[:10],
+                "delta":  float(p.get("delta_at_entry", 0)),
+                "score":  sc,
+            }
 
     def _candidate_allowed(row) -> bool:
         """Renvoie True si le candidat peut être entré (diversification + re-entrée)."""
@@ -1062,11 +1066,12 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         if name in held_info:
             return c_score > held_info[name]["score"] + ENTRY_SCORE_REENTRY_BOOST
 
-        # Diversification : candidat proche en delta sur même expiry → traité comme ré-entrée implicite
-        # (autorisé seulement si score nettement meilleur que la position similaire tenue)
-        for h in held_info.values():
-            if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING:
-                return c_score > h["score"] + ENTRY_SCORE_REENTRY_BOOST
+        # Diversification : candidat proche en delta sur même expiry → traité comme ré-entrée implicite.
+        # On compare au MAX score parmi tous les lots proches (le plus dur à battre).
+        close_scores = [h["score"] for h in held_info.values()
+                        if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING]
+        if close_scores:
+            return c_score > max(close_scores) + ENTRY_SCORE_REENTRY_BOOST
         return True
 
     # Cap effectif réduit pendant l'allègement gradué (CB tier 1)
@@ -1270,14 +1275,16 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     # ── Sauvegarder scan_entry.json (top opportunités pour le dashboard) ─────────
     try:
         _positions_now = state.get("positions", [])
-        _held_info = {
-            p["instrument_name"]: {
-                "expiry": str(p.get("expiry_dt", ""))[:10],
-                "delta":  float(p.get("delta_at_entry", 0)),
-                "score":  float(p.get("entry_score", ENTRY_SCORE_MIN)),
-            }
-            for p in _positions_now
-        }
+        _held_info: dict = {}
+        for _p in _positions_now:
+            _name = _p["instrument_name"]
+            _sc   = float(_p.get("entry_score", ENTRY_SCORE_MIN))
+            if _name not in _held_info or _sc > _held_info[_name]["score"]:
+                _held_info[_name] = {
+                    "expiry": str(_p.get("expiry_dt", ""))[:10],
+                    "delta":  float(_p.get("delta_at_entry", 0)),
+                    "score":  _sc,
+                }
         _scan_candidates = fetch_scored_candidates(
             currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
@@ -1292,10 +1299,11 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                 held_score = _held_info[name]["score"]
                 reentry_ok = c_score > held_score + ENTRY_SCORE_REENTRY_BOOST
                 return "held_reentry" if reentry_ok else "held"
-            for h in _held_info.values():
-                if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING:
-                    reentry_ok = c_score > h["score"] + ENTRY_SCORE_REENTRY_BOOST
-                    return "held_reentry" if reentry_ok else "filtered"
+            close_sc = [h["score"] for h in _held_info.values()
+                        if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING]
+            if close_sc:
+                reentry_ok = c_score > max(close_sc) + ENTRY_SCORE_REENTRY_BOOST
+                return "held_reentry" if reentry_ok else "filtered"
             return "eligible"
 
         def _held_score_for(row):
@@ -1306,9 +1314,10 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             c_delta = float(row.get("delta", 0))
             if name in _held_info:
                 return _held_info[name]["score"]
-            for h in _held_info.values():
-                if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING:
-                    return h["score"]
+            close_sc = [h["score"] for h in _held_info.values()
+                        if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING]
+            if close_sc:
+                return max(close_sc)
             return None
 
         if not _scan_candidates.empty:
