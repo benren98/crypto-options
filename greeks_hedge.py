@@ -1298,13 +1298,23 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
                     return "held_reentry" if reentry_ok else "filtered"
             return "eligible"
 
+        def _held_score_for(row):
+            """Score de la position similaire tenue (même instrument OU même expiry + delta proche).
+            Utilisé dans le dashboard pour afficher le delta de score vs la position tenue."""
+            name    = row["instrument_name"]
+            c_exp   = str(row.get("expiry_dt", ""))[:10]
+            c_delta = float(row.get("delta", 0))
+            if name in _held_info:
+                return _held_info[name]["score"]
+            for h in _held_info.values():
+                if h["expiry"] == c_exp and abs(c_delta - h["delta"]) < DELTA_MIN_SPACING:
+                    return h["score"]
+            return None
+
         if not _scan_candidates.empty:
             _scan_candidates = _scan_candidates.copy()
             _scan_candidates["status"] = _scan_candidates.apply(_scan_row_status, axis=1)
-            # Pour le score de re-entrée, ajouter le score d'entrée initial si tenu
-            _scan_candidates["held_entry_score"] = _scan_candidates["instrument_name"].map(
-                lambda n: _held_info[n]["score"] if n in _held_info else None
-            )
+            _scan_candidates["held_entry_score"] = _scan_candidates.apply(_held_score_for, axis=1)
 
         # Top 7 par score, avec garantie d'au moins 1 candidat éligible visible
         _top7 = _scan_candidates.head(7).copy() if not _scan_candidates.empty else pd.DataFrame()

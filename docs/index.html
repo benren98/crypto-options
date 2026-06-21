@@ -81,7 +81,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
 
 <h1>📊 VRP Monitor — 8 position(s) ouverte(s) (12 lots)
   <a href="backtest.html" style="float:right;font-size:0.6em;font-weight:500;color:#58a6ff;text-decoration:none;border:1px solid #30363d;border-radius:6px;padding:5px 12px;background:#161b22">📊 Backtests &amp; Skew →</a></h1>
-<div class="subtitle">Données : 2026-06-20 21:40 EDT · Généré : 2026-06-20 21:41 EDT · ↻ auto-refresh 5min</div>
+<div class="subtitle">Données : 2026-06-20 21:40 EDT · Généré : 2026-06-20 21:47 EDT · ↻ auto-refresh 5min</div>
 
 <div class="header-bar">
   <div class="chip">
@@ -962,8 +962,8 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
   </table>
   </div>
   <div style="margin-top:10px;font-size:0.78rem;color:#8b949e">
-    ✅ Éligible · 📌 En position · 🔁 Re-entrée possible (score +0.05) · 🚫 Filtré (même expiry, delta trop proche) ·
-    <b>Diversification</b> : espacement delta ≥ 0.08 entre positions de même expiry · 1 entrée max par cycle
+    ✅ Éligible · 📌 En position (score insuffisant) · 🔁 Re-entrée possible (score &gt; tenu +0.05) · 🚫 Filtré (delta proche, score insuffisant) ·
+    <b>Diversification</b> : candidat trop proche en delta = traité comme ré-entrée (score tenu affiché en Δ) · 1 entrée max par cycle
   </div>
   <div style="margin-top:8px;font-size:0.78rem;color:#8b949e;border-top:1px solid #21262d;padding-top:8px">
     Score = [0.30·s<sub>iv/hv</sub> + 0.25·s<sub>yield</sub> + 0.45·s<sub>skew</sub>] × pénalité gamma · chaque composante clampée dans [0,1] :
@@ -1645,5 +1645,5 @@ new Chart(document.getElementById("chartVol"), {
 });
 </script>
 
-<footer>VRP Monitor · Généré le 2026-06-20 21:41 EDT · GitHub Actions · Auto-refresh 5 min</footer>
+<footer>VRP Monitor · Généré le 2026-06-20 21:47 EDT · GitHub Actions · Auto-refresh 5 min</footer>
 </body></html>

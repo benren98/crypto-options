@@ -933,8 +933,8 @@ def _scan_entry_card() -> str:
   </table>
   </div>
   <div style="margin-top:10px;font-size:0.78rem;color:#8b949e">
-    ✅ Éligible · 📌 En position · 🔁 Re-entrée possible (score +0.05) · 🚫 Filtré (même expiry, delta trop proche) ·
-    <b>Diversification</b> : espacement delta ≥ 0.08 entre positions de même expiry · 1 entrée max par cycle
+    ✅ Éligible · 📌 En position (score insuffisant) · 🔁 Re-entrée possible (score &gt; tenu +0.05) · 🚫 Filtré (delta proche, score insuffisant) ·
+    <b>Diversification</b> : candidat trop proche en delta = traité comme ré-entrée (score tenu affiché en Δ) · 1 entrée max par cycle
   </div>
   <div style="margin-top:8px;font-size:0.78rem;color:#8b949e;border-top:1px solid #21262d;padding-top:8px">
     Score = [0.30·s<sub>iv/hv</sub> + 0.25·s<sub>yield</sub> + 0.45·s<sub>skew</sub>] × pénalité gamma · chaque composante clampée dans [0,1] :
