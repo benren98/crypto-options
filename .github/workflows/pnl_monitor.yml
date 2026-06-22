@@ -97,7 +97,7 @@ jobs:
       - name: Re-fit du modèle de skew sur données réelles (no-op tant que < 15j)
         run: python fit_vol_model.py || echo "fit_vol_model non bloquant"
 
-      - name: Extraire pnl_summary.json depuis le CSV frais
+      - name: Extraire pnl_summary.json (hedge qty depuis positions.json post-rebalance)
         run: |
           python - <<'EOF'
           import csv, json, glob
@@ -110,6 +110,19 @@ jobs:
 
           with open(snapshots[-1]) as f:
               row = list(csv.DictReader(f))[0]
+
+          # hedge_qty, vwap et drift recalcules depuis positions.json mis a jour
+          # par greeks_hedge.py (qui tourne APRES pnl_monitor.py)
+          pos = json.loads(Path("positions.json").read_text())
+          hedge = pos.get("hedge", {})
+          hedge_qty_live  = str(hedge.get("qty", row.get("hedge_qty", "")))
+          hedge_vwap_live = str(hedge.get("avg_entry", ""))
+          # drift = delta options + hedge qty (signe: options short -> delta negatif)
+          net_opt_delta = sum(
+              float(p.get("delta_at_entry", 0)) * float(p.get("contracts", 1))
+              for p in pos.get("positions", [])
+          )
+          hedge_drift_live = str(round(net_opt_delta + float(hedge.get("qty", 0)), 5))
 
           summary = {
               "timestamp":           row.get("timestamp"),
@@ -128,19 +141,20 @@ jobs:
               "total_pnl_usd":       row.get("total_pnl_usd"),
               "pnl_pct_of_premium":  row.get("pnl_pct_of_premium"),
               "tte_days":            row.get("tte_days"),
-              "live_delta":           row.get("live_delta"),
-              "live_gamma":           row.get("live_gamma"),
-              "live_vega":            row.get("live_vega"),
-              "hedge_qty":            row.get("hedge_qty"),
-              "hedge_delta_drift":    row.get("hedge_delta_drift"),
-              "hedge_threshold_pct":  row.get("hedge_threshold_pct"),
-              "hedge_threshold_btc":  row.get("hedge_threshold_btc"),
+              "live_delta":          row.get("live_delta"),
+              "live_gamma":          row.get("live_gamma"),
+              "live_vega":           row.get("live_vega"),
+              "hedge_qty":           hedge_qty_live,
+              "hedge_vwap":          hedge_vwap_live,
+              "hedge_delta_drift":   hedge_drift_live,
+              "hedge_threshold_pct": row.get("hedge_threshold_pct"),
+              "hedge_threshold_btc": row.get("hedge_threshold_btc"),
               "theta_daily_now_usd": row.get("theta_daily_now_usd"),
               "theta_theory_usd":    row.get("theta_theory_usd"),
               "vrp_capture_pct":     row.get("vrp_capture_pct"),
           }
           Path("pnl_summary.json").write_text(json.dumps(summary, indent=2))
-          print("pnl_summary.json ecrit (frais, avant generate_html).")
+          print(f"pnl_summary.json ecrit — hedge_qty post-rebalance: {hedge_qty_live}")
           EOF
 
       - name: Générer la GitHub Page
