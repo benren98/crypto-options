@@ -989,53 +989,52 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         )
         if candidates.empty:
             print("  Aucun candidat liquide trouve (filtre B/A). On reessaie plus tard.")
-            if not must_open:
-                save_positions(state)
-                return
-            # Si portfolio vide : fallback sans filtre B/A (on entre quand meme)
-            candidates = fetch_scored_candidates(
-                currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
-                ba_max_pct=999
-            )
-            if candidates.empty:
-                print("  Aucune option trouvee du tout. Abandon.")
-                save_positions(state)
-                return
+            if must_open:
+                # Si portfolio vide : fallback sans filtre B/A (on entre quand meme)
+                candidates = fetch_scored_candidates(
+                    currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
+                    ba_max_pct=999
+                )
+                if candidates.empty:
+                    print("  Aucune option trouvee du tout. Abandon.")
+                    candidates = None
+            else:
+                candidates = None   # pas d'ouverture mais on continue vers le rebalance hedge
 
-        best = candidates.iloc[0]
+        best = candidates.iloc[0] if candidates is not None and not candidates.empty else None
 
         # C2 : entrée non forcée → exiger le seuil de score + signal. Sinon, rester à plat.
         if not must_open and (float(best["score"]) < ENTRY_SCORE_MIN or not ctx["signal_ok"]):
             print(f"  [Pas d'entree] meilleur score {best['score']:.3f} < seuil {ENTRY_SCORE_MIN:.2f} "
                   f"ou signal KO -- book laisse a plat")
-            save_positions(state)
-            return
+            # NB : on ne return pas ici -- le rebalance hedge doit quand meme s'executer
+            # (une expiration peut avoir reduit le delta portfolio ce meme run)
+            best = None   # sentinelle : pas d'ouverture
 
-        used_btc = sum(float(p.get("contracts", 1)) for p in state.get("positions", []))
-        sizing = compute_sizing(float(best["score"]), used_btc, ctx["iv_rank"])
-        _eff_cap = MAX_PORTFOLIO_BTC * (CB_T1_KEEP if state.get("cb_reduced") else 1.0)
-        sizing = min(sizing, max(0.0, round(_eff_cap - used_btc, 1)))   # cap réduit si allègement
-        if sizing < 0.1:
-            print("  [Pas d'entree] cap d'allegement (CB tier 1) atteint -- pas d'ouverture")
-            save_positions(state)
-            return
-        new_pos = open_position_from_candidate(best, spot, contracts=sizing)
-
-        # NB : le hedge n'est PAS exécuté ici. La position est ajoutée, puis l'unique
-        # rebalance de fin de run calcule la cible delta nette de TOUT le portefeuille
-        # et exécute un seul ordre. Hedger inline ici déclenchait un aller-retour
-        # (SELL du delta du lot, puis BUY du rebalance qui re-snap au net exact).
-        state.setdefault("positions", []).append(new_pos)
-        state["open"] = new_pos
-        _entries_this_run.append(new_pos["instrument_name"])
-
-        print(f"  [OUVERTURE] {new_pos['instrument_name']}")
-        print(f"    Score    : {best['score']:.3f}  (IV/HV {best['iv_hv_ratio']:.2f}x  rank {best['s_rank']*100:.0f}%  yield {best['yield_ann_pct']:.1f}%/an)")
-        print(f"    Strike   : {best['strike']:,.0f}  ({best['moneyness']:+.1f}%)")
-        print(f"    TTE      : {best['tte_days']:.1f}j  |  Delta {best['delta']:+.3f}  |  IV {best['mark_iv']:.1f}%")
-        print(f"    Prix     : {new_pos['entry_price']:.5f} BTC = ${new_pos['entry_price_usd']:,.0f}  (bid)")
-        print(f"    B/A      : {best['ba_pct']:.1f}%  |  OI {best['open_interest']:.0f}")
-        print(f"    Hedge    : delta du portefeuille recalculé au rebalance unifié (ci-dessous)")
+        if best is not None:
+            used_btc = sum(float(p.get("contracts", 1)) for p in state.get("positions", []))
+            sizing = compute_sizing(float(best["score"]), used_btc, ctx["iv_rank"])
+            _eff_cap = MAX_PORTFOLIO_BTC * (CB_T1_KEEP if state.get("cb_reduced") else 1.0)
+            sizing = min(sizing, max(0.0, round(_eff_cap - used_btc, 1)))
+            if sizing < 0.1:
+                print("  [Pas d'entree] cap d'allegement (CB tier 1) atteint -- pas d'ouverture")
+                # pas de return : rebalance hedge requis quand meme
+            else:
+                new_pos = open_position_from_candidate(best, spot, contracts=sizing)
+                # NB : le hedge n'est PAS exécuté ici. La position est ajoutée, puis l'unique
+                # rebalance de fin de run calcule la cible delta nette de TOUT le portefeuille
+                # et exécute un seul ordre. Hedger inline ici déclenchait un aller-retour
+                # (SELL du delta du lot, puis BUY du rebalance qui re-snap au net exact).
+                state.setdefault("positions", []).append(new_pos)
+                state["open"] = new_pos
+                _entries_this_run.append(new_pos["instrument_name"])
+                print(f"  [OUVERTURE] {new_pos['instrument_name']}")
+                print(f"    Score    : {best['score']:.3f}  (IV/HV {best['iv_hv_ratio']:.2f}x  rank {best['s_rank']*100:.0f}%  yield {best['yield_ann_pct']:.1f}%/an)")
+                print(f"    Strike   : {best['strike']:,.0f}  ({best['moneyness']:+.1f}%)")
+                print(f"    TTE      : {best['tte_days']:.1f}j  |  Delta {best['delta']:+.3f}  |  IV {best['mark_iv']:.1f}%")
+                print(f"    Prix     : {new_pos['entry_price']:.5f} BTC = ${new_pos['entry_price_usd']:,.0f}  (bid)")
+                print(f"    B/A      : {best['ba_pct']:.1f}%  |  OI {best['open_interest']:.0f}")
+                print(f"    Hedge    : delta du portefeuille recalculé au rebalance unifié (ci-dessous)")
 
     # ── Entrée opportuniste (positions < MAX) ──────────────────────────────────
     open_positions_now = state.get("positions", [])
