@@ -2131,5 +2131,23 @@
     "ts": "2026-06-18 16:53:38 UTC",
     "move_1d_pct": -5.25,
     "move_3d_pct": -6.34
+  },
+  "open": {
+    "instrument_name": "BTC-26JUN26-58000-P",
+    "strike": 58000.0,
+    "expiry_dt": "2026-06-26 08:00:00+00:00",
+    "tte_at_entry": 17.27,
+    "delta_at_entry": -0.21608,
+    "gamma_at_entry": 4e-05,
+    "vega_at_entry": 40.06,
+    "theta_at_entry": -58.2482,
+    "iv_at_entry": 50.37,
+    "entry_price": 0.014,
+    "entry_mark_price": 0.0143,
+    "entry_price_usd": 879.69,
+    "entry_spot": 62835.18,
+    "contracts": 0.3,
+    "entry_ts": "2026-06-09 01:28:42 UTC",
+    "note": "Position fictive ouverte manuellement le 2026-06-09"
   }
 }
