@@ -625,13 +625,51 @@
       ],
       "entry_score": 0.697,
       "entry_sizing_btc": 0.5
+    },
+    {
+      "instrument_name": "BTC-3JUL26-55000-P",
+      "strike": 55000.0,
+      "expiry_dt": "2026-07-03 08:00:00+00:00",
+      "tte_at_entry": 9.65,
+      "delta_at_entry": -0.08491,
+      "gamma_at_entry": 3e-05,
+      "vega_at_entry": 15.81318,
+      "theta_at_entry": -48.89086,
+      "iv_at_entry": 58.34,
+      "entry_price": 0.0036,
+      "entry_mark_price": 0.0039,
+      "entry_price_usd": 225.13,
+      "entry_spot": 62536.77,
+      "contracts": 0.2,
+      "entry_ts": "2026-06-23 16:21:52 UTC",
+      "hedge_qty": -0.01698,
+      "hedge_entry_spot": 62536.77,
+      "hedge_avg_entry": 62521.48,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-06-23 16:21:52 UTC",
+          "side": "SELL",
+          "qty": -0.01698,
+          "spot": 62536.77,
+          "perp_price": 62521.48,
+          "qty_before": 0.0,
+          "qty_after": -0.01698,
+          "vwap_before": 0.0,
+          "vwap_after": 62521.48,
+          "drift": 0.08491,
+          "note": "hedge initial (perp mark $62521.48 vs index $62536.77)"
+        }
+      ],
+      "entry_score": 0.725,
+      "entry_sizing_btc": 0.2
     }
   ],
   "hedge": {
-    "qty": -0.45673,
+    "qty": -0.3807,
     "avg_entry": 62938.75,
-    "rebalances": 38,
-    "realized_pnl_usd": -1612.64,
+    "rebalances": 39,
+    "realized_pnl_usd": -1582.08,
     "history": [
       {
         "ts": "2026-06-07 03:32:05 UTC",
@@ -1164,6 +1202,21 @@
         "realized_cumul_usd": -1612.64,
         "delta_net_after_pct": 0.0,
         "note": "hedge net apr\u00e8s entr\u00e9e (BTC-3JUL26-55000-P) \u00b7 short augment\u00e9 \u2014 VWAP recalcul\u00e9"
+      },
+      {
+        "ts": "2026-06-23 16:21:56 UTC",
+        "side": "BUY",
+        "qty": 0.07603,
+        "spot": 62536.77,
+        "qty_before": -0.45673,
+        "qty_after": -0.3807,
+        "vwap_before": 62938.75,
+        "vwap_after": 62938.75,
+        "drift": 0.07603,
+        "realized_pnl_usd": 30.56,
+        "realized_cumul_usd": -1582.08,
+        "delta_net_after_pct": -0.0,
+        "note": "hedge net apr\u00e8s entr\u00e9e (BTC-3JUL26-55000-P) \u00b7 rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
       }
     ]
   },
