@@ -666,9 +666,9 @@
     }
   ],
   "hedge": {
-    "qty": -0.10804,
-    "avg_entry": 62938.75,
-    "rebalances": 41,
+    "qty": -0.21736,
+    "avg_entry": 61275.3,
+    "rebalances": 42,
     "realized_pnl_usd": -1268.66,
     "history": [
       {
@@ -1247,6 +1247,21 @@
         "realized_cumul_usd": -1268.66,
         "delta_net_after_pct": 0.0,
         "note": "hedge net apr\u00e8s entr\u00e9e (BTC-10JUL26-50000-P) \u00b7 rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
+      },
+      {
+        "ts": "2026-06-25 16:17:04 UTC",
+        "side": "SELL",
+        "qty": -0.10932,
+        "spot": 59631.33,
+        "qty_before": -0.10804,
+        "qty_after": -0.21736,
+        "vwap_before": 62938.75,
+        "vwap_after": 61275.3,
+        "drift": -0.10932,
+        "realized_pnl_usd": 0.0,
+        "realized_cumul_usd": -1268.66,
+        "delta_net_after_pct": 0.0,
+        "note": "short augment\u00e9 \u2014 VWAP recalcul\u00e9"
       }
     ]
   },
@@ -3015,6 +3030,32 @@
       "exit_reason": "expiration",
       "pnl_btc": 0.000192,
       "pnl_usd": 11.8
+    },
+    {
+      "instrument_name": "BTC-26JUN26-58000-P",
+      "strike": 58000.0,
+      "expiry_dt": "2026-06-26 08:00:00+00:00",
+      "tte_at_entry": 17.27,
+      "delta_at_entry": -0.21608,
+      "gamma_at_entry": 4e-05,
+      "vega_at_entry": 40.06,
+      "theta_at_entry": -58.2482,
+      "iv_at_entry": 50.37,
+      "entry_price": 0.014,
+      "entry_mark_price": 0.0143,
+      "entry_price_usd": 879.69,
+      "entry_spot": 62835.18,
+      "contracts": 0.09,
+      "entry_ts": "2026-06-09 01:28:42 UTC",
+      "note": "Position fictive ouverte manuellement le 2026-06-09",
+      "exit_price": 0.0024,
+      "exit_spot": 59631.33,
+      "exit_ts": "2026-06-25 16:16:33 UTC",
+      "tte_at_exit": 0.655,
+      "gamma_at_exit": 8.3484,
+      "roll_reason": "TTE 0.66j \u2264 1.0j ET gamma 8.35pts > seuil 6.0pts \u2014 ATM danger",
+      "pnl_btc": 0.0116,
+      "pnl_usd": 691.72
     }
   ],
   "last_updated": "2026-06-18 17:27:15 UTC",
