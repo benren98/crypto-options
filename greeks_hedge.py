@@ -986,7 +986,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     open_positions_now = state.get("positions", [])
     must_open = ALWAYS_IN_POSITION and len(open_positions_now) == 0 and not risk_off   # garantie "toujours ≥1" si activée
 
-    if (state["open"] is None or must_open) and not risk_off:
+    if (state["open"] is None or must_open) and not risk_off and not state.get("cb_reduced", False):
         reason = "portfolio vide -- ouverture obligatoire" if must_open else "roll declenche"
         print_section(f"SELECTION CANDIDAT ({reason.upper()})")
         print(f"  HV 10j: {ctx['hv_10d']:.1f}%  |  IV: {ctx['curr_iv']:.1f}%  "
@@ -1088,7 +1088,11 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
 
     # Cap effectif réduit pendant l'allègement gradué (CB tier 1)
     eff_cap = MAX_PORTFOLIO_BTC * (CB_T1_KEEP if state.get("cb_reduced") else 1.0)
-    if used_btc_now < eff_cap and ctx["signal_ok"] and not risk_off:
+    if state.get("cb_reduced", False):
+        cb_info = state.get("cb_reduced_info", {})
+        print(f"  [CB-T1 ACTIF] nouvelles entrees bloquees jusqu'a |move 3j| < {CB_T1_RESTORE_MOVE_PCT}%"
+              f"  (declenche a move_3j={cb_info.get('move_3d_pct')}%)")
+    if used_btc_now < eff_cap and ctx["signal_ok"] and not risk_off and not state.get("cb_reduced", False):
         candidates = fetch_scored_candidates(
             currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
