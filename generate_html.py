@@ -1479,7 +1479,7 @@ if pnl_history:
     _strike_datasets_spot = ""
     _seen_strikes = set()
     _ci = 0
-    for _p in positions_list + hist:
+    for _p in positions_list:
         _strike = _p.get("strike")
         if not _strike:
             continue
@@ -1487,15 +1487,13 @@ if pnl_history:
         if _key in _seen_strikes:
             continue
         _seen_strikes.add(_key)
-        _is_closed = _p in hist
-        _label = f"Strike {int(_strike):,}{' (clôturé)' if _is_closed else ''}"
+        _label = f"Strike {int(_strike):,}"
         _col = _strike_colors[_ci % len(_strike_colors)]
         _ci += 1
-        _dash = "[6,4]" if _is_closed else "[]"
         _data_js = _json.dumps([_strike] * n_pts)
         _strike_datasets_spot += f"""
     {{ label:{_json.dumps(_label)}, data:{_data_js}, borderColor:"{_col}", backgroundColor:"transparent",
-      tension:0, pointRadius:0, borderWidth:1.5, borderDash:{_dash} }},"""
+      tension:0, pointRadius:0, borderWidth:1.5, borderDash:[] }},"""
 
     html += f"""
 <div class="chart-section">
