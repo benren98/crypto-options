@@ -545,14 +545,48 @@ def _agg_lots(lots: list) -> tuple:
 
 
 # ── Tableau des positions ──────────────────────────────────────────────────────
+def _lot_detail_rows(lots: list, uid: str) -> str:
+    """Sous-tableau HTML (caché par défaut) listant chaque lot individuel."""
+    hdr = ('<tr style="background:#161b22">'
+           '<th style="text-align:left;padding:4px 8px;font-size:0.75rem;color:#8b949e">Lot</th>'
+           '<th style="text-align:left;padding:4px 8px;font-size:0.75rem;color:#8b949e">Entrée (NY)</th>'
+           '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">Contracts</th>'
+           '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">Score</th>'
+           '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">Prime (BTC)</th>'
+           '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">Prime (USD)</th>'
+           '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">Spot entrée</th>'
+           '</tr>')
+    body = ""
+    for i, lot in enumerate(lots):
+        ep  = float(lot.get("entry_price", 0))
+        es  = float(lot.get("entry_spot", 0))
+        ctr = float(lot.get("contracts", 1))
+        sc  = lot.get("entry_score")
+        sc_html = f(sc, 3) if sc is not None else "—"
+        body += (f'<tr style="background:#0d1117;border-top:1px solid #21262d">'
+                 f'<td style="padding:4px 8px;font-size:0.78rem;color:#8b949e">#{i+1}</td>'
+                 f'<td style="padding:4px 8px;font-size:0.78rem">{to_ny(lot.get("entry_ts","—"))}</td>'
+                 f'<td style="padding:4px 8px;font-size:0.78rem;text-align:center">{f(ctr,4)}</td>'
+                 f'<td style="padding:4px 8px;font-size:0.78rem;text-align:center"><b>{sc_html}</b></td>'
+                 f'<td style="padding:4px 8px;font-size:0.78rem;text-align:center">{f(ep,5)}</td>'
+                 f'<td style="padding:4px 8px;font-size:0.78rem;text-align:center">${f(ep*es,1)}</td>'
+                 f'<td style="padding:4px 8px;font-size:0.78rem;text-align:center">${f(es,0)}</td>'
+                 f'</tr>')
+    return (f'<tr id="{uid}" style="display:none">'
+            f'<td colspan="14" style="padding:0;background:#0d1117;border-bottom:2px solid #30363d">'
+            f'<table style="width:100%;border-collapse:collapse">{hdr}{body}</table>'
+            f'</td></tr>')
+
+
 def _positions_table() -> str:
     if not positions_list:
         return '<p style="color:#8b949e">Aucune position ouverte.</p>'
     _groups = _group_positions()
     rows = ""
-    for _lots in _groups:
+    for gi, _lots in enumerate(_groups):
         p, live = _agg_lots(_lots)
         _n_lots = p.get("_n_lots", 1)
+        uid     = f"pos-lots-{gi}"
         instr   = p.get("instrument_name","—")
         strike  = int(p.get("strike", 0))
         expiry  = (p.get("expiry_dt","") or "")[:10]
@@ -592,11 +626,23 @@ def _positions_table() -> str:
         entry_sizing  = p.get("entry_sizing_btc")
         score_html    = f'<b>{f(entry_score,3)}</b>' if entry_score is not None else '<span class="muted">—</span>'
         sizing_html   = f'{f(entry_sizing,1)} BTC' if entry_sizing is not None else '<span class="muted">—</span>'
-        _lot_badge = (f' <span class="warn" style="font-size:0.7rem" title="{_n_lots} lots agrégés (ré-entrée) — prix en VWAP, money/greeks en somme">⊕{_n_lots} lots</span>'
-                      if _n_lots > 1 else "")
-        _ts_cell = (f'{to_ny(p.get("entry_ts","—"))} <span class="muted" style="font-size:0.7rem">(+{_n_lots-1} ré-entrée)</span>'
-                    if _n_lots > 1 else to_ny(p.get("entry_ts","—")))
-        rows += f"""<tr>
+
+        if _n_lots > 1:
+            _expand_toggle = (f' onclick="var d=document.getElementById(\'{uid}\'),'
+                              f'arr=document.getElementById(\'{uid}-arr\');'
+                              f'd.style.display=d.style.display===\'none\'?\'table-row\':\'none\';'
+                              f'arr.textContent=d.style.display===\'none\'?\'▾\':\'▴\';" style="cursor:pointer"')
+            _lot_badge = (f' <span class="warn" style="font-size:0.7rem"'
+                          f' title="{_n_lots} lots — cliquer pour le détail">'
+                          f'⊕{_n_lots} lots <span id="{uid}-arr">▾</span></span>')
+            _ts_cell   = (f'{to_ny(p.get("entry_ts","—"))} '
+                          f'<span class="muted" style="font-size:0.7rem">(+{_n_lots-1})</span>')
+        else:
+            _expand_toggle = ""
+            _lot_badge     = ""
+            _ts_cell       = to_ny(p.get("entry_ts","—"))
+
+        rows += f"""<tr{_expand_toggle}>
       <td class="left"><b>{instr}</b>{_lot_badge}</td>
       <td class="left muted" style="font-size:0.78rem">{_ts_cell}</td>
       <td>${strike:,} <span class="{cl_m}" style="font-size:0.75rem">({f(moneyness,1,True)}%)</span></td>
@@ -612,6 +658,9 @@ def _positions_table() -> str:
       <td style="text-align:center">{score_html}</td>
       <td style="text-align:center">{sizing_html}</td>
     </tr>"""
+        if _n_lots > 1:
+            rows += _lot_detail_rows(_lots, uid)
+
     _n_instr = len(_groups)
     _n_extra = len(positions_list) - _n_instr
     _agg_note = (f' <span style="font-weight:400;color:#484f58;font-size:0.72rem">'
@@ -1232,44 +1281,106 @@ else:
             return (f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));'
                     f'gap:4px 24px;padding:8px 12px;font-size:0.8rem">{cells}</div>')
 
-        def _closed_row(h, idx, hidden=False):
-            pnl_h  = float(h.get("pnl_usd", 0))
-            reason = h.get("exit_reason", "—")
-            r_lbl  = REASON_LABEL.get(reason, reason)
-            cls    = ' class="ch-old" style="display:none"' if hidden else ""
-            dcls   = ' class="ch-old"' if hidden else ""
-            return f"""<tr{cls} style="cursor:pointer" onclick="var d=document.getElementById('cd-{idx}');d.style.display=d.style.display==='none'?'table-row':'none';">
-          <td class="left">{h.get("instrument_name","?")}</td>
-          <td class="muted">{str(h.get("entry_ts",""))[:10]}</td>
-          <td class="muted">{str(h.get("exit_ts",""))[:10]}</td>
-          <td class="{color(pnl_h)}"><b>{f(pnl_h,0,True)}$</b></td>
-          <td class="muted">{r_lbl} <span style="color:#58a6ff;font-size:0.72rem">▾ détail</span></td>
-        </tr>
-        <tr id="cd-{idx}"{dcls} style="display:none"><td colspan="5" style="background:#0d1117;padding:0">{_closed_detail(h)}</td></tr>"""
+        def _group_history(entries):
+            """Regroupe les entrées de même instrument+raison fermées à la même minute
+            (même event CB/expiration). Retourne une liste de groupes (liste de dicts)."""
+            from collections import OrderedDict
+            groups: OrderedDict = OrderedDict()
+            for h in entries:
+                ts_min = str(h.get("exit_ts", ""))[:16]   # arrondi à la minute
+                key = (h.get("instrument_name",""), h.get("exit_reason",""), ts_min)
+                groups.setdefault(key, []).append(h)
+            return list(groups.values())
+
+        def _closed_detail_multi(lots) -> str:
+            """Détail expandable pour un groupe de lots fermés."""
+            hdr = ('<tr style="background:#161b22">'
+                   '<th style="text-align:left;padding:4px 8px;font-size:0.75rem;color:#8b949e">Lot</th>'
+                   '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">Entrée</th>'
+                   '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">Sortie</th>'
+                   '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">Contracts</th>'
+                   '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">Prime entrée</th>'
+                   '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">Prix sortie</th>'
+                   '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">PnL</th>'
+                   '</tr>')
+            body = ""
+            for i, h in enumerate(lots):
+                ep  = float(h.get("entry_price", 0))
+                es  = float(h.get("entry_spot", 0))
+                xp  = float(h.get("exit_price", 0))
+                xs  = float(h.get("exit_spot", 0))
+                ctr = float(h.get("contracts", 1))
+                pnl = float(h.get("pnl_usd", 0))
+                body += (f'<tr style="background:#0d1117;border-top:1px solid #21262d">'
+                         f'<td style="padding:4px 8px;font-size:0.78rem;color:#8b949e">#{i+1}</td>'
+                         f'<td style="padding:4px 8px;font-size:0.78rem">{str(h.get("entry_ts",""))[:16].replace("T"," ")}</td>'
+                         f'<td style="padding:4px 8px;font-size:0.78rem">{str(h.get("exit_ts",""))[:16].replace("T"," ")}</td>'
+                         f'<td style="padding:4px 8px;font-size:0.78rem;text-align:center">{f(ctr,4)}</td>'
+                         f'<td style="padding:4px 8px;font-size:0.78rem;text-align:center">{f(ep,5)} <span style="color:#8b949e;font-size:0.72rem">(${f(ep*es,0)})</span></td>'
+                         f'<td style="padding:4px 8px;font-size:0.78rem;text-align:center">{f(xp,5)} <span style="color:#8b949e;font-size:0.72rem">(${f(xp*xs,0)})</span></td>'
+                         f'<td style="padding:4px 8px;font-size:0.78rem;text-align:right" class="{color(pnl)}"><b>{f(pnl,0,True)}$</b></td>'
+                         f'</tr>')
+            return (f'<table style="width:100%;border-collapse:collapse">{hdr}{body}</table>')
+
+        def _closed_row_group(group, idx, hidden=False):
+            """Rend une ligne résumé + ligne détail pour un groupe de lots fermés."""
+            total_pnl  = sum(float(h.get("pnl_usd", 0)) for h in group)
+            total_ctr  = sum(float(h.get("contracts", 0)) for h in group)
+            n          = len(group)
+            h0         = group[0]   # représentant du groupe
+            reason     = h0.get("exit_reason", "—")
+            r_lbl      = REASON_LABEL.get(reason, reason)
+            instr      = h0.get("instrument_name", "?")
+            entry_ts   = min(str(h.get("entry_ts",""))[:10] for h in group)
+            exit_ts    = str(h0.get("exit_ts",""))[:10]
+            cls        = ' class="ch-old" style="display:none"' if hidden else ""
+            dcls       = ' class="ch-old"' if hidden else ""
+            lots_badge = (f' <span style="color:#58a6ff;font-size:0.72rem">({n} lots)</span>'
+                          if n > 1 else "")
+            ctr_html   = f'{f(total_ctr,4)} BTC{lots_badge}'
+            detail_html = _closed_detail_multi(group) if n > 1 else _closed_detail(h0)
+            return (f'<tr{cls} style="cursor:pointer" onclick="var d=document.getElementById(\'cd-{idx}\'),'
+                    f'arr=document.getElementById(\'cd-{idx}-arr\');'
+                    f'd.style.display=d.style.display===\'none\'?\'table-row\':\'none\';'
+                    f'arr.textContent=d.style.display===\'none\'?\'▾\':\'▴\';">'
+                    f'<td class="left">{instr}<br><span class="muted" style="font-size:0.72rem">{ctr_html}</span></td>'
+                    f'<td class="muted">{entry_ts}</td>'
+                    f'<td class="muted">{exit_ts}</td>'
+                    f'<td class="{color(total_pnl)}"><b>{f(total_pnl,0,True)}$</b></td>'
+                    f'<td class="muted">{r_lbl} <span id="cd-{idx}-arr" style="color:#58a6ff;font-size:0.72rem">▾</span></td>'
+                    f'</tr>'
+                    f'<tr id="cd-{idx}"{dcls} style="display:none">'
+                    f'<td colspan="5" style="background:#0d1117;padding:0;border-bottom:2px solid #30363d">'
+                    f'{detail_html}</td></tr>')
 
         h_sorted = sorted(hist, key=lambda h: (_parse_ts(h.get("exit_ts")) or datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
         recent = [h for h in h_sorted if (_parse_ts(h.get("exit_ts")) or c_cutoff) >= c_cutoff]
         older  = [h for h in h_sorted if h not in recent]
 
-        h_rows = "".join(_closed_row(h, i) for i, h in enumerate(recent))
-        h_rows += "".join(_closed_row(h, len(recent)+i, hidden=True) for i, h in enumerate(older))
+        recent_groups = _group_history(recent)
+        older_groups  = _group_history(older)
+
+        h_rows = "".join(_closed_row_group(g, i) for i, g in enumerate(recent_groups))
+        h_rows += "".join(_closed_row_group(g, len(recent_groups)+i, hidden=True) for i, g in enumerate(older_groups))
 
         toggle = ""
-        if older:
+        if older_groups:
             older_pnl = sum(float(h.get("pnl_usd",0)) for h in older)
+            n_og = len(older_groups)
             toggle = f"""<div style="margin-top:8px">
     <a href="#" id="ch-toggle" style="color:#58a6ff;font-size:0.8rem;text-decoration:none"
-       onclick="event.preventDefault();var o=document.querySelectorAll('.ch-old');var show=o[0].style.display==='none';o.forEach(r=>{{if(r.id&&r.id.indexOf('cd-')===0){{r.style.display='none';}}else{{r.style.display=show?'':'none';}}}});this.textContent=show?'▲ Réduire (7 derniers jours)':'▼ Voir tout ({len(older)} clôture(s) plus anciennes · {f(older_pnl,0,True)}$)';">▼ Voir tout ({len(older)} clôture(s) plus anciennes · {f(older_pnl,0,True)}$)</a>
+       onclick="event.preventDefault();var o=document.querySelectorAll('.ch-old');var show=o[0].style.display==='none';o.forEach(r=>{{if(r.id&&r.id.indexOf('cd-')===0){{r.style.display='none';}}else{{r.style.display=show?'':'none';}}}});this.textContent=show?'▲ Réduire (7 derniers jours)':'▼ Voir tout ({n_og} event(s) plus ancien(s) · {f(older_pnl,0,True)}$)';">▼ Voir tout ({n_og} event(s) plus ancien(s) · {f(older_pnl,0,True)}$)</a>
   </div>"""
 
+        n_rg = len(recent_groups)
         html += f"""<div class="card full">
-  <h2>📈 Positions clôturées — {len(recent)} sur 7j / {len(hist)} au total</h2>
+  <h2>📈 Positions clôturées — {n_rg} event(s) sur 7j / {len(hist)} lot(s) au total</h2>
   <table class="tbl">
     <tr><th style="text-align:left">Instrument</th><th style="text-align:left">Entrée</th>
         <th style="text-align:left">Sortie</th><th>PnL</th><th style="text-align:left">Raison</th></tr>
     {h_rows}
     <tr style="border-top:1px solid #30363d;font-weight:600">
-      <td colspan="3">TOTAL RÉALISÉ ({len(hist)} clôture(s))</td>
+      <td colspan="3">TOTAL RÉALISÉ ({len(hist)} lot(s))</td>
       <td class="{color(pnl_hist_total)}">{f(pnl_hist_total,0,True)}$</td>
       <td></td>
     </tr>

@@ -942,20 +942,29 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             pos    = state["open"]
             t      = fetch_ticker_full(pos["instrument_name"])
             exit_p = t.get("mark_price", pos["entry_price"])
+            n      = float(pos.get("contracts", 1))   # contrats réels du lot (pas CONTRACTS global)
 
             # Clôture de la position existante
             closed = {**pos,
                       "exit_price":   exit_p,
                       "exit_spot":    spot,
                       "exit_ts":      now_dt(),
+                      "exit_reason":  "roll",
                       "tte_at_exit":  round(tte_current, 3),
                       "gamma_at_exit":round(gamma_pts_now, 4),
                       "roll_reason":  roll_reason,
-                      "pnl_btc":      round((pos["entry_price"] - exit_p) * CONTRACTS, 6),
-                      "pnl_usd":      round((pos["entry_price"] - exit_p) * CONTRACTS * spot, 2)}
+                      "pnl_btc":      round((pos["entry_price"] - exit_p) * n, 6),
+                      "pnl_usd":      round((pos["entry_price"] - exit_p) * n * spot, 2)}
             state["history"].append(closed)
             state["open"] = None
-            print(f"  Position fermee : {pos['instrument_name']}")
+            # Supprimer aussi de state["positions"] (même référence ou même instrument+strike)
+            state["positions"] = [p for p in state.get("positions", [])
+                                  if p is not pos and not (
+                                      p.get("instrument_name") == pos.get("instrument_name")
+                                      and p.get("strike") == pos.get("strike")
+                                      and p.get("expiry_dt") == pos.get("expiry_dt")
+                                  )]
+            print(f"  Position fermee : {pos['instrument_name']}  ({n} contrats)")
             print(f"  PnL realise     : {closed['pnl_btc']:+.6f} BTC  "
                   f"({'+' if closed['pnl_usd']>=0 else ''}{closed['pnl_usd']:.2f} USD)")
 
