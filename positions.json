@@ -455,6 +455,44 @@
       ],
       "entry_score": 0.832,
       "entry_sizing_btc": 0.1
+    },
+    {
+      "instrument_name": "BTC-17JUL26-48000-P",
+      "strike": 48000.0,
+      "expiry_dt": "2026-07-17 08:00:00+00:00",
+      "tte_at_entry": 19.78,
+      "delta_at_entry": -0.04632,
+      "gamma_at_entry": 1e-05,
+      "vega_at_entry": 13.64847,
+      "theta_at_entry": -21.17673,
+      "iv_at_entry": 61.01,
+      "entry_price": 0.0028,
+      "entry_mark_price": 0.0029,
+      "entry_price_usd": 168.92,
+      "entry_spot": 60328.25,
+      "contracts": 0.4,
+      "entry_ts": "2026-06-27 13:10:33 UTC",
+      "hedge_qty": -0.01853,
+      "hedge_entry_spot": 60328.25,
+      "hedge_avg_entry": 60350.52,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-06-27 13:10:33 UTC",
+          "side": "SELL",
+          "qty": -0.01853,
+          "spot": 60328.25,
+          "perp_price": 60350.52,
+          "qty_before": 0.0,
+          "qty_after": -0.01853,
+          "vwap_before": 0.0,
+          "vwap_after": 60350.52,
+          "drift": 0.04632,
+          "note": "hedge initial (perp mark $60350.52 vs index $60328.25)"
+        }
+      ],
+      "entry_score": 0.624,
+      "entry_sizing_btc": 0.4
     }
   ],
   "hedge": {
@@ -3077,7 +3115,7 @@
     }
   ],
   "last_updated": "2026-06-18 17:27:15 UTC",
-  "cb_reduced": true,
+  "cb_reduced": false,
   "cb_reduced_info": {
     "ts": "2026-06-24 16:59:43 UTC",
     "move_1d_pct": -4.0,
