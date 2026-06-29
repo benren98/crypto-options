@@ -837,7 +837,7 @@ def apply_circuit_breaker(state: dict, spot: float, cb: dict) -> bool:
         print_section("CIRCUIT BREAKER — REPRISE PLEINE TAILLE (palier 1)")
         print(f"  move 3j {cb.get('move_3d_pct')}% < {CB_T1_RESTORE_MOVE_PCT}% -> cap d'allegement relache")
         state["cb_reduced"] = False
-        return True
+        return False  # laisser le run continuer : Greeks + hedge rebalance doivent s'executer
 
     if risk_off and cb["reentry_ok"]:
         print_section("CIRCUIT BREAKER — RE-ENTREE")
@@ -845,7 +845,7 @@ def apply_circuit_breaker(state: dict, spot: float, cb: dict) -> bool:
         state["risk_off"] = False
         info = state.setdefault("risk_off_info", {})
         info["reentry_ts"] = now_dt()
-        return True
+        return False  # continuer le run : entrees + hedge rebalance dans le meme cycle
 
     if risk_off:
         print_section("CIRCUIT BREAKER — RISK-OFF MAINTENU")
@@ -1104,19 +1104,20 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
             sizing2 = compute_sizing(float(best2["score"]), used_btc2, ctx["iv_rank"])
             sizing2 = min(sizing2, max(0.0, round(eff_cap - used_btc2, 1)))   # respecte le cap réduit
             if sizing2 < 0.1:
-                save_positions(state); return
-            new_pos2 = open_position_from_candidate(best2, spot, contracts=sizing2)
+                print(f"  [Opportuniste] sizing residuel {sizing2:.2f} BTC < 0.1 -- cap atteint, pas d'entree")
+            else:
+                new_pos2 = open_position_from_candidate(best2, spot, contracts=sizing2)
 
-            # Hedge délégué au rebalance unifié de fin de run (évite l'aller-retour)
-            state["positions"].append(new_pos2)
-            _entries_this_run.append(new_pos2["instrument_name"])
-            print_section("ENTREE OPPORTUNISTE")
-            print(f"  [OUVERTURE] {new_pos2['instrument_name']}")
-            print(f"    Score    : {best2['score']:.3f}  (IV/HV {best2['iv_hv_ratio']:.2f}x)")
-            print(f"    Strike   : {best2['strike']:,.0f}  ({best2['moneyness']:+.1f}%)")
-            print(f"    TTE      : {best2['tte_days']:.1f}j  |  Delta {best2['delta']:+.3f}  |  IV {best2['mark_iv']:.1f}%")
-            print(f"    Prix     : {new_pos2['entry_price']:.5f} BTC = ${new_pos2['entry_price_usd']:,.0f}")
-            print(f"    Hedge    : delta du portefeuille recalculé au rebalance unifié (ci-dessous)")
+                # Hedge délégué au rebalance unifié de fin de run (évite l'aller-retour)
+                state["positions"].append(new_pos2)
+                _entries_this_run.append(new_pos2["instrument_name"])
+                print_section("ENTREE OPPORTUNISTE")
+                print(f"  [OUVERTURE] {new_pos2['instrument_name']}")
+                print(f"    Score    : {best2['score']:.3f}  (IV/HV {best2['iv_hv_ratio']:.2f}x)")
+                print(f"    Strike   : {best2['strike']:,.0f}  ({best2['moneyness']:+.1f}%)")
+                print(f"    TTE      : {best2['tte_days']:.1f}j  |  Delta {best2['delta']:+.3f}  |  IV {best2['mark_iv']:.1f}%")
+                print(f"    Prix     : {new_pos2['entry_price']:.5f} BTC = ${new_pos2['entry_price_usd']:,.0f}")
+                print(f"    Hedge    : delta du portefeuille recalculé au rebalance unifié (ci-dessous)")
         else:
             score_top = candidates.iloc[0]["score"] if not candidates.empty else 0
             print(f"  [Opportuniste] score {score_top:.3f} < seuil {ENTRY_SCORE_MIN:.2f} ou IV/HV insuffisant -- pas d'entree")
