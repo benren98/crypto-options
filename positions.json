@@ -838,9 +838,9 @@
     }
   ],
   "hedge": {
-    "qty": -0.28704,
-    "avg_entry": 59946.44,
-    "rebalances": 58,
+    "qty": -0.36612,
+    "avg_entry": 59845.84,
+    "rebalances": 59,
     "realized_pnl_usd": -1194.4,
     "history": [
       {
@@ -1674,6 +1674,21 @@
         "realized_cumul_usd": -1194.4,
         "delta_net_after_pct": 0.0,
         "note": "rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
+      },
+      {
+        "ts": "2026-06-30 06:47:51 UTC",
+        "side": "SELL",
+        "qty": -0.07908,
+        "spot": 59480.68,
+        "qty_before": -0.28704,
+        "qty_after": -0.36612,
+        "vwap_before": 59946.44,
+        "vwap_after": 59845.84,
+        "drift": -0.07908,
+        "realized_pnl_usd": 0.0,
+        "realized_cumul_usd": -1194.4,
+        "delta_net_after_pct": -0.0,
+        "note": "short augment\u00e9 \u2014 VWAP recalcul\u00e9"
       }
     ]
   },
