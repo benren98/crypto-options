@@ -838,9 +838,9 @@
     }
   ],
   "hedge": {
-    "qty": -0.44527,
-    "avg_entry": 59744.92,
-    "rebalances": 60,
+    "qty": -0.70813,
+    "avg_entry": 59236.59,
+    "rebalances": 61,
     "realized_pnl_usd": -1194.4,
     "history": [
       {
@@ -1704,6 +1704,21 @@
         "realized_cumul_usd": -1194.4,
         "delta_net_after_pct": 0.0,
         "note": "hedge net apr\u00e8s entr\u00e9e (BTC-17JUL26-48000-P) \u00b7 short augment\u00e9 \u2014 VWAP recalcul\u00e9"
+      },
+      {
+        "ts": "2026-06-30 13:04:47 UTC",
+        "side": "SELL",
+        "qty": -0.26286,
+        "spot": 58375.51,
+        "qty_before": -0.44527,
+        "qty_after": -0.70813,
+        "vwap_before": 59744.92,
+        "vwap_after": 59236.59,
+        "drift": -0.26286,
+        "realized_pnl_usd": 0.0,
+        "realized_cumul_usd": -1194.4,
+        "delta_net_after_pct": 0.0,
+        "note": "short augment\u00e9 \u2014 VWAP recalcul\u00e9"
       }
     ]
   },
