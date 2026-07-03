@@ -1037,6 +1037,23 @@ def _vol_chip_delta(move_abs):
 _dvol_1d_html = _vol_chip_delta(_dvol_1d_chg)
 _hv_1d_html   = _vol_chip_delta(_hv_1d_chg)
 
+# Contexte vol enrichi : IV rank + régime (chip DVOL), IV/HV + signal (chip HV)
+_iv_rank_v  = _ctx_mc.get("iv_rank")
+_regime_v   = _ctx_mc.get("regime")
+_ivhv_v     = _ctx_mc.get("iv_hv_ratio")
+_signal_v   = _ctx_mc.get("signal_ok")
+_ivrank_html = (f'<span class="chip-delta neu">rank 30j {float(_iv_rank_v)*100:.0f}%'
+                f'{" · " + str(_regime_v) if _regime_v else ""}</span>'
+                if _iv_rank_v is not None else "")
+if _ivhv_v is not None:
+    _ivhv_f  = float(_ivhv_v)
+    _ivhv_cl = "pos" if _ivhv_f >= 1.10 else ("warn" if _ivhv_f >= 1.0 else "neg")
+    _sig_html = ("" if _signal_v is None else
+                 f' · signal <span class="{"ok" if _signal_v else "warn"}">{"OK" if _signal_v else "KO"}</span>')
+    _ivhv_html = f'<span class="chip-delta"><span class="{_ivhv_cl}">IV/HV {_ivhv_f:.2f}x</span>{_sig_html}</span>'
+else:
+    _ivhv_html = ""
+
 # ── Circuit breaker (gradué : allègement −5%/1j ou −6%/3j → trim 30% ; fermeture −10%/+12pts) ──
 _cb_risk_off = bool(_ctx_mc.get("risk_off", pos_raw.get("risk_off", False)))
 _cb_reduced  = bool(_ctx_mc.get("cb_reduced", pos_raw.get("cb_reduced", False)))
@@ -1072,10 +1089,23 @@ def _cb_chip() -> str:
     if not parts:
         return ""
     if _cb_reduced:
+        _ri = pos_raw.get("cb_reduced_info", {})
+        _since = to_ny(_ri.get("ts", ""))[:16] if _ri.get("ts") else "—"
+        _trig  = []
+        if _ri.get("move_1d_pct") is not None: _trig.append(f'1j {float(_ri["move_1d_pct"]):+.1f}%')
+        if _ri.get("move_3d_pct") is not None: _trig.append(f'3j {float(_ri["move_3d_pct"]):+.1f}%')
+        _trig_html = f' (déclenché : {" · ".join(_trig)})' if _trig else ""
         head = ('<span class="chip-value" style="font-size:0.9rem;color:#d29922">ALLÉGÉ 30%</span>'
-                '<span class="chip-delta neu">reprise : |move 3j| &lt; 3%</span>')
+                f'<span class="chip-delta neu">depuis {_since}{_trig_html}</span>'
+                '<span class="chip-delta neu">reprise + entrées : |move 3j| &lt; 3%</span>')
     else:
-        head = '<span class="chip-value ok" style="font-size:0.9rem">armé</span>'
+        # Dernier événement CB (trim ou fermeture) dans l'historique pour contexte
+        _last_cb = next((h for h in sorted(hist, key=lambda x: str(x.get("exit_ts","")), reverse=True)
+                         if h.get("exit_reason") in ("cb_tier1_trim", "circuit_breaker")), None)
+        _last_html = (f'<span class="chip-delta neu">dernier : {str(_last_cb.get("exit_ts",""))[:10]}'
+                      f' ({"trim" if _last_cb.get("exit_reason")=="cb_tier1_trim" else "fermeture"})</span>'
+                      if _last_cb else "")
+        head = f'<span class="chip-value ok" style="font-size:0.9rem">armé</span>{_last_html}'
     return f"""<div class="chip"{' style="border-color:#d2992244"' if _cb_reduced else ''}>
     <span class="chip-label">Circuit breaker</span>
     {head}
@@ -1197,11 +1227,13 @@ else:
     <span class="chip-label">DVOL (index)</span>
     <span class="chip-value">{"—" if _dvol_curr == 0 else f"{_dvol_curr:.1f}%"}</span>
     {_dvol_1d_html}
+    {_ivrank_html}
   </div>
   <div class="chip">
     <span class="chip-label">HV 10j</span>
     <span class="chip-value">{"—" if _hv_curr == 0 else f"{_hv_curr:.1f}%"}</span>
     {_hv_1d_html}
+    {_ivhv_html}
   </div>
   {_cb_chip_html}
   <div class="chip">

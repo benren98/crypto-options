@@ -194,6 +194,8 @@ CB_T1_MOVE_1D    = 5.0
 CB_T1_MOVE_3D    = 6.0
 CB_T1_KEEP       = 0.30
 CB_T1_RESTORE    = 3.0
+CB_T1_COOLDOWN_D = 0      # jours sans redéclenchement T1 après une reprise (anti-whipsaw ; 0 = off)
+GAMMA_ENTRY_CAP  = 0.0    # refuse l'entrée si gamma_pts > cap, même si score OK (0 = off)
 
 def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         circuit_breaker: bool = False, label: str = "", verbose: bool = False):
@@ -214,6 +216,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
     cb_reduced = False
     n_cb_triggers = 0
     cb_days_off = 0
+    t1_cooldown = 0     # jours restants avant qu'un nouveau trim T1 soit permis
 
     for day in days:
         S, dvol = day['spot'], day['dvol']
@@ -231,6 +234,8 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         dvol_chg_3d = dvol - dvol_hist[-4] if len(dvol_hist) >= 4 else 0.0
 
         day_pnl = 0.0
+        if t1_cooldown > 0:
+            t1_cooldown -= 1
 
         # ── 0. Circuit breaker (gradué : allègement → fermeture totale) ────────
         if circuit_breaker:
@@ -253,7 +258,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                 risk_off = True
                 cb_reduced = False
                 n_cb_triggers += 1
-            elif GRADUATED_CB and not risk_off and not cb_reduced and positions and \
+            elif GRADUATED_CB and not risk_off and not cb_reduced and positions and t1_cooldown == 0 and \
                     (move_1d_signed < -CB_T1_MOVE_1D or move_3d_signed < -CB_T1_MOVE_3D):
                 # Palier d'allègement : rachat de (1−keep) de chaque position à l'ask
                 for p in positions:
@@ -269,6 +274,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                 cb_reduced = True
             elif cb_reduced and move_3d < CB_T1_RESTORE:
                 cb_reduced = False
+                t1_cooldown = int(CB_T1_COOLDOWN_D)   # anti-whipsaw : pas de nouveau trim pendant N jours
             elif risk_off:
                 cb_days_off += 1
                 # Re-entrée : réalisé court se retourne + spot stabilisé
@@ -368,6 +374,8 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                     skew    = bid_iv / atm_iv - 1.0
                     s_skew  = max(0.0, min(1.0, skew / SKEW_NORM))
                     g_pts   = gamma * S * 0.01 * 100
+                    if GAMMA_ENTRY_CAP > 0 and g_pts > GAMMA_ENTRY_CAP:
+                        continue   # cap dur : trop de gamma même si le score compense
                     g_fac   = max(0.0, 1.0 - max(0.0, g_pts - GAMMA_PEN_START) / (GAMMA_SCORE_CAP - GAMMA_PEN_START))
                     score   = (SCORE_W_IVHV*s_ivhv + SCORE_W_YIELD*s_yield + SCORE_W_SKEW*s_skew) * g_fac
                     if not _allowed(K, delta, score, tte):

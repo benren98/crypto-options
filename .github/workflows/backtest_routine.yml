@@ -29,6 +29,9 @@ jobs:
           pip install -r requirements.txt
           pip install numpy
 
+      - name: Vérifier la synchro des paramètres live <-> backtest (bloquant)
+        run: python check_params_sync.py
+
       - name: Re-fit de la surface de skew (écrit vol_model_fit.json si >=15j)
         run: python fit_vol_model.py || echo "fit non bloquant"
 

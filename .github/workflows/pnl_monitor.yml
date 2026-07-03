@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Vérifier la synchro des paramètres live <-> backtest (avertit sans bloquer)
+        run: python check_params_sync.py || echo "::warning::Drift de parametres live/backtest detecte"
+
       - name: Créer positions.json depuis le Gist
         env:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
