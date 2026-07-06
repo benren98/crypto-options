@@ -1688,6 +1688,11 @@ def compute_sizing(score: float, used_btc: float, iv_rank: float = 1.0) -> float
     d'un même scan) : le score mesure la qualité de l'option, le rang module
     l'agressivité du sizing (×0.5 en bas de range, ×1.0 en haut).
 
+    Le 0.5 est le PLANCHER du multiplicateur (RANK_FLOOR dans backtest.py,
+    sweep « Sizing — plancher rang DVOL ») : taille minimale déployée quand la
+    vol est en bas de son range 30j. 0 affamerait le déploiement en régime
+    calme ; 1 supprimerait toute modulation par le régime de vol.
+
     La convexité score^1.5 (calibrée sur backtest 4 ans) réduit non-uniformément
     la taille : les setups médiocres (score ≈ seuil 0.45) sont coupés d'un tiers
     (0.45 → 0.30), les bons scores quasi inchangés. Ces setups faibles sont

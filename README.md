@@ -135,11 +135,20 @@ The premium floor replaces the bid/ask spread as the real quality gate. A wide s
 The DVOL 30-day rank acts as an aggressiveness multiplier: full size when vol is at the top of its 30-day range, half size at the bottom. The score enters with a **convexity exponent of 1.5** that concentrates capital on the best opportunities.
 
 ```python
-rank_mult = 0.5 + 0.5 × iv_rank             # iv_rank = DVOL position in 30d range [0..1]
-contracts = round(score**1.5 × rank_mult, 1) # convexity: weak setups shrink, strong ones don't
+rank_mult = RANK_FLOOR + (1 − RANK_FLOOR) × iv_rank   # iv_rank = DVOL position in 30d range [0..1]
+contracts = round(score**1.5 × rank_mult, 1)          # convexity: weak setups shrink, strong ones don't
 contracts = max(0.1, contracts)
 contracts = min(contracts, MAX_PORTFOLIO_BTC − used_btc)
 ```
+
+**`RANK_FLOOR = 0.5` (plancher rang DVOL).** The sizing multiplier interpolates linearly
+between `RANK_FLOOR` (when DVOL sits at the *bottom* of its 30-day range, iv_rank = 0) and
+1.0 (DVOL at the *top* of its range, iv_rank = 1). The floor answers one question: *how much
+size do we still deploy when vol is cheap?* With 0.5, a calm-regime entry gets 50% of the size
+the same score would get in a hot regime — premiums are thin so we commit less, but we never
+go to zero (a floor of 0 would starve deployment exactly when carry is steady and safe).
+Raising the floor toward 1.0 flattens the vol-regime adjustment entirely. This is the
+`Sizing — plancher rang DVOL` sweep in `backtest_routine.py`.
 
 Portfolio cap: **5 BTC notional total** (1 Deribit contract = 1 BTC).
 
