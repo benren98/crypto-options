@@ -700,6 +700,64 @@ def _positions_table() -> str:
   </div>
 </div>"""
 
+# ── Réconciliation Deribit (réel vs interne) ──────────────────────────────────
+def _reconcile_card() -> str:
+    """Card affichée uniquement si reconcile.json existe (clés API configurées)."""
+    rf = Path("reconcile.json")
+    if not rf.exists():
+        return ""
+    try:
+        rec = json.loads(rf.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return ""
+    ts   = rec.get("generated_at", "—")
+    env  = rec.get("env", "?")
+    n_ok = rec.get("n_matched", 0)
+    n_ko = rec.get("n_mismatched", 0)
+    hedge = rec.get("hedge", {})
+    acct  = rec.get("account", {})
+    all_ok = n_ko == 0 and hedge.get("ok", False)
+    badge = ('<span class="ok" style="font-weight:700">✓ SYNCHRO</span>' if all_ok
+             else f'<span class="warn" style="font-weight:700">⚠ {n_ko} ÉCART(S)</span>')
+    STATUS_LBL = {"ok": '<span class="ok">OK</span>',
+                  "size_mismatch": '<span class="warn">taille ≠</span>',
+                  "missing_real": '<span class="neg">absent sur Deribit</span>',
+                  "missing_internal": '<span class="neg">non suivi par le bot</span>'}
+    rows = ""
+    for r in rec.get("positions", []):
+        rows += f"""<tr{' class="hl"' if r.get("status") != "ok" else ''}>
+      <td class="left">{r.get("instrument","?")}</td>
+      <td>{f(r.get("internal_qty"),4)}</td>
+      <td>{f(r.get("real_qty"),4)}</td>
+      <td class="{color(-abs(float(r.get("diff") or 0)))}">{f(r.get("diff"),4,True)}</td>
+      <td class="left">{STATUS_LBL.get(r.get("status"), r.get("status"))}</td>
+    </tr>"""
+    h_cl = "ok" if hedge.get("ok") else "warn"
+    eq_usd = acct.get("equity_usd")
+    return f"""<div class="card full">
+  <h2>🔗 Réconciliation Deribit <span style="font-size:0.7rem;color:#8b949e">({env})</span> — {badge}
+      <span style="float:right;font-size:0.7rem;font-weight:400;color:#8b949e">{ts}</span></h2>
+  <table class="tbl">
+    <tr><th style="text-align:left">Instrument</th><th>Bot</th><th>Réel</th><th>Écart</th>
+        <th style="text-align:left">Statut</th></tr>
+    {rows}
+    <tr style="border-top:1px solid #30363d">
+      <td class="left"><b>Hedge BTC-PERPETUAL</b></td>
+      <td>{f(hedge.get("internal_qty"),5)}</td>
+      <td>{f(hedge.get("real_qty"),5)}</td>
+      <td class="{h_cl}">{f(hedge.get("diff"),5,True)}</td>
+      <td class="left {h_cl}">{"OK" if hedge.get("ok") else "ÉCART"}</td>
+    </tr>
+  </table>
+  <div style="margin-top:8px;font-size:0.8rem;color:#8b949e">
+    Equity compte : <b style="color:#e6edf3">{f(acct.get("equity_btc"),4)} BTC</b>
+    {f"(${f(eq_usd,0)})" if eq_usd else ""} ·
+    Marge dispo : {f(acct.get("available_margin_btc"),4)} BTC ·
+    Marge maintenance : {f(acct.get("maintenance_margin_btc"),4)} BTC
+  </div>
+</div>"""
+
+
 # ── Tableau Greeks nets ────────────────────────────────────────────────────────
 def _greeks_card() -> str:
     net_delta  = float(s.get("live_delta", 0))
@@ -1281,6 +1339,7 @@ else:
     html += "</div>\n<div class=\"grid\" style=\"margin-top:16px\">\n"
     html += _scan_entry_card()
     html += _hedge_history_card()
+    html += _reconcile_card()
 
     # Historique des clôtures — n'affiche que les 7 derniers jours, le reste repliable ;
     # chaque ligne est cliquable pour déplier le détail complet de la position clôturée.

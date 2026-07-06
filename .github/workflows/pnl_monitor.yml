@@ -91,6 +91,12 @@ jobs:
           echo "GIST_ID=$GIST_ID" >> .env
           python greeks_hedge.py --run
 
+      - name: Réconciliation Deribit (no-op sans clés API)
+        env:
+          DERIBIT_CLIENT_ID: ${{ secrets.DERIBIT_CLIENT_ID }}
+          DERIBIT_CLIENT_SECRET: ${{ secrets.DERIBIT_CLIENT_SECRET }}
+        run: python deribit_reconcile.py || echo "reconcile non bloquant"
+
       - name: Snapshot order-book / OI / volume (B1, collecte forward)
         run: python orderbook_logger.py || echo "orderbook_logger non bloquant"
 
@@ -167,7 +173,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          for f in pnl_summary.json positions.json pnl_history.json positions_detail.json scan_entry.json docs/index.html orderbook_log.jsonl vol_surface.jsonl vol_model_fit.json; do
+          for f in pnl_summary.json positions.json pnl_history.json positions_detail.json scan_entry.json reconcile.json docs/index.html orderbook_log.jsonl vol_surface.jsonl vol_model_fit.json; do
             if [ -e "$f" ]; then git add "$f"; fi
           done
           git diff --cached --quiet || git commit -m "chore: pnl snapshot $(date -u '+%Y-%m-%d %H:%M UTC')"
