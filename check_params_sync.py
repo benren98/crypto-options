@@ -26,6 +26,7 @@ MIRROR = {
     "SIZE_CONVEXITY":            "SIZE_CONVEXITY",
     "MIN_PREMIUM_USD":           "MIN_PREMIUM_USD",
     "ENTRY_SCORE_REENTRY_BOOST": "ENTRY_SCORE_REENTRY_BOOST",
+    "RANK_FLOOR":                "RANK_FLOOR",
     "CB_MOVE_3D_PCT":            "CB_MOVE_3D_PCT",
     "CB_DVOL_3D_PTS":            "CB_DVOL_3D_PTS",
     "CB_REENTRY_MOVE_PCT":       "CB_REENTRY_MOVE",

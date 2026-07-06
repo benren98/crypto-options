@@ -30,7 +30,7 @@ YIELD_NORM        = 0.30
 SKEW_NORM         = 0.60     # entre-deux (dé-sature partiellement vs 0.20)
 IVHV_NORM         = 1.50     # entre-deux — normalisation s_iv_hv = clamp((bid_iv/HV−1)/IVHV_NORM, 0,1)
 HV_W5, HV_W10, HV_W30 = 0.0, 0.5, 0.5   # pondération de l'HV de référence (5j/10j/30j)
-RANK_FLOOR        = 0.5      # plancher du multiplicateur de rang DVOL (sizing)
+RANK_FLOOR        = 0.7      # plancher du multiplicateur de rang DVOL (sizing) — routine 2026-07-06 (opt=1.0, 0.7 prudent)
 SIZE_CONVEXITY    = 1.5     # taille ∝ score^1.5 (miroir greeks_hedge.compute_sizing)
 MIN_PREMIUM_USD   = 150.0   # plancher de prime au bid ($/BTC) — anti-poussière (BTC ; backtest Calmar 3.56→4.40)
 # Poids du score (skew-pondéré, miroir greeks_hedge ; expérience 0.65/SKEW_NORM 0.60 annulée)

@@ -141,14 +141,20 @@ contracts = max(0.1, contracts)
 contracts = min(contracts, MAX_PORTFOLIO_BTC − used_btc)
 ```
 
-**`RANK_FLOOR = 0.5` (plancher rang DVOL).** The sizing multiplier interpolates linearly
+**`RANK_FLOOR = 0.7` (plancher rang DVOL).** The sizing multiplier interpolates linearly
 between `RANK_FLOOR` (when DVOL sits at the *bottom* of its 30-day range, iv_rank = 0) and
 1.0 (DVOL at the *top* of its range, iv_rank = 1). The floor answers one question: *how much
-size do we still deploy when vol is cheap?* With 0.5, a calm-regime entry gets 50% of the size
-the same score would get in a hot regime — premiums are thin so we commit less, but we never
-go to zero (a floor of 0 would starve deployment exactly when carry is steady and safe).
-Raising the floor toward 1.0 flattens the vol-regime adjustment entirely. This is the
+size do we still deploy when vol is cheap?* A floor of 0 would starve deployment exactly when
+carry is steady and safe; 1.0 removes the vol-regime adjustment entirely. This is the
 `Sizing — plancher rang DVOL` sweep in `backtest_routine.py`.
+
+*Recalibrated 0.5 → 0.7 (routine 2026-07-06, ✅ robust, 3/5 folds, gain +6.31 Calmar).*
+The sweep showed MaxDD is **flat across all floor values** (≈4.3k$): drawdowns come from
+hot regimes where iv_rank ≈ 1 and the floor never binds — a low floor only cut profitable
+calm-regime carry without buying any protection (gap risk is the CB's job, consistent with
+the rejected vol-target/trend-overlay experiments). The sweep optimum was 1.0
+(Calmar 9.61 vs 8.20 at 0.5); we took 0.7 (Calmar 9.03) to keep some margin against
+calm-regime gap risk, the least well-modelled part of the backtest.
 
 Portfolio cap: **5 BTC notional total** (1 Deribit contract = 1 BTC).
 

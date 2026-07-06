@@ -95,6 +95,9 @@ ENTRY_SCORE_REENTRY_BOOST= 0.05  # amélioration score nécessaire pour re-entre
 DELTA_MIN_SPACING        = 0.08  # espacement min |delta| entre positions sur la même expiry
 GAMMA_PENALTY_START      = 5.0   # gamma_pts en dessous duquel aucune pénalité
 GAMMA_SCORE_CAP          = 10.0  # gamma_pts au-delà duquel le score est réduit à 0
+RANK_FLOOR               = 0.7   # plancher du multiplicateur de rang DVOL (sizing) — 0.5→0.7
+                                 # routine 2026-07-06 : floor élevé ✅ robuste (DD inchangé,
+                                 # le floor ne mordait que le carry calme) ; 0.7 = prudent vs 1.0
                                   # pénalité linéaire entre GAMMA_PENALTY_START et GAMMA_SCORE_CAP
                                   # ex: gamma=5 → ×1.00 ; gamma=7.5 → ×0.50 ; gamma≥10 → éliminé
 SCAN_TTE_MIN       = 1.0  # TTE min pour le scan (roll + opportuniste)
@@ -1682,16 +1685,19 @@ SIZE_CONVEXITY = 1.5   # taille ∝ score^1.5 : concentre le capital sur les mei
 
 def compute_sizing(score: float, used_btc: float, iv_rank: float = 1.0) -> float:
     """
-    Taille en BTC = score^1.5 × (0.5 + 0.5 × rang DVOL 30j), arrondi à 0.1.
+    Taille en BTC = score^1.5 × (RANK_FLOOR + (1−RANK_FLOOR) × rang DVOL 30j),
+    arrondi à 0.1.
 
     Le rang DVOL est sorti du score (il était identique pour tous les candidats
     d'un même scan) : le score mesure la qualité de l'option, le rang module
-    l'agressivité du sizing (×0.5 en bas de range, ×1.0 en haut).
+    l'agressivité du sizing (×RANK_FLOOR en bas de range, ×1.0 en haut).
 
-    Le 0.5 est le PLANCHER du multiplicateur (RANK_FLOOR dans backtest.py,
-    sweep « Sizing — plancher rang DVOL ») : taille minimale déployée quand la
-    vol est en bas de son range 30j. 0 affamerait le déploiement en régime
-    calme ; 1 supprimerait toute modulation par le régime de vol.
+    RANK_FLOOR (sweep « Sizing — plancher rang DVOL ») : taille minimale déployée
+    quand la vol est en bas de son range 30j. Routine 2026-07-06 : un floor plus
+    haut est ✅ robuste — le MaxDD ne bouge pas (les drawdowns viennent des régimes
+    chauds où rank≈1 de toute façon), le floor bas ne coupait que le carry calme.
+    Passé 0.5 → 0.7 (l'optimum du sweep était 1.0 ; 0.7 conserve une marge sur le
+    risque de gap en régime calme, la partie la moins bien modélisée du backtest).
 
     La convexité score^1.5 (calibrée sur backtest 4 ans) réduit non-uniformément
     la taille : les setups médiocres (score ≈ seuil 0.45) sont coupés d'un tiers
@@ -1699,7 +1705,7 @@ def compute_sizing(score: float, used_btc: float, iv_rank: float = 1.0) -> float
     surreprésentés les jours fragiles avant les gaps → max drawdown −28% (9.8k→7.1k$
     sur 4 ans) avec un PnL en légère hausse. Voir README et backtest_sizing.py.
     """
-    rank_mult = 0.5 + 0.5 * max(0.0, min(1.0, iv_rank))
+    rank_mult = RANK_FLOOR + (1.0 - RANK_FLOOR) * max(0.0, min(1.0, iv_rank))
     raw      = round((score ** SIZE_CONVEXITY) * rank_mult, 1)
     raw      = max(0.1, raw)          # minimum 0.1 BTC
     capacity = max(0.0, MAX_PORTFOLIO_BTC - used_btc)
