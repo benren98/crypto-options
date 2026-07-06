@@ -508,7 +508,12 @@ def _agg_lots(lots: list) -> tuple:
     p0["entry_price"]      = wavg([float(p.get("entry_price", 0)) for p in lots])
     p0["entry_spot"]       = wavg([float(p.get("entry_spot", spot)) for p in lots])
     p0["entry_mark_price"] = wavg([float(p.get("entry_mark_price", p.get("entry_price", 0))) for p in lots])
-    p0["iv_at_entry"]      = wavg([float(p.get("iv_at_entry", 0)) for p in lots])
+    # IV d'entrée : moyenne pondérée par contrats, en ignorant les lots sans IV
+    # (un défaut à 0 tirerait la moyenne vers le bas)
+    _iv_pairs = [(float(p["iv_at_entry"]), c) for p, c in zip(lots, cs)
+                 if p.get("iv_at_entry") not in (None, 0, "")]
+    p0["iv_at_entry"]      = (sum(v * c for v, c in _iv_pairs) / sum(c for _, c in _iv_pairs)
+                              if _iv_pairs else 0.0)
     p0["entry_ts"]         = min((p.get("entry_ts", "") for p in lots), default="")
     if any(p.get("entry_score") is not None for p in lots):
         p0["entry_score"]  = wavg([float(p.get("entry_score", 0) or 0) for p in lots])
@@ -555,6 +560,7 @@ def _lot_detail_rows(lots: list, uid: str) -> str:
            '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">Prime (BTC)</th>'
            '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">Prime (USD)</th>'
            '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">Spot entrée</th>'
+           '<th style="padding:4px 8px;font-size:0.75rem;color:#8b949e">IV entrée</th>'
            '</tr>')
     body = ""
     for i, lot in enumerate(lots):
@@ -562,7 +568,9 @@ def _lot_detail_rows(lots: list, uid: str) -> str:
         es  = float(lot.get("entry_spot", 0))
         ctr = float(lot.get("contracts", 1))
         sc  = lot.get("entry_score")
+        iv  = lot.get("iv_at_entry")
         sc_html = f(sc, 3) if sc is not None else "—"
+        iv_html = f"{float(iv):.1f}%" if iv not in (None, 0, "") else "—"
         body += (f'<tr style="background:#0d1117;border-top:1px solid #21262d">'
                  f'<td style="padding:4px 8px;font-size:0.78rem;color:#8b949e">#{i+1}</td>'
                  f'<td style="padding:4px 8px;font-size:0.78rem">{to_ny(lot.get("entry_ts","—"))}</td>'
@@ -571,6 +579,7 @@ def _lot_detail_rows(lots: list, uid: str) -> str:
                  f'<td style="padding:4px 8px;font-size:0.78rem;text-align:center">{f(ep,5)}</td>'
                  f'<td style="padding:4px 8px;font-size:0.78rem;text-align:center">${f(ep*es,1)}</td>'
                  f'<td style="padding:4px 8px;font-size:0.78rem;text-align:center">${f(es,0)}</td>'
+                 f'<td style="padding:4px 8px;font-size:0.78rem;text-align:center">{iv_html}</td>'
                  f'</tr>')
     return (f'<tr id="{uid}" style="display:none">'
             f'<td colspan="14" style="padding:0;background:#0d1117;border-bottom:2px solid #30363d">'
