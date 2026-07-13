@@ -2,64 +2,64 @@
   "form": "iv_ratio = 1 + a(DVOL)*OTM% + b(DVOL)*OTM%^2, par bucket de maturité",
   "buckets": [
     {
-      "a0": 0.036275,
+      "a0": 0.036417,
       "a1": 0.0,
-      "b0": 0.00060861,
+      "b0": 0.00059524,
       "b1": 0.0,
-      "dvol_ref": 40.33,
+      "dvol_ref": 40.18,
       "regime_aware": false,
       "dvol_spread": 11.8,
-      "r2": 0.9465,
-      "n": 229,
+      "r2": 0.9454,
+      "n": 242,
       "dte_lo": 0,
       "dte_hi": 9,
       "label": "≤9j"
     },
     {
-      "a0": 0.022427,
+      "a0": 0.022439,
       "a1": 0.0,
-      "b0": 0.00064855,
+      "b0": 0.00064656,
       "b1": 0.0,
-      "dvol_ref": 40.49,
+      "dvol_ref": 40.39,
       "regime_aware": false,
       "dvol_spread": 11.8,
-      "r2": 0.9578,
-      "n": 312,
+      "r2": 0.958,
+      "n": 323,
       "dte_lo": 9,
       "dte_hi": 16,
       "label": "9-16j"
     },
     {
-      "a0": 0.020266,
+      "a0": 0.020346,
       "a1": 0.0,
-      "b0": 0.00023429,
+      "b0": 0.00023388,
       "b1": 0.0,
-      "dvol_ref": 40.35,
+      "dvol_ref": 40.23,
       "regime_aware": false,
       "dvol_spread": 11.8,
-      "r2": 0.9424,
-      "n": 338,
+      "r2": 0.9461,
+      "n": 353,
       "dte_lo": 16,
       "dte_hi": 45,
       "label": ">16j"
     }
   ],
   "pooled": {
-    "a0": 0.02154,
+    "a0": 0.022016,
     "a1": 0.0,
-    "b0": 0.00069259,
+    "b0": 0.00066292,
     "b1": 0.0,
-    "dvol_ref": 40.39,
+    "dvol_ref": 40.27,
     "regime_aware": false,
     "dvol_spread": 11.8,
-    "r2": 0.8313,
-    "n": 879
+    "r2": 0.828,
+    "n": 918
   },
   "coverage": {
     "start": "2026-06-14",
-    "end": "2026-07-12",
-    "days": 29
+    "end": "2026-07-13",
+    "days": 30
   },
-  "n_snapshots": 29,
-  "fitted_at": "2026-07-12 23:44:29 UTC"
+  "n_snapshots": 30,
+  "fitted_at": "2026-07-13 01:51:38 UTC"
 }
