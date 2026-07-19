@@ -1,18 +1,5 @@
 [
   {
-    "ts": "2026-06-07 14:55:14 UTC",
-    "spot": "61876.07",
-    "tte_days": "1.7117",
-    "delta_pct": 17.381,
-    "gamma_pts": 4.3313,
-    "iv_pct": "90.2",
-    "pnl_option": "0.0",
-    "pnl_hedge": "-50.19",
-    "pnl_total": "-50.19",
-    "theta_daily": "286.53",
-    "instrument": "BTC-9JUN26-58500-P"
-  },
-  {
     "ts": "2026-06-07 15:01:34 UTC",
     "spot": 61811.78,
     "tte_days": 1.7073,
@@ -8684,6 +8671,24 @@
     "pnl_hedge": -2195.74,
     "pnl_total": -1622.62,
     "theta_daily": 51.79,
+    "n_positions": 12
+  },
+  {
+    "ts": "2026-07-19 18:51:36 UTC",
+    "spot": 64360.7,
+    "tte_days": 18.5475,
+    "delta_pct": 3.376,
+    "net_delta_pct": 0.085,
+    "gamma_pts": 0.901,
+    "iv_pct": 49.58,
+    "dvol": 35.98,
+    "hv_5d": 27.53,
+    "hv_10d": 29.47,
+    "hv_30d": 25.98,
+    "pnl_option": 535.85,
+    "pnl_hedge": -2177.15,
+    "pnl_total": -1614.63,
+    "theta_daily": 53.19,
     "n_positions": 12
   }
 ]
