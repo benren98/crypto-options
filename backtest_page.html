@@ -152,6 +152,18 @@ function renderDecisions() {
     h("div", {}, badge("info", "robuste " + x.wins + "/" + x.n), "  ", h("b", {}, x.param), h("span", { class: "muted" }, "  · " + x.family)),
     h("div", { class: "num" }, h("span", { class: "muted" }, "actuel "), x.current, h("span", { class: "arrow" }, "→"), h("b", {}, x.proposed),
       h("span", { class: "muted" }, "   gain +" + num(x.gain, 2))))));
+  const C = D.combined;
+  if (C && B) {
+    // Validation conjointe : les recommandations sont mesurées une à une et peuvent agir sur le
+    // même levier (ex. plusieurs façons d'alléger le hedge) — ensemble, elles ne s'additionnent pas.
+    const ok = (C.gain_vs_current ?? 0) >= (D.meta.min_gain || 1);
+    kids.push(h("div", { class: "callout" },
+      badge(ok ? "good" : "warning", ok ? "ensemble : validé" : "ensemble : ne s'additionnent pas"), "  ",
+      "Toutes appliquées ensemble : PnL " + usd(C.pnl, { sign: true }) + " (actuel " + usd(B.pnl, { sign: true }) + ")" +
+      " · MaxDD " + usd(C.maxdd) + " (" + usd(B.maxdd) + ")" + " · Calmar " + num(C.calmar, 2) + " (" + num(B.calmar, 2) + ")" +
+      " · moyenne des folds " + (C.gain_vs_current >= 0 ? "+" : "") + num(C.gain_vs_current, 2) + " vs actuel" +
+      (ok ? "." : " — les appliquer une à une, dans l'ordre du gain, en revérifiant.")));
+  }
   if (r.some(x => x.family === "Scoring"))
     kids.push(h("div", { class: "callout" }, "Attention : les normalisations du score sont couplées au seuil d'entrée — changer une norme rescale tous les scores. " +
       "Valider sur le scan live avant d'appliquer, et un changement à la fois."));
@@ -161,6 +173,7 @@ function renderDecisions() {
 // ── Sweeps ─────────────────────────────────────────────────────────────────
 function verdict(s) {
   if (s.kind === "assumption") return ["info", "hypothèse stressée"];
+  if (s.kind === "candidate") return ["idle", "candidat — pas de code live"];
   if (s.sensitivity < (D.meta.min_sensitivity || 0.5)) return ["idle", "peu sensible"];
   if (s.recommend_change) return ["good", "✓ changer"];
   if (s.robust) return ["good", "robuste — actuel conservé"];

@@ -7,7 +7,15 @@ on:
     # ci-dessous saute un créneau si le dernier run a moins de 40 min → ~1 run/heure, et le
     # second créneau rattrape le premier quand GitHub le laisse tomber.
     - cron: '17,47 * * * *'
-  workflow_dispatch:        # déclenchement manuel depuis GitHub (jamais sauté)
+  # Déclenchement manuel ou externe (cron-job.org… via l'API GitHub, plus fiable que le cron
+  # GitHub qui peut ne rien lancer pendant plusieurs heures). La garde s'applique aussi,
+  # sauf si force = true.
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Ignorer la garde des 40 min'
+        type: boolean
+        default: false
 
 jobs:
   gate:
@@ -25,7 +33,7 @@ jobs:
           import json
           from datetime import datetime, timezone
           run = True
-          if "${{ github.event_name }}" == "schedule":
+          if "${{ inputs.force }}" != "true":
               try:
                   ts = json.load(open("scan_entry.json"))["ts"]
                   last = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc)

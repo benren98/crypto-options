@@ -5,9 +5,12 @@ Guidance opérationnelle pour Claude Code. La **stratégie** est documentée dan
 
 ## Ce que c'est
 Stratégie VRP : vente de puts BTC OTM delta-hedgés via BTC-PERPETUAL (Deribit). Suivi d'état
-(pas de passage d'ordre réel). Tourne **toutes les heures via GitHub Actions** : scan → score →
-sizing → hedge → régénère le dashboard (`docs/index.html`, GitHub Pages). État dans
-`positions.json` + un Gist GitHub.
+(pas de passage d'ordre réel). Tourne **~toutes les heures via GitHub Actions** : expirations →
+rolls → circuit breaker → scan/entrées → hedge → régénère les dashboards (GitHub Pages). État
+dans `positions.json` + un Gist GitHub.
+- Cron : `17,47 * * * *` + garde « dernier run < 40 min → skip » (job `gate`). L'ancien
+  `0 * * * *` ne tournait qu'environ toutes les 3 h (minute :00 saturée chez GitHub, jusqu'à 12 h
+  d'écart). Vérifier la cadence réelle : `gh run list --workflow pnl_monitor.yml`.
 
 ## Environnement (Windows)
 - **Python** : utiliser `C:\Users\bacee\anaconda3\python.exe`. Le `python`/`python3` nu est le stub
@@ -24,15 +27,18 @@ sizing → hedge → régénère le dashboard (`docs/index.html`, GitHub Pages).
 - **Messages de commit** : PowerShell casse les `'` et `"` dans `git commit -m @'...'@` (ils
   partent en pathspecs). → **aucun apostrophe ni guillemet** dans les messages. Fermer `'@` en
   colonne 0 sur sa propre ligne ; ne pas enchaîner `git push` sur la même ligne.
-- Finir les commits par `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
+- Finir les commits par `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - **Jamais** committer `.env` / tokens. Les secrets sont dans les Actions secrets (`GIST_TOKEN`,
   `GIST_ID`).
 
 ## Lancer les choses
 - Backtest BTC (config prod par défaut : circuit breaker ON, pas de « toujours ≥1 position ») :
   `python backtest.py` — miroir des params live de `greeks_hedge.py`, 4 ans réels (DVOL paginé),
-  frais Deribit, funding réel et hedge rejoué heure par heure (prix de `funding_history.jsonl`).
-- Routine de sweeps (anti-overfit, hebdo en Actions, ~10 min) : `python backtest_routine.py`
+  frais Deribit, funding réel. Chaque **run horaire** est rejoué comme le live (prix de
+  `funding_history.jsonl`) : rolls → circuit breaker → entrées (2 passes si book vide, calendrier
+  d'échéances Deribit, grille de strikes, DVOL de la veille) → hedge. Marks et DVOL restent
+  journaliers ; `RUN_EVERY_H` (hypothèse) simule une cadence live dégradée. ~20 s par run.
+- Routine de sweeps (anti-overfit, hebdo en Actions, ~80 min) : `python backtest_routine.py`
   → `backtest_routine.json` + page backtests. La config prod est lue dans `backtest.py` (pas de
   copie). Changer seulement la règle de verdict : `python backtest_routine.py --rejudge`.
 - Scripts d'exploration ponctuels : `research/` (lancer depuis la racine). Aides manuelles : `tools/`.
@@ -54,8 +60,9 @@ sizing → hedge → régénère le dashboard (`docs/index.html`, GitHub Pages).
   `YIELD_NORM`, `ENTRY_SCORE_MIN`, `MIN_PREMIUM_USD`, `CB_*`, `SIZE_CONVEXITY`, `GRADUATED_CB`,
   `ALWAYS_IN_POSITION`…).
 - `backtest.py` **miroite** ces constantes — les garder synchronisées à chaque changement live.
-  `python check_params_sync.py` vérifie 35 paramètres (score, entrée, sizing, CB, politique de
-  hedge `HEDGE_*`, frais `FEE_*`) ; bloquant dans la routine hebdo.
+  `python check_params_sync.py` vérifie 46 paramètres (score, HV, entrée, fenêtre d'échéances,
+  entrées/jour, rolls, sizing, CB, politique de hedge `HEDGE_*`, frais `FEE_*`) ; bloquant dans la
+  routine hebdo. Un paramètre sweepé sans équivalent live est typé `candidate` (jamais recommandé).
 - Frais Deribit (`FEE_*`, grille Standard vérifiée le 2026-09-23 sur support.deribit.com) : le bot
   est en paper, ils ne sont pas débités mais le backtest les applique et le dashboard v2 affiche
   le PnL net de frais estimés. Revérifier la grille de temps en temps.

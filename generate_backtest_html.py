@@ -211,6 +211,8 @@ def build():
                  "min_gain": routine.get("min_gain", 1.0), "min_sensitivity": routine.get("min_sensitivity", 0.5),
                  "fold_dates": (base.get("fold_dates") or [])},
         "baseline": base, "families": families, "recommendations": recos,
+        "combined": ({k: v for k, v in routine["combined"].items() if k != "curve"}
+                     if routine.get("combined") else None),
         "vol": vol_analysis(surfaces, fit),
     }
 
