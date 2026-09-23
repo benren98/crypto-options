@@ -1,4 +1,4 @@
-# CLAUDE.md — VRP Options Bot
+﻿# CLAUDE.md — VRP Options Bot
 
 Guidance opérationnelle pour Claude Code. La **stratégie** est documentée dans `README.md`
 (dont le log « Approaches Tested and Rejected ») ; ce fichier couvre le **comment opérer**.
@@ -46,7 +46,7 @@ dans `positions.json` + un Gist GitHub.
   `python generate_dashboard.py` (v2 orientée décision → `docs/v2.html`) ·
   `python generate_backtest_html.py` (backtests → `docs/backtest.html`).
 - Trois propositions de design (Cockpit, Éditorial, Bento) ont été publiées puis écartées le
-  2026-09-24 au profit de la v2, jugée plus lisible : templates dans l'historique git (commit 238abb5).
+  2026-09-24 au profit de la v2, jugée plus lisible : templates archivés dans `archive/designs/` (non publiés ; mode d'emploi dans son README).
 - Dashboards v2 et backtests : le modèle de données est calculé en Python, le rendu est dans un
   template (`dashboard_v2.html`, `backtest_page.html`) + CSS/JS communs `dashboard_assets/`
   (ne jamais éditer `docs/*.html`, ils sont régénérés). Tester un autre
