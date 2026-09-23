@@ -93,6 +93,15 @@ SWEEPS = [
     ("Circuit breaker", "Allègement — move 1 j (%)", "CB_T1_MOVE_1D", [4.0, 5.0, 6.0, 7.0, 100.0], off_if(100, lambda v: f"−{v:.0f}%"), "param"),
     ("Circuit breaker", "Allègement — move 3 j (%)", "CB_T1_MOVE_3D", [5.0, 6.0, 7.0, 8.0, 100.0], off_if(100, lambda v: f"−{v:.0f}%"), "param"),
     ("Circuit breaker", "Allègement — part conservée", "CB_T1_KEEP", [0.0, 0.2, 0.3, 0.4, 0.5, 0.7], pct0, "param"),
+    # Action du CB : racheter les puts (ask en stress ≈ +5 pts de vol, hypothèse BUYBACK_IV_PREMIUM)
+    # ou les garder et monter le hedge sur le perp (liquide) en bloquant les entrées
+    ("Circuit breaker", "Action du CB (allègement · fermeture · ratio de hedge)",
+     ("CB_T1_ACTION", "CB_CLOSE_ACTION", "CB_T1_HEDGE_RATIO"),
+     [("buyback", "buyback", 1.0), ("hedge", "buyback", 1.2), ("buyback", "hedge", 1.2),
+      ("hedge", "hedge", 1.0), ("hedge", "hedge", 1.2), ("hedge", "hedge", 1.5)],
+     lambda v: ("rachats (live)" if v[:2] == ("buyback", "buyback") else
+                "allègement " + ("hedge" if v[0] == "hedge" else "rachat") + " · fermeture "
+                + ("hedge" if v[1] == "hedge" else "rachat") + f" · hedge {v[2]:.0%}"), "param"),
     ("Circuit breaker", "Allègement gradué (palier 1)", "GRADUATED_CB", [True, False],
      lambda v: "ON" if v else "OFF (fermeture seule)", "param"),
     ("Circuit breaker", "Allègement — seuils 1 j / 3 j (%)", ("CB_T1_MOVE_1D", "CB_T1_MOVE_3D"),
@@ -107,6 +116,8 @@ SWEEPS = [
     ("Hypothèses", "Frais Deribit (× grille)", "FEE_MULT", [0.0, 0.5, 1.0, 1.5, 2.0], lambda v: f"×{v:g}", "assumption"),
     ("Hypothèses", "Demi-spread bid/ask (pts de vol, DVOL ≤ 40)", "BA_HAIRCUT_VOLPTS", [0.5, 0.7, 1.0, 1.5, 2.5],
      lambda v: f"{v:g} pt", "assumption"),
+    ("Hypothèses", "Surcoût des rachats du CB (pts de vol au-dessus du smile)", "BUYBACK_IV_PREMIUM",
+     [0.0, 3.0, 5.0, 8.0, 12.0], lambda v: f"+{v:g} pts", "assumption"),
     ("Hypothèses", "Échéances disponibles", "EXPIRY_CALENDAR", ["deribit", "fixed"],
      lambda v: "calendrier Deribit (live)" if v == "deribit" else "3/7/14/21 j (ancien modèle)", "assumption"),
     ("Hypothèses", "Funding du hedge", "USE_REAL_FUNDING", [True, False], lambda v: "réel" if v else "forfait payé (0,01 %/j)", "assumption"),

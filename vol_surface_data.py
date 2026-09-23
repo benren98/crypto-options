@@ -166,3 +166,9 @@ def iv_curve(d, dte, tol=None):
         pts = sorted((s["moneyness"], s["mark_iv"]) for s in exp["strikes"] if s.get("mark_iv") is not None)
         c = _CURVES[key] = (np.array([x for x, _ in pts]), np.array([y for _, y in pts])) if pts else False
     return c or None
+
+
+def snap_dvol(d):
+    """DVOL enregistré avec le snapshot du jour (sert à rescaler le smile au DVOL de l'heure)."""
+    snap = _load().get(_to_iso(d))
+    return snap.get("dvol") if snap else None

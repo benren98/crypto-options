@@ -1,24 +1,21 @@
 """
-backtest.py — Backtest par modèle de la stratégie VRP short put delta-hedgée.
+backtest.py — Backtest de la stratégie VRP short put delta-hedgée, rejouée comme le bot live.
 
-Données réelles : spot BTC (perpetual daily) + DVOL (index de vol ATM Deribit).
-Prix d'options reconstruits en Black-Scholes :
-    IV(strike) = DVOL × (1 + SKEW_SLOPE × OTM%)   — skew calibré sur juin 2026
-    prix de vente = BS(mark_iv) − haircut bid (BA_HAIRCUT_VOLPTS pts de vol)
+Données réelles : prix index horaires (funding_history.jsonl), DVOL journalier et horaire,
+funding horaire, surfaces de vol enregistrées (vol_surface.jsonl) quand elles couvrent la date.
+Prix d'options : smile réel du jour rescalé au DVOL de l'heure, sinon modèle
+DVOL × niveau ATM par maturité × skew fité (vol_model_fit.json) ; Black-Scholes.
 
-Règles rejouées (miroir de greeks_hedge.py, vérifié par check_params_sync.py) :
-    - score v2 : 0.30×s_iv_hv(HV blend) + 0.25×s_yield(×z) + 0.45×s_skew, pénalité gamma
-    - seuil 0.45, DVOL ≥ 35%, sizing = score^1.5 × (floor + (1−floor)×rank), cap 5 BTC
-    - ré-entrée : même instrument (échéance + strike sur grille 500$) ou même échéance avec
-      delta proche → autorisée seulement si score > score tenu + boost
-    - delta hedge via perp avec la MÊME bande que le live (BTC absolus, IV-dépendante),
-      + variantes de politique testables (ratio, bande × notionnel, mise à plat du résiduel)
-    - frais Deribit (options, livraison ITM, perp) et funding réel encaissé/payé par le hedge
-    - circuit breaker gradué, évalué heure par heure comme le live (CB_INTRADAY) ;
-      expiration : règlement au payoff (+ frais de livraison si ITM)
-    Hedge et CB sont rejoués sur les prix horaires ; entrées, marks et DVOL restent journaliers.
+Chaque heure (miroir de greeks_hedge.run_once, cadence RUN_EVERY_H) :
+    règlement des échéances à 08:00 UTC → rolls (TTE ≤ 1 j et gamma > 6) → circuit breaker
+    (moves 24 h / 72 h, DVOL 72 h ; allègement / fermeture par rachat à l'ask ou par le hedge)
+    → entrées (calendrier d'échéances Deribit, grille de strikes, score v2, 2 passes si le book
+    est vide, plafond d'entrées par jour) → hedge delta (bande, cadence, urgence) → funding.
+Clôture à 00:00 UTC : marks, equity, marge. Frais Deribit sur chaque transaction ; vente au
+bid (mark − demi-spread), rachats du CB à l'ask + BUYBACK_IV_PREMIUM (calibré sur le live).
+Paramètres miroir du live vérifiés par check_params_sync.py.
 
-Usage : python backtest.py [--years 4] [--always-one] [--no-cb]   (défaut = config de production)
+Usage : python backtest.py [--years 4] [--always-one] [--no-cb] [--no-pm]   (défaut = config de production)
 """
 import sys, math, argparse
 sys.path.insert(0, '.')
@@ -62,6 +59,9 @@ SKEW_SLOPE        = 0.013   # IV(K) = DVOL × (1 + 0.013 × OTM%) — calibré j
 BA_HAIRCUT_VOLPTS = 0.7     # demi-spread en pts de vol : bid ≈ mark − 0.7, ask ≈ mark + 0.7 (médiane mesurée
                             # sur les vraies surfaces, juin-sept. 2026, DVOL 35-45 ; était 1.5)…
 BA_HAIRCUT_DVOL_REF = 40.0  # …élargi proportionnellement au DVOL au-delà de 40 (stress : spreads plus larges)
+BUYBACK_IV_PREMIUM = 5.0    # hypothèse : pts de vol ajoutés aux rachats du CIRCUIT BREAKER (vente en stress :
+                            # ask au-dessus du smile). Calibré : 5 pts reproduisent au $ près les 29 rachats
+                            # réels des 18 et 24/06/2026 (DVOL 43-46 ; en stress violent, sans doute plus)
 EXPIRY_CALENDAR   = "deribit" # "deribit" : quotidiennes + vendredis listés (comme le live) · "fixed" : TTE_CHOICES
 FUNDING_DAILY     = 0.0001  # repli : ~0.01%/jour PAYÉ par le short perp si le funding réel manque ce jour-là
 USE_REAL_FUNDING  = True    # funding réel horaire (funding_history.jsonl) : un short perp l'ENCAISSE s'il est > 0
@@ -225,7 +225,8 @@ def iv_pct(S, K, dvol, date=None, dte=None):
     if USE_REAL_SURFACE and _vs is not None and date is not None and dte is not None:
         c = _vs.iv_curve(date, dte)
         if c is not None:
-            return float(np.interp(K / S, c[0], c[1]))
+            sd = _vs.snap_dvol(date)   # smile du snapshot rescalé au DVOL du moment
+            return float(np.interp(K / S, c[0], c[1])) * (dvol / sd if sd and dvol else 1.0)
     otm = (S - K) / S * 100
     return dvol * level_factor(dte, dvol) * skew_factor(otm, dte, dvol)
 
@@ -288,22 +289,26 @@ def ba_haircut(dvol):
     return BA_HAIRCUT_VOLPTS * max(1.0, dvol / BA_HAIRCUT_DVOL_REF)
 
 
-def listed_expiries(d):
-    """Échéances Deribit listées vues depuis le jour d, en k = jours jusqu'à la clôture de
-    règlement (échéance F à 08:00 → réglée à la clôture de F−1, 8 h plus tôt que le réel) :
-    quotidiennes F = d+1..d+3 et vendredis jusqu'à 5 semaines (mensuelles incluses)."""
+_EPOCH = datetime(1970, 1, 1).date()
+
+
+def listed_expiries(d, now_t):
+    """Échéances listées vues depuis l'instant now_t (jours depuis l'epoch), jour UTC d, en
+    instants de règlement (jours depuis l'epoch) : Deribit règle à 08:00 UTC les quotidiennes
+    (J..J+3) et les vendredis jusqu'à 5 semaines (mensuelles incluses). Calendrier « fixed » :
+    TTE_CHOICES jours depuis maintenant (ancien modèle)."""
     if EXPIRY_CALENDAR == "fixed":
-        return list(TTE_CHOICES)
-    fs = {d + timedelta(days=j) for j in (1, 2, 3)}
+        return [now_t + t for t in TTE_CHOICES]
+    fs = {d + timedelta(days=j) for j in (0, 1, 2, 3)}
     fs |= {d + timedelta(days=j) for j in range(1, 36) if (d + timedelta(days=j)).weekday() == 4}
-    return sorted((f - d).days - 1 for f in fs)
+    return sorted((f - _EPOCH).days + 8 / 24 for f in fs)
 
 
-def scan_candidates(S, dvol, date, hv_blend, frac):
+def scan_candidates(S, dvol, date, hv_blend, now_t):
     """Scan du live rejoué : tous les puts listés (échéances × grille de strikes) avec TTE réel
     dans [SCAN_TTE_MIN, SCAN_TTE_MAX], greeks au mark, prix au bid, score v2 et filtres live
-    (delta max, plancher de prime, cap gamma). frac = fraction de la journée écoulée (1 = clôture).
-    Renvoie [(score, K, k, prix $, otm %, delta, mark_iv)] trié par score décroissant."""
+    (delta max, plancher de prime, cap gamma). now_t = instant (jours depuis l'epoch).
+    Candidats (score, K, instant de règlement, prix $, otm %, delta, mark_iv), meilleur d'abord."""
     Ks = np.arange(math.ceil(S * 0.5 / STRIKE_GRID) * STRIKE_GRID, S * 0.98 + 1e-9, STRIKE_GRID)
     if len(Ks) == 0 or not hv_blend:
         return []
@@ -311,17 +316,19 @@ def scan_candidates(S, dvol, date, hv_blend, frac):
     hc = ba_haircut(dvol)
     real = USE_REAL_SURFACE and _vs is not None
     out_s, out_i = [], []
-    for k in listed_expiries(date):
-        Td = k + 1.0 - frac
+    for k in listed_expiries(date, now_t):   # k = instant de règlement
+        Td = k - now_t
         if not (SCAN_TTE_MIN <= Td <= SCAN_TTE_MAX):
             continue
         T = Td / 365
         lf = level_factor(Td, dvol)
         atm = dvol * lf
         curve = _vs.iv_curve(date, Td) if real else None
-        if curve is not None:   # smile réel du jour ; ATM interpolé au spot (comme le live)
-            mark = np.interp(Ks / S, curve[0], curve[1])
-            atm = float(np.interp(1.0, curve[0], curve[1]))
+        if curve is not None:   # smile réel du jour rescalé au DVOL de l'heure ; ATM interpolé au spot
+            sd = _vs.snap_dvol(date)
+            sc_ = dvol / sd if sd else 1.0
+            mark = np.interp(Ks / S, curve[0], curve[1]) * sc_
+            atm = float(np.interp(1.0, curve[0], curve[1])) * sc_
         else:
             mark = dvol * lf * _skew_vec(otm, Td, dvol)
         bid = mark - hc
@@ -358,7 +365,30 @@ def _ranked(out_s, out_i):
 
 
 # ── Données historiques ────────────────────────────────────────────────────────
-_HIST_CACHE = {}   # mémoïse le fetch (la routine rejoue ~100 backtests → 1 seul fetch)
+_HIST_CACHE = {}
+
+
+def fetch_dvol_hourly(years: float):
+    """DVOL horaire {fin de bougie (ms) : clôture} sur `years` ans (API paginée, mémoïsé) :
+    le live lit le DVOL de l'heure (porte d'entrée, rang, jambe DVOL du circuit breaker)."""
+    key = ("dvol_h", round(years, 2))
+    if key in _HIST_CACHE:
+        return _HIST_CACHE[key]
+    end_ts = now_ms()
+    start_ts = end_ts - int(years * 365 * 24 * 3600 * 1000)
+    rows, page_end = {}, end_ts
+    for _ in range(80):
+        d = get('get_volatility_index_data', {'currency': 'BTC', 'start_timestamp': start_ts,
+                                              'end_timestamp': page_end, 'resolution': '3600'})
+        for r in d.get('data', []):
+            if r[4]:
+                rows[int(r[0]) + 3_600_000] = float(r[4])
+        cont = d.get('continuation')
+        if not cont or cont <= start_ts or cont >= page_end:
+            break
+        page_end = cont
+    _HIST_CACHE[key] = rows
+    return rows   # mémoïse le fetch (la routine rejoue ~100 backtests → 1 seul fetch)
 
 def fetch_history(years: float):
     _key = round(years, 2)
@@ -429,6 +459,12 @@ CB_T1_MOVE_1D    = 5.0
 CB_T1_MOVE_3D    = 6.0
 CB_T1_KEEP       = 0.30
 CB_T1_RESTORE    = 3.0
+CB_T1_ACTION     = "buyback"  # allègement : "buyback" = rachat de (1−KEEP) des puts à l'ask (live) ·
+                              # "hedge" = CANDIDAT sans code live : aucun rachat, hedge porté à
+                              # CB_T1_HEDGE_RATIO du delta et entrées bloquées jusqu'à la reprise
+CB_T1_HEDGE_RATIO = 1.0
+CB_CLOSE_ACTION  = "buyback"  # palier dur : "buyback" = tout racheter à l'ask (live) · "hedge" = CANDIDAT :
+                              # on garde les puts jusqu'à l'échéance, hedge à CB_T1_HEDGE_RATIO, entrées bloquées
 CB_T1_COOLDOWN_D = 0      # jours sans redéclenchement T1 après une reprise (anti-whipsaw ; 0 = off)
 # Le live évalue le CB à chaque run horaire (fenêtres glissantes 24 h / 72 h) : on le rejoue
 # heure par heure quand les prix horaires existent. False = ancien contrôle à la clôture seule.
@@ -470,7 +506,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
     hour_idx = 0            # compteur d'heures (cadence de rebalancement)
     last_rebal_h = -10**9
     closes_hist = []
-    positions = []      # {strike, tte_left, exp_day, contracts, entry_premium_usd, score_entry}
+    positions = []      # {strike, exp_t (règlement, jours depuis l'epoch), contracts, entry_premium_usd…}
     hedge_qty = 0.0     # BTC short (positif = short)
     hedge_vwap = 0.0
     cash = 0.0          # PnL cumulé réalisé ($)
@@ -494,9 +530,9 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
     t1_block_until_h = -1   # heure (hour_idx) avant laquelle un nouveau trim T1 est interdit (cooldown)
     hourly_px = []      # [(ts ms, prix)] sur ~80 h glissantes (fenêtres 24 h / 72 h du CB)
     cb_events = []      # [(date, "close"|"trim", "intraday"|"close")] — journal des actions du CB
-    di = 0              # index de jour (sert à dater les échéances : exp_day = di + tte)
     day_pnl = 0.0
-    cur_frac = 0.0      # fraction de la journée écoulée depuis la dernière clôture (TTE heure par heure)
+    now_t = 0.0         # instant courant (jours depuis l'epoch) : TTE = règlement − maintenant
+    dvol_hourly = fetch_dvol_hourly(years + 0.15) if HEDGE_INTRADAY else {}
     entries_today = 0   # nouvelles positions ouvertes ce jour UTC (MAX_ENTRIES_PER_DAY)
     n_rolls = 0
     entry_log = []      # [(date, heure, K, TTE j, delta, taille, score, spot)] — comparaison avec le live
@@ -531,7 +567,9 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         bande IV-dépendante, cadence minimale entre deux rebalancements (sauf juste après un
         changement du book si HEDGE_CADENCE_EXEMPT)."""
         nonlocal last_rebal_h, book_changed
-        target = -net_delta * HEDGE_RATIO
+        ratio = (CB_T1_HEDGE_RATIO if (cb_reduced and CB_T1_ACTION == "hedge")
+                 or (risk_off and CB_CLOSE_ACTION == "hedge") else HEDGE_RATIO)
+        target = -net_delta * ratio
         flatten = HEDGE_FLATTEN_DELTA > 0 and abs(net_delta) < HEDGE_FLATTEN_DELTA
         if flatten:
             target = 0.0
@@ -544,32 +582,55 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
             rebalance(target, S)
             last_rebal_h = hour_idx
 
+    def rem_days(p):
+        """Temps restant (jours) jusqu'au règlement de 08:00 UTC, à l'instant courant."""
+        return p['exp_t'] - now_t
+
+    def iv_h(p, dvol_now):
+        """IV d'une position à l'heure courante : IV du dernier mark rescalée au DVOL de l'heure."""
+        return p.get('iv_now', dvol_now) * dvol_now / (p.get('iv_dvol') or dvol_now)
+
     def buy_back(p, n_close, S, dvol, date, at_mark=False):
-        """Rachète n_close contrats d'une position à l'ask (mark + demi-spread ; au mark si at_mark,
-        comme le roll du live) ; renvoie le PnL réalisé."""
-        Td = max(p['tte_left'] - cur_frac, 0.02)
-        sig = (iv_pct(S, p['strike'], dvol, date, Td) + (0.0 if at_mark else ba_haircut(dvol))) / 100
-        T = Td / 365
-        price, _, _ = bs_put(S, p['strike'], T, sig)
+        """Rachète n_close contrats d'une position. Circuit breaker : à l'ask (mark + demi-spread
+        + BUYBACK_IV_PREMIUM, vente en stress) ; roll : au mark, comme le live. Renvoie le PnL réalisé."""
+        Td = max(rem_days(p), 0.01)
+        extra = 0.0 if at_mark else ba_haircut(dvol) + BUYBACK_IV_PREMIUM
+        sig = (iv_pct(S, p['strike'], dvol, date, Td) + extra) / 100
+        price, _, _ = bs_put(S, p['strike'], Td / 365, sig)
         f = option_fee(S, price, n_close)
         fees["options"] += f
         gross = p['entry_premium_usd'] * (n_close / p['contracts']) - price * n_close
         attrib["options"] += gross
         return gross - f
 
+    def settle(p, S_set):
+        """Règlement à l'échéance (08:00 UTC) : payoff au prix du moment + frais de livraison."""
+        nonlocal cash, day_pnl, n_expired_itm
+        payoff = max(p['strike'] - S_set, 0.0) * p['contracts']
+        f = delivery_fee(S_set, p['strike'], p['contracts'])
+        fees["delivery"] += f
+        attrib["options"] += p['entry_premium_usd'] - payoff
+        cash += p['entry_premium_usd'] - payoff - f
+        day_pnl += p['entry_premium_usd'] - payoff - f
+        if payoff > 0:
+            n_expired_itm += 1
+
     def cb_step(S, m1, m3, dvol_chg, hv5, hv10, dvol, date, daily):
         """Machine d'état du circuit breaker (miroir apply_circuit_breaker du live).
-        m1/m3 = moves signés 1 j / 3 j (%). daily=False : contrôle horaire intraday.
+        m1/m3 = moves signés 1 j / 3 j (%), dvol_chg = variation du DVOL sur 3 j (pts).
         Renvoie True si le book a changé (fermeture ou allègement)."""
         nonlocal positions, cash, day_pnl, risk_off, cb_reduced, n_cb_triggers, n_t1_trims
-        nonlocal t1_block_until_h, book_changed, cb_days_off
+        nonlocal t1_block_until_h, book_changed
         if not risk_off and positions and (m3 < -CB_MOVE_3D_PCT or dvol_chg > CB_DVOL_3D_PTS):
-            # Palier dur : tout racheter à l'ask (on paie le spread + les frais en sortie)
-            for p in positions:
-                r = buy_back(p, p['contracts'], S, dvol, date)
-                cash += r; day_pnl += r
-            positions = []
-            rebalance(0.0, S)
+            # Palier dur : tout racheter à l'ask (on paie le spread + les frais en sortie) — ou,
+            # variante « hedge », garder les puts, hedger à CB_T1_HEDGE_RATIO et bloquer les entrées
+            if CB_CLOSE_ACTION == "buyback":
+                for p in positions:
+                    r = buy_back(p, p['contracts'], S, dvol, date)
+                    cash += r; day_pnl += r
+                positions = []
+                rebalance(0.0, S)
+            book_changed = True
             risk_off = True
             cb_reduced = False
             n_cb_triggers += 1
@@ -577,13 +638,15 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
             return True
         if GRADUATED_CB and not risk_off and not cb_reduced and positions and hour_idx >= t1_block_until_h and \
                 (m1 < -CB_T1_MOVE_1D or m3 < -CB_T1_MOVE_3D):
-            # Palier d'allègement : rachat de (1−keep) de chaque position à l'ask
-            for p in positions:
+            # Palier d'allègement : rachat de (1−keep) de chaque position à l'ask — ou, variante
+            # « hedge », aucun rachat : le hedge monte à CB_T1_HEDGE_RATIO au prochain contrôle
+            for p in (positions if CB_T1_ACTION == "buyback" else []):
                 sell = p['contracts'] * (1.0 - CB_T1_KEEP)
                 r = buy_back(p, sell, S, dvol, date)
                 cash += r; day_pnl += r
                 p['entry_premium_usd'] *= CB_T1_KEEP
                 p['contracts'] *= CB_T1_KEEP
+            positions = [p for p in positions if p['contracts'] > 1e-9]
             cb_reduced = True
             book_changed = True
             n_t1_trims += 1
@@ -593,14 +656,12 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
             cb_reduced = False
             t1_block_until_h = hour_idx + int(CB_T1_COOLDOWN_D * 24)   # anti-whipsaw : N × 24 h (comme le live)
         elif risk_off:
-            if daily:
-                cb_days_off += 1
             # Re-entrée : réalisé court se retourne + spot stabilisé
             if hv5 is not None and hv10 is not None and hv5 < hv10 and abs(m3) < CB_REENTRY_MOVE:
                 risk_off = False
         return False
 
-    def try_entries(S_e, dvol_e, hv_e, rank_e, date_e, frac, passes):
+    def try_entries(S_e, dvol_e, hv_e, rank_e, date_e, passes):
         """Entrées d'un run (miroir greeks_hedge.run_once) : jusqu'à `passes` ouvertures (le live
         enchaîne le bloc « book vide » et le bloc opportuniste), bloquées en risk-off, pendant
         l'allègement du CB, sous DVOL_MIN, au cap notionnel et au plafond d'entrées du jour."""
@@ -618,8 +679,8 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
             # mesuré au delta D'ENTRÉE (miroir greeks_hedge.held_info)
             held = {}
             for p in positions:
-                h = held.setdefault((p['exp_day'], p['strike']),
-                                    {'exp_day': p['exp_day'], 'delta': p.get('delta_entry', p['delta_now']),
+                h = held.setdefault((round(p['exp_t'], 4), p['strike']),
+                                    {'exp': round(p['exp_t'], 4), 'delta': p.get('delta_entry', p['delta_now']),
                                      'sc': 0.0, 'n': 0.0})
                 h['sc'] += p.get('score_entry', ENTRY_SCORE_MIN) * p['contracts']
                 h['n']  += p['contracts']
@@ -628,20 +689,21 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
 
             def _allowed(K_c, exp_c, delta_c, score_c):
                 """Filtre ré-entrée (miroir greeks_hedge._candidate_allowed)."""
+                exp_c = round(exp_c, 4)
                 if (exp_c, K_c) in held:
                     return score_c > held[(exp_c, K_c)]['score'] + ENTRY_SCORE_REENTRY_BOOST
                 close = [h for h in held.values()
-                         if h['exp_day'] == exp_c and abs(delta_c - h['delta']) < DELTA_MIN_SPACING]
+                         if h['exp'] == exp_c and abs(delta_c - h['delta']) < DELTA_MIN_SPACING]
                 if close:
                     wavg = sum(h['score'] * h['n'] for h in close) / sum(h['n'] for h in close)
                     return score_c > wavg + ENTRY_SCORE_REENTRY_BOOST
                 return True
 
-            best = next((c for c in scan_candidates(S_e, dvol_e, date_e, hv_e, frac)
-                         if _allowed(c[1], di + c[2], c[5], c[0])), None)
+            best = next((c for c in scan_candidates(S_e, dvol_e, date_e, hv_e, now_t)
+                         if _allowed(c[1], c[2], c[5], c[0])), None)
             if not best or not (best[0] >= ENTRY_SCORE_MIN or must_open):
                 return
-            score, K, k, price, otm, delta, mark_iv = best
+            score, K, exp_t, price, otm, delta, mark_iv = best
             size = round(score ** SIZE_CONVEXITY * rank_mult(rank_e), 1)
             size = round(min(max(0.1, size), MAX_PORTFOLIO_BTC - used), 1)
             if size < 0.1:
@@ -650,15 +712,14 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
             fees["options"] += f
             cash -= f; day_pnl -= f
             positions.append({
-                'strike': K, 'tte_left': k + (1 if frac < 1.0 else 0), 'exp_day': di + k,
-                'contracts': size, 'entry_premium_usd': price * size,
-                'score_entry': score, 'delta_entry': delta,
-                'delta_now': delta, 'iv_now': mark_iv, 'mark_usd': price,
+                'strike': K, 'exp_t': exp_t, 'contracts': size, 'entry_premium_usd': price * size,
+                'score_entry': score, 'delta_entry': delta, 'delta_now': delta,
+                'iv_now': mark_iv, 'iv_dvol': dvol_e, 'mark_usd': price,
             })
             n_trades += 1
             entries_today += 1
             book_changed = True
-            entry_log.append((str(date_e), round(frac * 24), K, round(k + 1 - frac, 2), round(delta, 3),
+            entry_log.append((str(date_e), round((now_t % 1) * 24), K, round(exp_t - now_t, 2), round(delta, 3),
                               size, round(score, 3), round(S_e)))
 
     def _px_ago(ts, hours):
@@ -670,8 +731,17 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         best = min(hourly_px, key=lambda r: abs(r[0] - target), default=None)
         return best[1] if best and abs(best[0] - target) < 6 * 3_600_000 else None
 
+    def _dvol_ago(ts, hours):
+        """DVOL horaire à ts − hours (ou l'heure voisine)."""
+        t = ts - hours * 3_600_000
+        return dvol_hourly.get(t) or dvol_hourly.get(t - 3_600_000) or dvol_hourly.get(t + 3_600_000)
+
     for day in days:
-        S, dvol = day['spot'], day['dvol']
+        # Clôture journalière à 00:00 UTC (comme le DVOL journalier et la boucle horaire) : la bougie
+        # 1D du perp se clôt à 08:00 UTC le lendemain — son prix aurait 8 h d'avance sur le reste.
+        nxt = hourly.get(day['date'] + timedelta(days=1)) if hourly else None
+        S = nxt[0][0] if nxt else day['spot']
+        dvol = day['dvol']
         closes_hist.append(S)
         dvol_30.append(dvol)
         dvol_30 = dvol_30[-30:]
@@ -679,79 +749,71 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         hv10, hv30 = hv_std(closes_hist, 10), hv_std(closes_hist, 30)
         if hv10 is None or hv30 is None or len(dvol_30) < 10:
             continue
-        di += 1
         entries_today = 0
         hv5 = hv_from(closes_hist, 5)            # RMS, comme le hv_5d du circuit breaker live
         hv5s = hv_std(closes_hist, 5)
         hv_blend = HV_W5 * (hv5s if hv5s else hv10) + HV_W10 * hv10 + HV_W30 * hv30
         iv_rank  = max(0.0, min(1.0, (dvol - min(dvol_30)) / max(max(dvol_30) - min(dvol_30), 5)))
-        move_3d  = abs(S / closes_hist[-4] - 1) * 100 if len(closes_hist) >= 4 else 0.0
         dvol_chg_3d = dvol - dvol_hist[-4] if len(dvol_hist) >= 4 else 0.0
+        t_close = (day['date'] - _EPOCH).days + 1.0
 
         day_pnl = 0.0
 
-        # ── 0bis. Hedge intraday : on rejoue la journée heure par heure (cadence du live).
-        # IV des positions figée à la dernière clôture (strikes collants), funding horaire réel.
+        # ── Runs horaires (cadence du live) : règlements 08:00 → rolls → CB → entrées → hedge.
+        # Seules les infos connues à l'heure h : prix et DVOL de l'heure, clôtures de la veille.
         hours = hourly.get(day['date']) if HEDGE_INTRADAY else None
         if hours:
-            n_ctr = sum(p['contracts'] for p in positions)
-            ivs = [p.get('iv_now', dvol) for p in positions]
-            # CB intraday : seules les infos connues à l'heure h (clôtures et DVOL de la veille) ;
-            # rachat pricé au DVOL le plus haut entre la veille et la clôture du jour (prudent).
             hv5_y  = hv_from(closes_hist[:-1], 5)
             hv10_y = hv_std(closes_hist[:-1], 10)
-            dchg_y = dvol_hist[-2] - dvol_hist[-5] if len(dvol_hist) >= 5 else 0.0
-            dvol_cb = max(dvol, dvol_hist[-2]) if len(dvol_hist) >= 2 else dvol
-            # Entrées intraday : DVOL de la veille (seule valeur connue), rang sur les 30 clôtures
-            # précédentes, HV avec la bougie du jour en cours (comme fetch_hv du live)
             dvol_y = dvol_hist[-2] if len(dvol_hist) >= 2 else dvol
             d30_y = dvol_30[:-1] or dvol_30
-            rank_y = max(0.0, min(1.0, (dvol_y - min(d30_y)) / max(max(d30_y) - min(d30_y), 5)))
             for px, h_rate, ts in hours:
                 hour_idx += 1
                 hourly_px.append((ts, px))
                 del hourly_px[:-80]
-                cur_frac = ((ts // 1000) % 86400) / 86400.0
+                now_t = ts / 86_400_000
+                dvol_h = dvol_hourly.get(ts) or dvol_y
+                # Règlement des échéances (l'exchange règle à 08:00, que le process tourne ou non)
+                if positions and any(p['exp_t'] <= now_t + 1e-9 for p in positions):
+                    for p in positions:
+                        if p['exp_t'] <= now_t + 1e-9:
+                            settle(p, px)
+                    positions = [p for p in positions if p['exp_t'] > now_t + 1e-9]
+                    book_changed = True
                 runs_now = hour_idx % max(int(RUN_EVERY_H), 1) == 0   # le process tourne-t-il à cette heure ?
-                # Ordre d'un run live : rolls → circuit breaker → entrées → hedge
                 if runs_now and positions:
                     keep = []
                     for p in positions:
-                        rem = p['tte_left'] - cur_frac
+                        rem = rem_days(p)
                         if rem <= ROLL_TRIGGER:
-                            g = bs_put(px, p['strike'], max(rem, 0.02) / 365, p.get('iv_now', dvol) / 100)[2]
+                            g = bs_put(px, p['strike'], max(rem, 0.01) / 365, iv_h(p, dvol_h) / 100)[2]
                             if g * px > GAMMA_ROLL_THRESHOLD:   # gamma en pts de delta pour 1 % de move
-                                r = buy_back(p, p['contracts'], px, dvol_y, day['date'], at_mark=True)
+                                r = buy_back(p, p['contracts'], px, dvol_h, day['date'], at_mark=True)
                                 cash += r; day_pnl += r
                                 n_rolls += 1
                                 book_changed = True
                                 continue
                         keep.append(p)
-                    if len(keep) != len(positions):
-                        positions = keep
-                        n_ctr = sum(p['contracts'] for p in positions)
-                        ivs = [p.get('iv_now', dvol) for p in positions]
+                    positions = keep
                 if runs_now and circuit_breaker and CB_INTRADAY:
                     p1, p3 = _px_ago(ts, 24), _px_ago(ts, 72)
                     m1 = (px / p1 - 1) * 100 if p1 else 0.0
                     m3 = (px / p3 - 1) * 100 if p3 else 0.0
-                    if cb_step(px, m1, m3, dchg_y, hv5_y, hv10_y, dvol_cb, day['date'], daily=False):
+                    dv3 = _dvol_ago(ts, 72)
+                    if cb_step(px, m1, m3, (dvol_h - dv3) if dv3 else 0.0, hv5_y, hv10_y, dvol_h,
+                               day['date'], daily=False):
                         n_cb_intraday += 1
-                        n_ctr = sum(p['contracts'] for p in positions)
-                        ivs = [p.get('iv_now', dvol) for p in positions]
                 if runs_now:
-                    n_before = len(positions)
                     hv_h = [hv_std(closes_hist[:-1] + [px], w) for w in (5, 10, 30)]
                     if hv_h[1] and hv_h[2]:
                         hv_e = HV_W5 * (hv_h[0] or hv_h[1]) + HV_W10 * hv_h[1] + HV_W30 * hv_h[2]
-                        try_entries(px, dvol_y, hv_e, rank_y, day['date'], cur_frac,
-                                    passes=2 if not positions else 1)
-                    if len(positions) != n_before:
-                        n_ctr = sum(p['contracts'] for p in positions)
-                        ivs = [p.get('iv_now', dvol) for p in positions]
-                    nd = sum(bs_put(px, p['strike'], max(p['tte_left'] - cur_frac, 0.02) / 365,
-                                    p.get('iv_now', dvol) / 100)[1] * p['contracts'] for p in positions)
-                    hedge_step(nd, px, ivs, n_ctr)
+                        d30 = d30_y + [dvol_h]
+                        rank_h = max(0.0, min(1.0, (dvol_h - min(d30)) / max(max(d30) - min(d30), 5)))
+                        try_entries(px, dvol_h, hv_e, rank_h, day['date'], passes=2 if not positions else 1)
+                    ivs = [iv_h(p, dvol_h) for p in positions]
+                    nd = sum(bs_put(px, p['strike'], max(rem_days(p), 0.01) / 365, iv / 100)[1] * p['contracts']
+                             for p, iv in zip(positions, ivs))
+                    hedge_step(nd, px, ivs, sum(p['contracts'] for p in positions))
                 if hedge_qty:
                     # Funding horaire : réel, ou forfait payé par le short (hypothèse « forfait »)
                     f_h = hedge_qty * px * h_rate if USE_REAL_FUNDING else -abs(hedge_qty) * px * FUNDING_DAILY / 24
@@ -759,66 +821,51 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         else:
             hour_idx += 24
 
-        # ── 0. Circuit breaker (gradué : allègement → fermeture totale) ────────
-        # À la clôture : moves close-to-close + DVOL du jour (la jambe DVOL n'a pas de donnée horaire).
-        if circuit_breaker:
+        # ── Clôture (00:00 UTC du lendemain) ─────────────────────────────────
+        now_t = t_close
+        # Sans runs horaires (ou CB horaire coupé) : contrôle du CB et règlements à la clôture
+        if circuit_breaker and not (hours and CB_INTRADAY):
             move_3d_signed = (S / closes_hist[-4] - 1) * 100 if len(closes_hist) >= 4 else 0.0
             move_1d_signed = (S / closes_hist[-2] - 1) * 100 if len(closes_hist) >= 2 else 0.0
-            cur_frac = 1.0   # clôture : la journée est écoulée (positions pas encore vieillies)
-            # Surface réelle du lendemain : le snapshot « D+1 » est pris juste après la clôture de D
             cb_step(S, move_1d_signed, move_3d_signed, dvol_chg_3d, hv5, hv10, dvol,
                     day['date'] + timedelta(days=1), daily=True)
-        cur_frac = 0.0
-
-        # ── 1. Vieillissement + expiration des positions ──────────────────────
-        still = []
-        for p in positions:
-            p['tte_left'] -= 1
-            if p['tte_left'] <= 0:
-                payoff = max(p['strike'] - S, 0.0) * p['contracts']
-                f = delivery_fee(S, p['strike'], p['contracts'])
-                fees["delivery"] += f
-                attrib["options"] += p['entry_premium_usd'] - payoff
-                cash += p['entry_premium_usd'] - payoff - f
-                day_pnl += p['entry_premium_usd'] - payoff - f
-                if payoff > 0:
-                    n_expired_itm += 1
-            else:
-                still.append(p)
-        if len(still) != len(positions):
+        if risk_off:
+            cb_days_off += 1
+        if any(p['exp_t'] <= now_t + 1e-9 for p in positions):
+            for p in positions:
+                if p['exp_t'] <= now_t + 1e-9:
+                    settle(p, S)
+            positions = [p for p in positions if p['exp_t'] > now_t + 1e-9]
             book_changed = True
-        positions = still
 
-        # ── 2. Mark-to-model + delta net ──────────────────────────────────────
+        # ── Mark-to-model + delta net (surface réelle du lendemain : le snapshot « D+1 » est pris
+        # juste après la clôture de D)
         net_delta = 0.0
         mtm_value = 0.0     # valeur de rachat des puts vendus ($, négatif pour nous)
         pos_ivs = []
         for p in positions:
-            T = p['tte_left'] / 365
-            iv_m = iv_pct(S, p['strike'], dvol, day['date'] + timedelta(days=1), p['tte_left'])
-            price, delta, gamma = bs_put(S, p['strike'], T, iv_m / 100)
+            rem = max(rem_days(p), 0.01)
+            iv_m = iv_pct(S, p['strike'], dvol, day['date'] + timedelta(days=1), rem)
+            price, delta, gamma = bs_put(S, p['strike'], rem / 365, iv_m / 100)
             p['delta_now'] = delta
             p['iv_now'] = iv_m
+            p['iv_dvol'] = dvol
             p['mark_usd'] = price
             pos_ivs.append(iv_m)
             net_delta += delta * p['contracts']
             mtm_value += price * p['contracts']
 
-        # ── 3. Hedge à la clôture (seulement sans données horaires : sinon fait en 0bis) ─
+        # ── Hedge et entrées à la clôture : seulement sans données horaires
         if not hours:
             hedge_step(net_delta, S, pos_ivs, sum(p['contracts'] for p in positions), force_cadence=True)
-            # Funding journalier : réel si disponible (un short encaisse un funding positif)
             rate = fund_day.get(day['date'])
             f_pnl = hedge_qty * S * rate if rate is not None else -abs(hedge_qty) * S * FUNDING_DAILY
             funding_total += f_pnl
             cash += f_pnl
             day_pnl += f_pnl
+            try_entries(S, dvol, hv_blend, iv_rank, day['date'], passes=1)
 
-        # ── 4. Entrées : sans données horaires seulement (sinon faites à chaque run horaire, en 0bis)
-        if not hours:
-            try_entries(S, dvol, hv_blend, iv_rank, day['date'], 1.0, passes=1)
-
-        # ── 5. Equity = cash + prime des positions ouvertes − valeur de rachat
+        # ── Equity = cash + prime des positions ouvertes − valeur de rachat
         open_prem = sum(p['entry_premium_usd'] for p in positions)
         hedge_mtm = hedge_qty * (hedge_vwap - S)   # short flottant
         equity = cash + open_prem - mtm_value + hedge_mtm
@@ -834,7 +881,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                                   'contracts': p['contracts']} for p in positions], hedge_qty, S)
         cap_sm.append(sm['im_usd'])
         if TRACK_PM:
-            pm = mg.portfolio_margin([{'strike': p['strike'], 'tte_days': max(p['tte_left'], 0.5),
+            pm = mg.portfolio_margin([{'strike': p['strike'], 'tte_days': max(rem_days(p), 0.05),
                                        'iv': p.get('iv_now', dvol) / 100, 'contracts': p['contracts'],
                                        'delta': p.get('delta_now', 0.0)} for p in positions],
                                      -hedge_qty, S)   # convention margin.py : négatif = short

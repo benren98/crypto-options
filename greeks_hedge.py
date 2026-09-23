@@ -114,6 +114,13 @@ CB_T1_MOVE_3D_PCT        = 6.0   # ou >6% en 3 jours
 CB_T1_KEEP               = 0.30  # fraction du book conservée à l'allègement (on rachète 70%)
 CB_T1_RESTORE_MOVE_PCT   = 3.0   # reprise pleine taille quand |move 3j| < 3% (sans attendre HV5<HV10)
 CB_T1_COOLDOWN_D         = 0     # après une reprise, pas de nouvel allègement pendant N jours (0 = off)
+# Action du circuit breaker. "buyback" (historique) : racheter les puts à l'ask — en stress l'ask est
+# ~5 pts de vol au-dessus du smile (mesuré sur les rachats des 18 et 24/06/2026), ce qui verrouille la
+# perte au pic de vol. "hedge" : garder les puts, porter le hedge à CB_T1_HEDGE_RATIO du delta et
+# bloquer les entrées jusqu'à la reprise / re-entrée (le perp est liquide et bon marché).
+CB_T1_ACTION             = "buyback"   # palier d'allègement
+CB_CLOSE_ACTION          = "buyback"   # palier dur (fermeture)
+CB_T1_HEDGE_RATIO        = 1.0         # ratio de hedge en mode "hedge" pendant l'alerte
 ENTRY_IV_HV_MIN          = 1.10  # ratio IV/HV minimum pour entrée opportuniste
 ENTRY_SCORE_REENTRY_BOOST= 0.05  # amélioration score nécessaire pour re-entrer un instrument déjà tenu
 DELTA_MIN_SPACING        = 0.08  # espacement min |delta| entre positions sur la même expiry
@@ -525,7 +532,7 @@ def compute_hedge_threshold(iv_pct: float, contracts: int = 1) -> tuple[float, f
 
 
 def compute_hedge_order(pos_greeks: dict, current_hedge_qty: float,
-                         spot: float) -> dict:
+                         spot: float, ratio: float = None) -> dict:
     """
     Calcule l'ordre de rebalancement du hedge delta via perp.
 
@@ -535,7 +542,7 @@ def compute_hedge_order(pos_greeks: dict, current_hedge_qty: float,
       - Pour neutraliser : shorter 0.20 BTC de perp
       - hedge_qty stocké en positif = short perp
     """
-    target_hedge  = -pos_greeks["pos_delta"] * HEDGE_RATIO   # qty à shorter sur perp
+    target_hedge  = -pos_greeks["pos_delta"] * (HEDGE_RATIO if ratio is None else ratio)   # qty à shorter sur perp
     # Mise à plat du résiduel : quand les puts sont devenus quasi sans delta, un hedge
     # résiduel sous la bande devient un pari directionnel (ex. −0,048 BTC gardé de 63k à 80k).
     flatten = HEDGE_FLATTEN_DELTA > 0 and abs(pos_greeks["pos_delta"]) < HEDGE_FLATTEN_DELTA
@@ -759,6 +766,15 @@ def apply_circuit_breaker(state: dict, spot: float, cb: dict) -> bool:
         print_section("CIRCUIT BREAKER DECLENCHE")
         print(f"  Move 3j : {cb['move_3d_pct']}%  (seuil {CB_MOVE_3D_PCT}%)")
         print(f"  DVOL 3j : {cb['dvol_3d_chg']:+} pts  (seuil +{CB_DVOL_3D_PTS} pts)" if cb["dvol_3d_chg"] is not None else "  DVOL 3j : n/a")
+        if CB_CLOSE_ACTION == "hedge":
+            # Mode hedge : on garde les puts, le hedge monte à CB_T1_HEDGE_RATIO au rebalance de
+            # fin de run (compute_hedge_order) et les entrées restent bloquées (risk_off)
+            print(f"  [CB] Mode hedge : puts conservés, hedge porté à {CB_T1_HEDGE_RATIO:.0%} du delta")
+            state["risk_off"] = True
+            state["cb_reduced"] = False
+            state["risk_off_info"] = {"ts": now_dt(), "move_3d_pct": cb["move_3d_pct"],
+                                      "dvol_3d_chg": cb["dvol_3d_chg"], "mode": "hedge"}
+            return True
         # 1) Rachat de toutes les positions à l'ask (on paie le spread de sortie)
         for pos in state.get("positions", []):
             exit_p = pos["entry_price"]
@@ -823,8 +839,11 @@ def apply_circuit_breaker(state: dict, spot: float, cb: dict) -> bool:
         print_section("CIRCUIT BREAKER — ALLEGEMENT (palier 1)")
         print(f"  Move 1j : {cb.get('move_1d_pct')}%  (seuil −{CB_T1_MOVE_1D_PCT}%)  |  "
               f"Move 3j : {cb.get('move_3d_pct')}%  (seuil −{CB_T1_MOVE_3D_PCT}%)")
-        print(f"  On conserve {CB_T1_KEEP*100:.0f}% du book, rachat du reste a l'ask.")
-        for pos in state.get("positions", []):
+        if CB_T1_ACTION == "hedge":
+            print(f"  Mode hedge : puts conserves, hedge porte a {CB_T1_HEDGE_RATIO:.0%} du delta, entrees bloquees.")
+        else:
+            print(f"  On conserve {CB_T1_KEEP*100:.0f}% du book, rachat du reste a l'ask.")
+        for pos in (state.get("positions", []) if CB_T1_ACTION == "buyback" else []):
             n = float(pos.get("contracts", 1))
             sell_n = round(n * (1.0 - CB_T1_KEEP), 6)
             keep_n = round(n - sell_n, 6)
@@ -1235,7 +1254,11 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     current_hedge_qty = float(hedge_data.get("qty", 0.0))
 
     print_section("HEDGE DELTA PORTFOLIO (via BTC-PERPETUAL)")
-    hedge = compute_hedge_order(combined_greeks, current_hedge_qty, spot)
+    # Circuit breaker en mode "hedge" : ratio relevé tant que l'alerte dure
+    _cb_hedge = ((state.get("cb_reduced") and CB_T1_ACTION == "hedge")
+                 or (state.get("risk_off") and CB_CLOSE_ACTION == "hedge"))
+    hedge = compute_hedge_order(combined_greeks, current_hedge_qty, spot,
+                                ratio=CB_T1_HEDGE_RATIO if _cb_hedge else None)
     display_hedge(hedge)
 
     # Cadence minimale entre deux rebalancements (HEDGE_EVERY_H, 1 = chaque run).
