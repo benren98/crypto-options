@@ -33,6 +33,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 from check_params_sync import parse_constants  # noqa: E402
+import margin as mg  # noqa: E402
 
 TEMPLATE = HERE / "dashboard_v2.html"
 REPO_URL = "https://github.com/benren98/crypto-options"
@@ -499,6 +500,87 @@ class Model:
                 out.append((datetime.fromtimestamp(ts / 1000, tz=timezone.utc), -q * px * rate))
         return out
 
+    # ── Capital immobilisé (marge Deribit) ─────────────────────────────────────
+    def capital(self, rows, perf):
+        """Marge actuelle (standard exacte, portfolio estimée) + reconstruction jour par jour
+        depuis le début du live (lots ouverts ce jour-là, hedge du jour, spot de clôture) →
+        capital requis et rendement annualisé selon la rémunération du collatéral."""
+        live = self._live_by_lot()
+        hq = fnum(self.hedge.get("qty"))
+        now_lots_sm, now_lots_pm = [], []
+        for p in self.positions:
+            d = live.get(id(p)) or {}
+            n = fnum(p.get("contracts"), 1)
+            exp = parse_ts(p.get("expiry_dt"))
+            tte = max(0.5, (exp - self.now).total_seconds() / 86400) if exp else 1.0
+            now_lots_sm.append({"strike": fnum(p.get("strike")), "contracts": n,
+                                "mark_btc": fnum(d.get("current_price_btc"), fnum(p.get("entry_price")))})
+            now_lots_pm.append({"strike": fnum(p.get("strike")), "contracts": n, "tte_days": tte,
+                                "iv": (fnum(d.get("current_iv_pct")) or fnum(p.get("iv_at_entry"), 50.0)) / 100,
+                                "delta": fnum(d.get("live_delta")) / n if d else fnum(p.get("delta_at_entry"))})
+        sm_now = mg.standard_margin(now_lots_sm, hq, self.spot) if self.spot else None
+        pm_now = mg.portfolio_margin(now_lots_pm, hq, self.spot) if self.spot else None
+
+        # Historique : un point par jour (clôture UTC)
+        start = parse_ts(perf.get("start")) if perf.get("start") else None
+        daily = []
+        if start and self.funding:
+            px_by_day, rate_by_day = {}, defaultdict(float)
+            for ts, rate, px in self.funding:
+                d = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).date()
+                px_by_day[d] = px
+                rate_by_day[d] += rate
+            hedge_ev = sorted(((parse_ts(e.get("ts")), fnum(e.get("qty_after"))) for e in self.hedge.get("history", []) or []
+                               if parse_ts(e.get("ts"))), key=lambda x: x[0])
+            lots = [(parse_ts(l.get("entry_ts")), parse_ts(l.get("exit_ts")), l) for l in self.closed + self.positions]
+            day = start.date()
+            while day <= self.now.date():
+                S = px_by_day.get(day)
+                if S:
+                    eod = datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+                    q = next((q for t, q in reversed(hedge_ev) if t < eod), 0.0)
+                    sm_l, pm_l = [], []
+                    for t_in, t_out, l in lots:
+                        if not t_in or t_in >= eod or (t_out and t_out < eod):
+                            continue
+                        exp = parse_ts(l.get("expiry_dt"))
+                        tte = max(0.5, (exp - eod).total_seconds() / 86400) if exp else 1.0
+                        n = fnum(l.get("contracts"), 1)
+                        sm_l.append({"strike": fnum(l.get("strike")), "contracts": n, "mark_btc": fnum(l.get("entry_price"))})
+                        pm_l.append({"strike": fnum(l.get("strike")), "contracts": n, "tte_days": tte,
+                                     "iv": fnum(l.get("iv_at_entry"), 50.0) / 100, "delta": fnum(l.get("delta_at_entry"))})
+                    daily.append({"d": day.isoformat(), "sm": round(mg.standard_margin(sm_l, q, S)["im_usd"]),
+                                  "pm": round(mg.portfolio_margin(pm_l, q, S)["im_usd"]), "funding": rate_by_day.get(day, 0.0)})
+                day += timedelta(days=1)
+
+        def stats(key):
+            vals = [x[key] for x in daily]
+            if not vals or max(vals) <= 0:
+                return None
+            nets = [x["net"] for x in perf.get("daily", [])]
+            peak, dd = (nets[0] if nets else 0.0), 0.0
+            for v in nets:
+                peak = max(peak, v); dd = max(dd, peak - v)
+            K = max(vals) + dd
+            years = max(len(daily), 1) / 365
+            net = perf["totals"]["net"]
+            carry = {"idle": 0.0, "tbill": K * mg.TBILL_YIELD * years,
+                     "btc_funding": sum(K * x["funding"] for x in daily)}
+            return {"capital_usd": round(K), "peak_margin_usd": round(max(vals)), "buffer_dd_usd": round(dd),
+                    "avg_margin_usd": round(sum(vals) / len(vals)),
+                    "roc_pct": {k: round((net + v) / years / K * 100, 1) for k, v in carry.items()},
+                    "carry_usd": {k: round(v) for k, v in carry.items()}}
+
+        return {
+            "now": {"sm_im": round(sm_now["im_usd"]) if sm_now else None, "sm_mm": round(sm_now["mm_usd"]) if sm_now else None,
+                    "sm_options": round(sm_now["options_im_usd"]) if sm_now else None,
+                    "sm_perp": round(sm_now["perp_im_usd"]) if sm_now else None,
+                    "pm_im": round(pm_now["im_usd"]) if pm_now else None, "pm_mm": round(pm_now["mm_usd"]) if pm_now else None,
+                    "pm_worst": pm_now.get("worst") if pm_now else None},
+            "daily": [{"d": x["d"], "sm": x["sm"], "pm": x["pm"]} for x in daily],
+            "sm": stats("sm"), "pm": stats("pm"), "tbill_yield": mg.TBILL_YIELD,
+        }
+
     # ── Séries marché ─────────────────────────────────────────────────────────
     def market_series(self, rows):
         cutoff = self.now - timedelta(days=MARKET_DAYS)
@@ -633,6 +715,7 @@ class Model:
         cb = self.circuit_breaker()
         dec = self.decisions()
         perf = self.performance(tot)
+        cap = self.capital(rows, perf)
         stress = self.stress(rows)
         market = self.market_series(rows)
         for r in rows:
@@ -657,7 +740,7 @@ class Model:
             "verdict": self.verdict(bot_age, rows, tot, cb, gates, dec),
             "book": {"rows": rows, "totals": tot}, "stress": stress, "cb": cb, "gates": gates,
             "scanner": {"rows": scan_rows, "weights": weights, "threshold": gates["threshold"]},
-            "performance": perf, "series": market, "journal": self.journal(), "decisions": dec,
+            "performance": perf, "capital": cap, "series": market, "journal": self.journal(), "decisions": dec,
             "reconcile": self.recon,
         }
 

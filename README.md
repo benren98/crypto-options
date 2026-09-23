@@ -24,6 +24,7 @@ Research (weekly, backtest_routine.yml)
   backtest_routine.py    — anti-overfit sweeps (5 folds) → backtest_routine.json
   generate_backtest_html.py — docs/backtest.html (backtests + model-vs-market vol analysis)
   check_params_sync.py   — asserts backtest.py mirrors greeks_hedge.py (35 params)
+  margin.py              — Deribit margin: standard (exact) and portfolio (estimate), collateral yield
 
 dashboard_assets/        — CSS/JS shared by both dashboard pages
 research/                — one-off exploration scripts (see research/README.md)
@@ -345,6 +346,59 @@ The bid/ask costs are shown separately:
 - **Exit B/A cost (estimated)**: additional cost to buy back at ask right now
 
 ---
+
+## Backtest Fidelity — revision of 2026-09-23
+
+The backtest was audited against the live bot and the real surfaces; five biases were found,
+all in the optimistic direction. Production config, BTC, "4 years":
+
+| Step | PnL | MaxDD | Calmar | Premium kept |
+|---|---|---|---|---|
+| Routine of 2026-09-21 (before the audit) | 73,959 $ | 3,240 $ | 8.59 | — |
+| + DVOL pagination: the API caps at 1000 points, so "4 years" was really 2.7 (Dec 2023 →); + Deribit fees + real funding | 80,737 $ | 3,505 $ | 5.66 | 86 % |
+| + hedge replayed **hourly** like the live bot (close-only checks missed band-triggered trading at intraday extremes: hedge cost ×7) | 68,142 $ | 2,625 $ | 6.38 | 73 % |
+| + ATM level per maturity (the model used DVOL, a 30-day ATM, for every expiry; short expiries trade ~0.93× DVOL → options sold ~4 vol pts too rich) | **41,868 $** | **2,598 $** | **3.96** | **59 %** |
+
+Also fixed: re-entry/spacing filters could never bind (continuous strikes, exact-TTE matching);
+`python backtest.py` did not run the production config (CB off, always-one on).
+Fees: Deribit Standard grid (options 3 bps of the underlying capped at 12.5 % of premium,
+perp 3.5 bps taker, delivery 1.5 bps capped at 12.5 % of value). Over 4 years fees are
+~12 k$, ~12 % of gross option PnL — mostly the option leg, because many premiums sit near
+the 12.5 % cap. Live paper since June 2026 (fees estimated in dashboard v2): +940 $ before
+fees, +233 $ after — the live window is a strong rally (short-perp hedge losses) in low vol.
+
+Remaining known limits: entries are simulated once a day at the close; the vol model is
+static (the DVOL has not yet covered 15 pts of range, so stress behaviour is extrapolated);
+the numbers of the rejected-approaches table below were measured under the older model.
+
+## Capital & Collateral (margin.py)
+
+What has to sit on Deribit to carry the book (sources: Deribit support pages, checked 2026-09-23):
+
+- **Standard margin** (default): each position is margined **separately and summed — no netting**.
+  Short inverse BTC put: IM = max(0.15 − OTM, 0.10) BTC + premium, MM = 0.075 + premium; BTC perp
+  (tier 1, our size): IM 2 %, MM 2/3 of IM. The short-perp hedge therefore *adds* margin even
+  though it reduces risk. Computed exactly.
+- **Portfolio margin** (selectable in the account): the book is stressed as a whole (±14 % spot in
+  4 steps each side × vol up/same/down, BTC parameters from `public/pme/get_params`), IM = worst
+  loss + roll shock, MM = 0.8 × IM. The hedge is recognised. The exact vol-shock formula is not
+  published → **estimate**, to be confirmed with `private/simulate_portfolio` once an API key exists.
+- **Collateral yield**: the margin/collateral docs mention no interest on balances. Cash can earn
+  only through (1) yield-bearing cross-collateral: USYC / BUIDL (tokenised T-bills, 2 % haircut,
+  usually restricted to qualified investors), stETH (7.5 %, ETH exposure to hedge), USDe (5 %);
+  or (2) BTC held as collateral and neutralised with an extra short perp → earns the funding.
+
+Capital to deposit = peak initial margin + worst drawdown. Return on that capital:
+
+| | Capital | Idle cash | T-bills 4 % | BTC + funding |
+|---|---|---|---|---|
+| Backtest 4 y, standard margin | ~58 k$ | 17.7 %/y | 21.7 %/y | 22.9 %/y |
+| Backtest 4 y, portfolio margin (est.) | ~23 k$ | 44.6 %/y | 48.6 %/y | 49.9 %/y |
+| Live since June 2026, standard | ~37 k$ | 2.2 %/y | 6.2 %/y | 5.6 %/y |
+| Live since June 2026, portfolio (est.) | ~21 k$ | 3.8 %/y | 7.8 %/y | 7.3 %/y |
+
+In the current regime the collateral yield matters as much as the strategy, and portfolio margin
+roughly halves the capital. Both pages (dashboard v2, backtests) show these figures.
 
 ## Approaches Tested and Rejected
 

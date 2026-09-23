@@ -160,8 +160,10 @@ def _folds(ec, dd_floor):
 
 def _run(years, cfg, dd_floor, want_curve=False):
     _apply(cfg)
+    bt.TRACK_PM = want_curve          # portfolio margin estimée seulement pour la config de prod
     with contextlib.redirect_stdout(io.StringIO()):
         ec = bt.run(years, circuit_breaker=True)
+    bt.TRACK_PM = False
     _apply(PROD)
     st = _stats(ec)
     st.update(_folds(ec, dd_floor))
@@ -171,7 +173,11 @@ def _run(years, cfg, dd_floor, want_curve=False):
     st.update(trades=L["trades"], rebalances=L["rebalances"], fees=round(fees),
               fees_detail={k: round(v) for k, v in L["fees"].items()},
               hedge=round(L["attrib"]["hedge"]), options=round(opt), funding=round(L["funding"]),
-              kept_pct=round((opt + L["attrib"]["hedge"] + L["funding"] - fees) / opt * 100, 1) if opt > 0 else None)
+              kept_pct=round((opt + L["attrib"]["hedge"] + L["funding"] - fees) / opt * 100, 1) if opt > 0 else None,
+              capital=L.get("capital"))
+    sm = (L.get("capital") or {}).get("sm") or {}
+    st["capital_sm"] = sm.get("capital_usd")                  # capital requis en marge standard
+    st["roc_sm"] = (sm.get("roc_pct") or {}).get("idle")      # rendement annuel sur ce capital (cash dormant)
     if want_curve:
         st["curve"] = [[str(e[0]), round(e[1])] for e in ec]
     return st

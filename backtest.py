@@ -23,6 +23,7 @@ import sys, math, argparse
 sys.path.insert(0, '.')
 from datetime import datetime, timezone
 from greeks_hedge import get, now_ms
+import margin as mg
 
 # ── Paramètres stratégie (miroir de greeks_hedge.py) ──────────────────────────
 ENTRY_SCORE_MIN   = 0.45    # abaissé avec SKEW_NORM=0.60/IVHV_NORM=1.50 (échelle des scores plus basse)
@@ -72,6 +73,9 @@ HEDGE_RATIO              = 1.0        # fraction du delta couverte (1 = hedge co
 HEDGE_FLATTEN_DELTA      = 0.0        # si |delta options| < X BTC → hedge remis à plat (0 = off)
 HEDGE_EVERY_H            = 1          # rebalance au plus toutes les N heures (1 = live actuel, 24 = 1×/jour)
 HEDGE_INTRADAY           = True       # hedge rejoué heure par heure (prix index horaires de funding_history)
+
+# ── Capital immobilisé (margin.py) ────────────────────────────────────────────
+TRACK_PM = False   # portfolio margin (estimation, ~2 s de plus par run) ; la marge standard est toujours suivie
 
 
 def option_fee(S, price_usd, contracts):
@@ -305,6 +309,33 @@ CB_T1_RESTORE    = 3.0
 CB_T1_COOLDOWN_D = 0      # jours sans redéclenchement T1 après une reprise (anti-whipsaw ; 0 = off)
 GAMMA_ENTRY_CAP  = 0.0    # refuse l'entrée si gamma_pts > cap, même si score OK (0 = off)
 
+def capital_stats(curve, cap_series):
+    """Capital à déposer = pic de marge initiale + pire drawdown (les pertes réduisent l'equity :
+    sans ce coussin, le compte passerait sous la marge au pire moment).
+    Rendement annualisé sur ce capital selon la rémunération du collatéral :
+      • idle        : USDC / BTC non couvert, aucun rendement (Deribit ne rémunère pas les soldes)
+      • tbill       : T-bills tokenisés (USYC / BUIDL, décote 2 %) au taux margin.TBILL_YIELD
+      • btc_funding : collatéral en BTC neutralisé par un short perp → encaisse le funding réel"""
+    if not cap_series or not curve:
+        return None
+    peak_eq, dd = curve[0][1], 0.0
+    for c in curve:
+        peak_eq = max(peak_eq, c[1]); dd = max(dd, peak_eq - c[1])
+    K = max(cap_series) + dd
+    if K <= 0:
+        return None
+    years = len(curve) / 365
+    pnl = curve[-1][1]
+    fund = funding_by_day()
+    carry = {"idle": 0.0,
+             "tbill": K * mg.TBILL_YIELD * years,
+             "btc_funding": sum(K * fund.get(c[0], 0.0) for c in curve)}
+    return {"capital_usd": round(K), "peak_margin_usd": round(max(cap_series)), "buffer_dd_usd": round(dd),
+            "avg_margin_usd": round(sum(cap_series) / len(cap_series)),
+            "roc_pct": {k: round((pnl + v) / years / K * 100, 1) for k, v in carry.items()},
+            "carry_usd": {k: round(v) for k, v in carry.items()}}
+
+
 def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         circuit_breaker: bool = False, label: str = "", verbose: bool = False):
     days = fetch_history(years + 0.15)   # marge pour warmup HV30
@@ -322,6 +353,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
     fees = {"options": 0.0, "delivery": 0.0, "perp": 0.0}
     funding_total = 0.0
     attrib = {"options": 0.0, "hedge": 0.0}   # PnL réalisé hors frais/funding (options clôturées, hedge)
+    cap_sm, cap_pm = [], []                   # marge initiale jour par jour ($)
     worst_days = []
     notionals = []
     notionals_usd = []
@@ -480,6 +512,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
             price, delta, gamma = bs_put(S, p['strike'], T, iv_m / 100)
             p['delta_now'] = delta
             p['iv_now'] = iv_m
+            p['mark_usd'] = price
             pos_ivs.append(iv_m)
             net_delta += delta * p['contracts']
             mtm_value += price * p['contracts']
@@ -569,7 +602,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                         'strike': best['K'], 'tte_left': best['tte'], 'exp_day': best['exp_day'],
                         'contracts': size, 'entry_premium_usd': best['price'] * size,
                         'score_entry': best['score'], 'delta_entry': best['delta'],
-                        'delta_now': best['delta'], 'iv_now': best['iv'],
+                        'delta_now': best['delta'], 'iv_now': best['iv'], 'mark_usd': best['price'],
                     })
                     n_trades += 1
 
@@ -584,11 +617,24 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         notionals.append(notional_track)
         notionals_usd.append(notional_track * S)   # notionnel $ jour par jour
 
+        # Capital immobilisé : marge standard exacte (+ portfolio margin estimée si TRACK_PM)
+        sm = mg.standard_margin([{'strike': p['strike'], 'mark_btc': p.get('mark_usd', 0.0) / S,
+                                  'contracts': p['contracts']} for p in positions], hedge_qty, S)
+        cap_sm.append(sm['im_usd'])
+        if TRACK_PM:
+            pm = mg.portfolio_margin([{'strike': p['strike'], 'tte_days': max(p['tte_left'], 0.5),
+                                       'iv': p.get('iv_now', dvol) / 100, 'contracts': p['contracts'],
+                                       'delta': p.get('delta_now', 0.0)} for p in positions],
+                                     -hedge_qty, S)   # convention margin.py : négatif = short
+            cap_pm.append(pm['im_usd'])
+
     # Expose pour analyse capital (rendement sur capital mobilisé)
     globals()['_LAST_RUN'] = {"curve": equity_curve, "notionals_usd": notionals_usd,
                               "fees": {k: round(v, 2) for k, v in fees.items()},
                               "funding": round(funding_total, 2), "rebalances": n_rebal, "trades": n_trades,
-                              "attrib": {k: round(v, 2) for k, v in attrib.items()}}
+                              "attrib": {k: round(v, 2) for k, v in attrib.items()},
+                              "capital": {"sm": capital_stats(equity_curve, cap_sm),
+                                          "pm": capital_stats(equity_curve, cap_pm) if cap_pm else None}}
 
     # ── Stats ──────────────────────────────────────────────────────────────────
     eq = [e[1] for e in equity_curve]
@@ -617,6 +663,13 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
     _net_real = attrib['options'] + attrib['hedge'] + funding_total - sum(fees.values())
     print(f"  Attribution      : options {attrib['options']:+,.0f} $ · hedge réalisé {attrib['hedge']:+,.0f} $"
           f"  →  prime conservée {(_net_real / attrib['options'] * 100) if attrib['options'] > 0 else 0:.0f} %")
+    for lab, cs in (("standard", cap_sm), ("portfolio (est.)", cap_pm)):
+        c = capital_stats(equity_curve, cs)
+        if c:
+            r = c["roc_pct"]
+            print(f"  Capital {lab:<17}: {c['capital_usd']:>7,} $ (pic de marge {c['peak_margin_usd']:,} + DD "
+                  f"{c['buffer_dd_usd']:,}) · marge moyenne {c['avg_margin_usd']:,} $  →  rendement/an "
+                  f"{r['idle']:.1f} % (cash dormant) · {r['tbill']:.1f} % (T-bills) · {r['btc_funding']:.1f} % (BTC + funding)")
     if circuit_breaker:
         print(f"  Circuit breaker  : {n_cb_triggers} déclenchements  |  {cb_days_off} jours risk-off")
     avg_not = sum(notionals)/len(notionals)
@@ -640,6 +693,8 @@ if __name__ == '__main__':
     ap.add_argument('--years', type=float, default=4.0)
     ap.add_argument('--always-one', action='store_true', help='force la regle toujours >=1 position (off en prod)')
     ap.add_argument('--no-cb', action='store_true', help='desactive le circuit breaker (on en prod)')
+    ap.add_argument('--no-pm', action='store_true', help='ne pas estimer la portfolio margin (plus rapide)')
     a = ap.parse_args()
+    TRACK_PM = not a.no_pm
     # Par défaut = configuration de production (ALWAYS_IN_POSITION=False, circuit breaker actif)
     run(a.years, always_one=a.always_one, circuit_breaker=not a.no_cb)

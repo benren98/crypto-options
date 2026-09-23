@@ -59,6 +59,9 @@ sizing → hedge → régénère le dashboard (`docs/index.html`, GitHub Pages).
 - Frais Deribit (`FEE_*`, grille Standard vérifiée le 2026-09-23 sur support.deribit.com) : le bot
   est en paper, ils ne sont pas débités mais le backtest les applique et le dashboard v2 affiche
   le PnL net de frais estimés. Revérifier la grille de temps en temps.
+- Capital / marge : `margin.py` (marge standard Deribit exacte, portfolio margin ESTIMÉE — forme du
+  choc de vol non publiée ; `TBILL_YIELD` = hypothèse de rémunération du collatéral). Utilisé par
+  le backtest (capital jour par jour, rendement sur capital) et le dashboard v2.
 - Appels API : le scan lit toute la chaîne via `fetch_option_chain` (book summary, greeks et IV
   au bid recalculés en Black-76) — ne pas réintroduire d'appel `ticker` par option dans une boucle.
 

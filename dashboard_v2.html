@@ -40,6 +40,10 @@
     <section class="card" id="perf-month"></section>
   </div>
   <div class="stats" id="perf-stats"></div>
+  <div class="grid2">
+    <section class="card" id="cap-chart"></section>
+    <section class="card" id="cap-yield"></section>
+  </div>
 
   <h2 class="section">Marché</h2>
   <div class="grid3">
@@ -191,6 +195,13 @@ function renderKpis() {
     h("div", { class: "value num" }, sgn(b.drift_btc, 3, " BTC")),
     meterEl(df, sevColor(df)),
     h("div", { class: "meta" }, h("div", {}, "rebalance à ±" + num(b.threshold_btc, 3) + " · hedge " + sgn(b.hedge_qty, 3, " BTC")))));
+
+  const cap = D.capital || {}, cn = cap.now || {}, csm = cap.sm || {};
+  tiles.push(h("div", { class: "tile" }, h("div", { class: "label" }, h("span", {}, "Capital immobilisé"), h("span", { class: "muted" }, "marge initiale")),
+    h("div", { class: "value" }, usd(cn.sm_im), h("span", { class: "muted", style: "font-size:14px;font-weight:500" }, " standard")),
+    h("div", { class: "meta" },
+      h("div", {}, "portfolio margin (est.) " + usd(cn.pm_im) + " · maintenance " + usd(cn.sm_mm)),
+      csm.capital_usd ? h("div", {}, "à déposer (pic + drawdown) : " + usd(csm.capital_usd)) : null)));
 
   const cbLvl = cb.state === "armed" ? "good" : cb.state === "reduced" ? "warning" : "critical";
   const cbTxt = cb.state === "armed" ? "Armé" : cb.state === "reduced" ? "Allégé" : "Risk-off";
@@ -349,6 +360,21 @@ function renderCharts() {
     },
     { headers: ["Mois", "Options", "Hedge", "Funding", "Frais", "Net"], rows: months.map(m => [fmonth(m.m), usd(m.options), usd(m.hedge), usd(m.funding), usd(m.fees), usd(m.net)]) });
 
+  // 2bis. Capital immobilisé dans le temps
+  const capd = ((D.capital || {}).daily || []).filter(d => !cut || d.d >= cut.slice(0, 10));
+  chartCard("cap-chart", "Capital immobilisé", "Marge initiale Deribit reconstituée jour par jour (book et hedge de chaque clôture)",
+    [{ name: "Marge standard", color: c1 }, { name: "Portfolio margin (est.)", color: c2 }],
+    (box) => {
+      if (capd.length < 2) return null;
+      const cv = canvasIn(box, "Marge initiale standard et portfolio dans le temps", { endFmt: v => usd(v, { compact: true }) });
+      const x = d => Date.parse(d.d + "T23:59:00Z");
+      CHARTS.push(new Chart(cv, { type: "line",
+        data: { datasets: [lineDs("Marge standard", capd.map(d => ({ x: x(d), y: d.sm })), c1, true, 2 * 86400000),
+                           lineDs("Portfolio margin (est.)", capd.map(d => ({ x: x(d), y: d.pm })), c2, true, 2 * 86400000)] },
+        options: lineOpts(v => usd(v), fdate, v => usd(v, { compact: true })) }));
+    },
+    { headers: ["Jour", "Marge standard", "Portfolio (est.)"], rows: capd.slice().reverse().map(d => [d.d, usd(d.sm), usd(d.pm)]) });
+
   // 3. Spot + strikes
   const S = D.series, spot = (S.spot || []).filter(p => !cut || p.t >= cut);
   const strikes = S.strikes || [];
@@ -389,6 +415,28 @@ function renderCharts() {
         options: lineOpts(v => pct(v, 2, true), fdt, v => pct(v, 0, true)) }));
     },
     { headers: ["Date", "Funding annualisé"], rows: fund.slice().reverse().map(p => [fdt(p.t), pct(p.v, 2, true)]) });
+}
+
+// ── Rendement du cash mobilisé (collatéral) ────────────────────────────────
+function renderCapYield() {
+  const c = D.capital || {}, sm = c.sm, pm = c.pm;
+  const head = h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Rendement du cash mobilisé"),
+    h("div", { class: "sub" }, "PnL net de frais, annualisé, rapporté au capital à déposer (pic de marge initiale + pire drawdown)")));
+  if (!sm) { mount("cap-yield", head, h("div", { class: "empty" }, "Pas encore d'historique de positions")); return; }
+  const modes = [["idle", "Cash dormant (USDC, BTC non couvert)", "aucune rémunération des soldes dans la doc Deribit"],
+                 ["tbill", "T-bills tokenisés (USYC / BUIDL)", "taux supposé " + pct(c.tbill_yield * 100, 1) + " · décote 2 % · accès souvent réservé aux investisseurs qualifiés"],
+                 ["btc_funding", "BTC + short perp (cash-and-carry)", "encaisse le funding réel de la période ; neutre en $"]];
+  const cell = (s, k) => s ? h("td", { class: "r num" }, h("b", { class: tone(s.roc_pct[k]) }, pct(s.roc_pct[k], 1)), h("span", { class: "muted small" }, "  +" + usd(s.carry_usd[k]))) : h("td", { class: "r muted" }, "—");
+  mount("cap-yield", head,
+    h("div", { class: "tscroll" }, h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Collatéral"), h("th", { class: "r" }, "Marge standard"), h("th", { class: "r" }, "Portfolio margin (est.)"))),
+      h("tbody", {},
+        h("tr", {}, h("td", { class: "muted" }, "Capital à déposer"), h("td", { class: "r num" }, usd(sm.capital_usd)), h("td", { class: "r num" }, pm ? usd(pm.capital_usd) : "—")),
+        modes.map(([k, lab, note]) => h("tr", {}, h("td", {}, lab, h("div", { class: "muted small" }, note)), cell(sm, k), cell(pm, k)))))),
+    h("div", { class: "callout" }, "Marge standard (défaut Deribit) : chaque position est margée séparément, sans netting — le short perp du hedge ",
+      "s'ajoute à la marge des puts. La portfolio margin stresse le book en bloc (±14 % × chocs de vol) et reconnaît le hedge ; ",
+      "elle est sélectionnable dans le compte. Autres collatéraux acceptés : stETH (décote 7,5 %, exposition ETH à couvrir), USDe (5 %). ",
+      "Estimation PM à confirmer via l'API privée (simulate_portfolio) une fois une clé en place."));
 }
 
 // ── Stats de performance ───────────────────────────────────────────────────
@@ -520,7 +568,7 @@ function renderFoot() {
 }
 
 renderTop(); renderVerdict(); renderKpis(); renderEntry(); renderRisk(); renderBook();
-renderRange(); renderCharts(); renderPerfStats(); renderScanner(); renderDecisions(); renderJournal(); renderReconcile(); renderFoot();
+renderRange(); renderCharts(); renderPerfStats(); renderCapYield(); renderScanner(); renderDecisions(); renderJournal(); renderReconcile(); renderFoot();
 if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { if (!document.documentElement.getAttribute("data-theme")) { renderCharts(); renderKpis(); } });
 })();
 </script>

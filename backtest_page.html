@@ -43,6 +43,7 @@ tr.opt td { background:color-mix(in srgb, var(--good) 10%, transparent); }
     <section class="card" id="equity"></section>
     <section class="card" id="decisions"></section>
   </div>
+  <div style="margin-top:16px"><section class="card" id="capital"></section></div>
 
   <h2 class="section">Surface de vol — notre modèle vs le marché</h2>
   <div id="vol-intro" style="margin-top:16px"></div>
@@ -120,6 +121,26 @@ function renderKpis() {
     st("Prime conservée", B.kept_pct != null ? pct(B.kept_pct, 0) : "—", "après hedge, funding et frais"));
 }
 
+// ── Capital et rendement du cash mobilisé ──────────────────────────────────
+function renderCapital() {
+  const c = B.capital || {}, sm = c.sm, pm = c.pm;
+  const head = h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Capital à déposer et rendement du cash mobilisé"),
+    h("div", { class: "sub" }, "Capital = pic de marge initiale Deribit sur la période + pire drawdown · rendement = PnL annualisé (frais inclus) + rémunération du collatéral")));
+  if (!sm) { mount("capital", head, h("div", { class: "empty" }, "Relancer la routine pour obtenir le suivi du capital")); return; }
+  const rows = [["Capital à déposer", s => usd(s.capital_usd)], ["dont pic de marge initiale", s => usd(s.peak_margin_usd)],
+                ["dont coussin drawdown", s => usd(s.buffer_dd_usd)], ["Marge moyenne", s => usd(s.avg_margin_usd)],
+                ["Rendement — cash dormant", s => pct(s.roc_pct.idle, 1)],
+                ["Rendement — T-bills tokenisés (USYC / BUIDL, 4 %)", s => pct(s.roc_pct.tbill, 1)],
+                ["Rendement — BTC + short perp (funding réel)", s => pct(s.roc_pct.btc_funding, 1)]];
+  mount("capital", head, h("div", { class: "tscroll" }, h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, h("th", {}, ""), h("th", { class: "r" }, "Marge standard (exacte)"), h("th", { class: "r" }, "Portfolio margin (estimée)"))),
+      h("tbody", {}, rows.map(([lab, f], i) => h("tr", {}, h("td", { class: i >= 4 ? "" : "muted" }, lab),
+        h("td", { class: "r num" }, i >= 4 ? h("b", {}, f(sm)) : f(sm)), h("td", { class: "r num" }, pm ? (i >= 4 ? h("b", {}, f(pm)) : f(pm)) : "—")))))),
+    h("div", { class: "callout" }, "Marge standard : chaque position séparément, sans netting (short put : max(0,15 − OTM ; 0,10) BTC + prime ; perp 2 %). ",
+      "Portfolio margin : book stressé en bloc (±14 % de spot × chocs de vol, paramètres Deribit) — la forme exacte du choc de vol n'étant pas publiée, ",
+      "c'est une estimation. Les colonnes « Rend./capital » des sweeps utilisent la marge standard et le cash dormant."));
+}
+
 // ── Décisions ──────────────────────────────────────────────────────────────
 function renderDecisions() {
   const r = D.recommendations || [];
@@ -154,7 +175,7 @@ function sweepCard(s) {
   const cur = res.find(r => r.is_current);
   const [lvl, txt] = verdict(s);
   const assumption = s.kind === "assumption";
-  const head = ["Valeur", "PnL", "MaxDD", "Calmar", "Moy. fold", "Pire fold", "Frais", "Hedge"];
+  const head = ["Valeur", "PnL", "MaxDD", "Calmar", "Moy. fold", "Pire fold", "Frais", "Hedge", "Capital", "Rend./capital"];
   return h("section", { class: "card" },
     h("div", { class: "cardhead" },
       h("div", {}, h("h3", {}, s.param), h("div", { class: "sub" }, "Δ Calmar " + num(s.sensitivity, 2) +
@@ -174,7 +195,9 @@ function sweepCard(s) {
           h("td", { class: "r num" }, num(mf, 1), h("span", { class: "mbar" + (mf < 0 ? " neg" : "") }, h("span", { style: "width:" + (Math.abs(mf) / maxMF * 100).toFixed(0) + "%" }))),
           h("td", { class: "r num " + ((r.worst_fold ?? 0) <= 0 ? "neg" : "") }, r.worst_fold != null ? num(r.worst_fold, 1) : "—"),
           h("td", { class: "r num" }, r.fees != null ? usd(r.fees) : "—"),
-          h("td", { class: "r num" }, r.hedge != null ? usd(r.hedge, { sign: true }) : "—"));
+          h("td", { class: "r num" }, r.hedge != null ? usd(r.hedge, { sign: true }) : "—"),
+          h("td", { class: "r num" }, r.capital_sm != null ? usd(r.capital_sm, { compact: true }) : "—"),
+          h("td", { class: "r num" }, r.roc_sm != null ? pct(r.roc_sm, 1) : "—"));
       })))));
 }
 function renderSweeps() {
@@ -332,7 +355,7 @@ function renderFoot() {
     h("span", {}, "Backtest : un pas par jour pour les entrées, hedge rejoué heure par heure"));
 }
 
-renderTop(); renderKpis(); renderDecisions(); renderVolText(); renderOpps(); renderVolGrid(); renderFit();
+renderTop(); renderKpis(); renderCapital(); renderDecisions(); renderVolText(); renderOpps(); renderVolGrid(); renderFit();
 renderCharts(); renderSweeps(); renderFoot();
 })();
 </script>
