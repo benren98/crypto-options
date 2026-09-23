@@ -45,6 +45,11 @@ dans `positions.json` + un Gist GitHub.
 - Dashboards : `python generate_html.py` (live v1 → `docs/index.html`) ·
   `python generate_dashboard.py` (v2 orientée décision → `docs/v2.html`) ·
   `python generate_backtest_html.py` (backtests → `docs/backtest.html`).
+- Propositions de design (en cours de choix) : `designs/{cockpit,editorial,bento}/template.html`,
+  rendus à chaque run par `generate_dashboard.py --template … --out docs/design-*.html` ;
+  `python inject_switcher.py` ajoute ensuite à toutes les pages de `docs/` un sélecteur flottant
+  (v1 · v2 · Cockpit · Éditorial · Bento · Backtests). Une fois le design choisi : en faire la page
+  principale et retirer les autres (workflow + `PAGES` de `inject_switcher.py`).
 - Dashboards v2 et backtests : le modèle de données est calculé en Python, le rendu est dans un
   template (`dashboard_v2.html`, `backtest_page.html`) + CSS/JS communs `dashboard_assets/`
   (ne jamais éditer `docs/*.html`, ils sont régénérés). Tester un autre
