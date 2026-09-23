@@ -12,7 +12,8 @@ Chaque heure (miroir de greeks_hedge.run_once, cadence RUN_EVERY_H) :
     → entrées (calendrier d'échéances Deribit, grille de strikes, score v2, 2 passes si le book
     est vide, plafond d'entrées par jour) → hedge delta (bande, cadence, urgence) → funding.
 Clôture à 00:00 UTC : marks, equity, marge. Frais Deribit sur chaque transaction ; vente au
-bid (mark − demi-spread), rachats du CB à l'ask + BUYBACK_IV_PREMIUM (calibré sur le live).
+bid (mark − demi-spread), rachats à l'ask (mark + demi-spread ; + BUYBACK_IV_PREMIUM pour ceux du
+circuit breaker, calibré sur les rachats réels du live).
 Paramètres miroir du live vérifiés par check_params_sync.py.
 
 Usage : python backtest.py [--years 4] [--always-one] [--no-cb] [--no-pm]   (défaut = config de production)
@@ -590,11 +591,11 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         """IV d'une position à l'heure courante : IV du dernier mark rescalée au DVOL de l'heure."""
         return p.get('iv_now', dvol_now) * dvol_now / (p.get('iv_dvol') or dvol_now)
 
-    def buy_back(p, n_close, S, dvol, date, at_mark=False):
-        """Rachète n_close contrats d'une position. Circuit breaker : à l'ask (mark + demi-spread
-        + BUYBACK_IV_PREMIUM, vente en stress) ; roll : au mark, comme le live. Renvoie le PnL réalisé."""
+    def buy_back(p, n_close, S, dvol, date, stress=True):
+        """Rachète n_close contrats d'une position à l'ask (mark + demi-spread) ; rachats du circuit
+        breaker (stress=True) : + BUYBACK_IV_PREMIUM (vente en stress). Renvoie le PnL réalisé."""
         Td = max(rem_days(p), 0.01)
-        extra = 0.0 if at_mark else ba_haircut(dvol) + BUYBACK_IV_PREMIUM
+        extra = ba_haircut(dvol) + (BUYBACK_IV_PREMIUM if stress else 0.0)
         sig = (iv_pct(S, p['strike'], dvol, date, Td) + extra) / 100
         price, _, _ = bs_put(S, p['strike'], Td / 365, sig)
         f = option_fee(S, price, n_close)
@@ -788,7 +789,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                         if rem <= ROLL_TRIGGER:
                             g = bs_put(px, p['strike'], max(rem, 0.01) / 365, iv_h(p, dvol_h) / 100)[2]
                             if g * px > GAMMA_ROLL_THRESHOLD:   # gamma en pts de delta pour 1 % de move
-                                r = buy_back(p, p['contracts'], px, dvol_h, day['date'], at_mark=True)
+                                r = buy_back(p, p['contracts'], px, dvol_h, day['date'], stress=False)
                                 cash += r; day_pnl += r
                                 n_rolls += 1
                                 book_changed = True

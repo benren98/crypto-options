@@ -997,7 +997,8 @@ def roll_positions(state: dict, spot: float) -> list[str]:
               f"(seuil {GAMMA_ROLL_THRESHOLD}) → {'🔴 ROLL' if decision else '🟢 HOLD'}")
         if not decision:
             continue
-        exit_p = t.get("mark_price", lots[0][0]["entry_price"])
+        # Rachat à l'ask (exécution réelle) ; repli sur le mark si le carnet est vide
+        exit_p = t.get("best_ask_price") or t.get("mark_price") or lots[0][0]["entry_price"]
         reason = (f"TTE {tte:.2f}j ≤ {ROLL_TRIGGER}j ET gamma {gamma_pts:.2f}pts "
                   f"> seuil {GAMMA_ROLL_THRESHOLD}pts — ATM danger")
         for pos, _ in lots:

@@ -194,12 +194,17 @@ def _folds(ec, dd_floor):
 
 
 def _run(years, cfg, dd_floor, want_curve=False):
+    # Instantané de TOUTES les constantes du backtest : un attribut hors SWEEPS passé dans cfg
+    # (ex. FEE_PERP_RATE pour un stress) ne doit pas fuir dans les runs suivants.
+    saved = {k: getattr(bt, k) for k in dir(bt) if k.isupper() and not k.startswith("_")}
     _apply(cfg)
     bt.TRACK_PM = want_curve          # portfolio margin estimée seulement pour la config de prod
-    with contextlib.redirect_stdout(io.StringIO()):
-        ec = bt.run(years, circuit_breaker=True)
-    bt.TRACK_PM = False
-    _apply(PROD)
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            ec = bt.run(years, circuit_breaker=True)
+    finally:
+        for k, v in saved.items():
+            setattr(bt, k, v)
     st = _stats(ec)
     st.update(_folds(ec, dd_floor))
     L = bt._LAST_RUN
