@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Backtests &amp; surface de vol</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23eb6834'/%3E%3Cpath d='M6 24 Q16 4 26 20' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<!--
+  Page backtests — template. NE PAS ÉDITER docs/backtest.html : régénéré par
+  generate_backtest_html.py (modèle JSON + CSS/JS communs de dashboard_assets/).
+-->
+<style>
+/*__COMMON_CSS__*/
+.famhead { display:flex; align-items:baseline; gap:10px; margin:28px 0 0; }
+.famhead h2 { font-size:15px; }
+details.fam > summary { list-style:none; cursor:pointer; }
+details.fam > summary::-webkit-details-marker { display:none; }
+details.fam > summary .caret { transition:transform .15s; }
+details.fam[open] > summary .caret { transform:rotate(90deg); }
+.mbar { display:inline-block; width:70px; height:6px; border-radius:3px; background:var(--track); position:relative; vertical-align:middle; margin-left:6px; }
+.mbar span { position:absolute; left:0; top:0; bottom:0; border-radius:3px; background:var(--s1); }
+.mbar.neg span { background:var(--neg-mark); }
+tr.cur td:first-child { box-shadow:inset 3px 0 0 var(--s1); }
+tr.opt td { background:color-mix(in srgb, var(--good) 10%, transparent); }
+.heat td.cell { text-align:center; font-variant-numeric:tabular-nums; }
+.sig { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; }
+.sig i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.smallchart { position:relative; height:220px; }
+</style>
+<script>
+  try { var th = localStorage.getItem("vrp-theme"); if (th === "light" || th === "dark") document.documentElement.setAttribute("data-theme", th); } catch (e) {}
+</script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top" id="top"></header>
+  <p class="sub muted" id="intro" style="margin:0 0 8px"></p>
+
+  <h2 class="section">Config de production — backtest</h2>
+  <section class="kpis" id="kpis"></section>
+  <div class="stats" id="attrib"></div>
+  <div class="grid2">
+    <section class="card" id="equity"></section>
+    <section class="card" id="decisions"></section>
+  </div>
+
+  <h2 class="section">Surface de vol — notre modèle vs le marché</h2>
+  <div id="vol-intro" style="margin-top:16px"></div>
+  <div class="grid3" id="smiles"></div>
+  <div style="margin-top:16px"><section class="card" id="opps"></section></div>
+  <div class="grid2">
+    <section class="card" id="vol-hist"></section>
+    <section class="card" id="vol-grid"></section>
+  </div>
+  <div class="grid2">
+    <section class="card" id="skew"></section>
+    <section class="card" id="fit"></section>
+  </div>
+
+  <h2 class="section">Sweeps de paramètres</h2>
+  <div class="callout" id="sweep-intro" style="margin-top:16px"></div>
+  <div id="families"></div>
+  <footer id="foot"></footer>
+</div>
+
+<script type="application/json" id="dash-data">/*__DASHBOARD_DATA__*/null</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+"use strict";
+let D;
+try { D = JSON.parse(document.getElementById("dash-data").textContent); } catch (e) { D = null; }
+if (!D) { document.querySelector(".wrap").textContent = "Template non rendu : lancer `python generate_backtest_html.py`."; return; }
+
+/*__COMMON_JS__*/
+
+const B = D.baseline || {}, V = D.vol;
+
+function renderTop() {
+  mount("top",
+    h("div", { class: "brand" }, h("h1", {}, "Backtests & surface de vol")),
+    h("nav", { class: "nav" },
+      h("button", { class: "btn", onclick: toggleTheme }, "◐ Thème"),
+      h("a", { class: "btn", href: "v2.html" }, "Dashboard v2"),
+      h("a", { class: "btn", href: "index.html" }, "Dashboard v1")));
+  const m = D.meta, p = m.period || {};
+  mount("intro", "Routine du " + (m.routine_at || "—") + " · période " + (p.start || "?") + " → " + (p.end || "?") +
+    " (" + (p.days || "?") + " j) · " + m.n_folds + " folds contigus · plancher de drawdown par fold " + usd(m.dd_floor) +
+    " · frais Deribit et funding réel inclus");
+}
+function toggleTheme() {
+  const dark = document.documentElement.getAttribute("data-theme") === "dark" ||
+    (!document.documentElement.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+  const next = dark ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("vrp-theme", next); } catch (e) {}
+  renderCharts(); renderVolGrid();
+}
+
+// ── Baseline ───────────────────────────────────────────────────────────────
+function tile(label, value, meta, cls) {
+  return h("div", { class: "tile" }, h("div", { class: "label" }, label), h("div", { class: "value " + (cls || "") }, value),
+    meta ? h("div", { class: "meta" }, meta) : null);
+}
+function renderKpis() {
+  if (!B.pnl && B.pnl !== 0) { mount("kpis", h("div", { class: "empty" }, "Pas encore de routine")); return; }
+  mount("kpis",
+    tile("PnL (config prod)", usd(B.pnl, { sign: true }), usd(B.pnl / ((D.meta.period?.days || 365) / 365), { sign: true }) + " / an", tone(B.pnl)),
+    tile("Max drawdown", usd(-B.maxdd), "pire jour " + usd(B.worst, { sign: true })),
+    tile("Calmar", num(B.calmar, 2), "Sharpe " + num(B.sharpe, 2)),
+    tile("Pire / moyen / médian fold", num(B.worst_fold, 1) + " · " + num(B.mean_fold, 1) + " · " + num(B.median_fold, 1), "Calmar par régime (plancher de DD)"),
+    tile("Trades", num(B.trades, 0), num(B.rebalances, 0) + " rebalancements de hedge"));
+  const st = (label, value, meta) => h("div", { class: "stat" }, h("div", { class: "label" }, label), h("div", { class: "value" }, value), meta ? h("div", { class: "meta" }, meta) : null);
+  const fd = B.fees_detail || {};
+  mount("attrib",
+    st("Options (réalisé, brut)", money(B.options), "primes encaissées − rachats − payoffs"),
+    st("Hedge (réalisé)", money(B.hedge), "coût du delta-hedge sur perp"),
+    st("Funding", money(B.funding), "réel, encaissé par le short perp"),
+    st("Frais Deribit", money(-B.fees), "options " + usd(fd.options) + " · perp " + usd(fd.perp) + " · livraison " + usd(fd.delivery)),
+    st("Prime conservée", B.kept_pct != null ? pct(B.kept_pct, 0) : "—", "après hedge, funding et frais"));
+}
+
+// ── Décisions ──────────────────────────────────────────────────────────────
+function renderDecisions() {
+  const r = D.recommendations || [];
+  const kids = [h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Changements robustes proposés"),
+    h("div", { class: "sub" }, "Gagne la majorité des régimes, pire fold > 0, plateau, gain ≥ " + num(D.meta.min_gain, 1) +
+      " de Calmar moyen, paramètre actif et sans dégrader le Calmar complet")))];
+  if (!r.length) kids.push(h("div", { class: "callout" }, "Aucun : la configuration actuelle reste la meilleure sur l'ensemble des régimes."));
+  r.forEach(x => kids.push(h("div", { class: "reco" },
+    h("div", {}, badge("info", "robuste " + x.wins + "/" + x.n), "  ", h("b", {}, x.param), h("span", { class: "muted" }, "  · " + x.family)),
+    h("div", { class: "num" }, h("span", { class: "muted" }, "actuel "), x.current, h("span", { class: "arrow" }, "→"), h("b", {}, x.proposed),
+      h("span", { class: "muted" }, "   gain +" + num(x.gain, 2))))));
+  if (r.some(x => x.family === "Scoring"))
+    kids.push(h("div", { class: "callout" }, "Attention : les normalisations du score sont couplées au seuil d'entrée — changer une norme rescale tous les scores. " +
+      "Valider sur le scan live avant d'appliquer, et un changement à la fois."));
+  mount("decisions", kids);
+}
+
+// ── Sweeps ─────────────────────────────────────────────────────────────────
+function verdict(s) {
+  if (s.kind === "assumption") return ["info", "hypothèse stressée"];
+  if (s.sensitivity < (D.meta.min_sensitivity || 0.5)) return ["idle", "peu sensible"];
+  if (s.recommend_change) return ["good", "✓ changer"];
+  if (s.robust) return ["good", "robuste — actuel conservé"];
+  if ((s.best_worst_fold ?? -1) <= 0) return ["critical", "s'effondre dans ≥1 régime"];
+  if (s.fold_wins < Math.ceil(s.n_folds / 2)) return ["warning", "un régime porte tout"];
+  if (!s.plateau) return ["warning", "pic isolé"];
+  return ["warning", "limite"];
+}
+function sweepCard(s) {
+  const res = s.results || [];
+  const maxMF = Math.max(0.01, ...res.map(r => Math.abs(r.mean_fold ?? 0)));
+  const cur = res.find(r => r.is_current);
+  const [lvl, txt] = verdict(s);
+  const assumption = s.kind === "assumption";
+  const head = ["Valeur", "PnL", "MaxDD", "Calmar", "Moy. fold", "Pire fold", "Frais", "Hedge"];
+  return h("section", { class: "card" },
+    h("div", { class: "cardhead" },
+      h("div", {}, h("h3", {}, s.param), h("div", { class: "sub" }, "Δ Calmar " + num(s.sensitivity, 2) +
+        (assumption ? "" : " · gagne " + s.fold_wins + "/" + s.n_folds + " folds"))),
+      badge(lvl, txt)),
+    h("div", { class: "tscroll" }, h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, head.map((x, i) => h("th", { class: i ? "r" : "" }, x)))),
+      h("tbody", {}, res.map(r => {
+        const mf = r.mean_fold ?? 0;
+        const dp = cur && assumption ? r.pnl - cur.pnl : null;
+        return h("tr", { class: (r.is_current ? "cur " : "") + (r.is_best && s.recommend_change ? "opt" : "") },
+          h("td", {}, r.label, r.is_current ? h("span", { class: "muted small" }, "  actuel") : null,
+            r.is_best && !r.is_current && !assumption ? h("span", { class: "muted small" }, s.recommend_change ? "  ✓ proposé" : "  opt. (non suivi)") : null),
+          h("td", { class: "r num" }, usd(r.pnl), dp != null && dp !== 0 ? h("span", { class: "muted small" }, " (" + usd(dp, { sign: true }) + ")") : null),
+          h("td", { class: "r num" }, usd(r.maxdd)),
+          h("td", { class: "r num" }, num(r.calmar, 2)),
+          h("td", { class: "r num" }, num(mf, 1), h("span", { class: "mbar" + (mf < 0 ? " neg" : "") }, h("span", { style: "width:" + (Math.abs(mf) / maxMF * 100).toFixed(0) + "%" }))),
+          h("td", { class: "r num " + ((r.worst_fold ?? 0) <= 0 ? "neg" : "") }, r.worst_fold != null ? num(r.worst_fold, 1) : "—"),
+          h("td", { class: "r num" }, r.fees != null ? usd(r.fees) : "—"),
+          h("td", { class: "r num" }, r.hedge != null ? usd(r.hedge, { sign: true }) : "—"));
+      })))));
+}
+function renderSweeps() {
+  const m = D.meta;
+  mount("sweep-intro", "Anti-overfit : la période est coupée en ", h("b", {}, m.n_folds + " folds contigus"), " (≈ régimes de marché). " +
+    "Un changement n'est proposé que s'il gagne la majorité des régimes sans s'effondrer dans aucun (pire fold > 0), sur un plateau, " +
+    "avec un gain ≥ " + num(m.min_gain, 1) + " de Calmar moyen. Les « hypothèses » stressent le modèle (frais, spread, funding) : " +
+    "elles mesurent la fragilité du résultat et ne sont jamais proposées. Règle : 1 à 2 changements à la fois.");
+  mount("families", (D.families || []).map((f, i) => h("details", { class: "fam", open: i < 2 ? true : null },
+    h("summary", {}, h("div", { class: "famhead" }, h("span", { class: "caret" }, "▸"), h("h2", {}, f.name),
+      h("span", { class: "muted small" }, f.sweeps.length + " sweep" + (f.sweeps.length > 1 ? "s" : "") +
+        (f.sweeps.some(s => s.recommend_change) ? " · changement proposé" : "")))),
+    h("div", { class: "grid2" }, f.sweeps.map(sweepCard)))));
+}
+
+// ── Vol : textes, opportunités, grille de biais ───────────────────────────
+const SIG = { achat: ["Achat", "var(--s1)"], vente: ["Vente", "var(--s2)"] };
+function sigEl(s) { if (!s) return h("span", { class: "muted" }, "—"); const [t, c] = SIG[s]; return h("span", { class: "sig" }, h("i", { style: "background:" + c }), t); }
+function renderVolText() {
+  if (!V) { mount("vol-intro", h("div", { class: "callout" }, "Pas encore de surface enregistrée (vol_surface.jsonl).")); return; }
+  mount("vol-intro", h("div", { class: "callout" },
+    h("b", {}, "Deux références. "), "« Notre mark » = la vol que le backtest attribue à l'option (DVOL × skew fité sur " + V.n_snapshots +
+    " jours) : un écart y signale un régime inhabituel (skew plus pentu que d'habitude…). « Smile du jour » = lissage quadratique du smile " +
+    "de cette échéance : un écart y signale une anomalie propre à un strike — la piste de valeur relative. ",
+    h("b", {}, "Signal net du spread : "), "achat si la référence dépasse la vol à l'ask estimée (l'option cote moins cher que ce qu'elle « vaut »), " +
+    "vente si la vol au bid dépasse la référence. Montants en $ par BTC de notionnel (écart × vega). Instantané du " + fdate(V.date + "T12:00:00Z") +
+    " · spot " + usd(V.spot) + " · DVOL " + num(V.dvol, 1) + "."));
+}
+function renderOpps() {
+  const rows = V ? V.opportunities : [];
+  const head = h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Écarts au-delà du spread"),
+    h("div", { class: "sub" }, "Classés par valeur de l'écart ($ par BTC). Hypothèse de spread symétrique autour du mark.")));
+  if (!rows.length) { mount("opps", head, h("div", { class: "empty" }, "Aucun écart ne dépasse le spread sur le dernier instantané")); return; }
+  const cols = ["Échéance", "Strike", "OTM", "Marché bid / mark / ask", "Notre mark", "Signal", "Smile du jour", "Signal", "Valeur max"];
+  const all = V.points;
+  mount("opps", head, h("div", { class: "tscroll" }, h("table", { class: "t" },
+    h("thead", {}, h("tr", {}, cols.map((x, i) => h("th", { class: i >= 1 && i !== 5 && i !== 7 ? "r" : "" }, x)))),
+    h("tbody", {}, rows.map(p => h("tr", {},
+      h("td", {}, p.expiry + "  ", h("span", { class: "muted" }, num(p.dte, 0) + " j")),
+      h("td", { class: "r num" }, usd(p.strike)), h("td", { class: "r num" }, num(p.otm, 1) + " %"),
+      h("td", { class: "r num" }, (p.bid_iv != null ? num(p.bid_iv, 1) : "—") + " / " + num(p.mark_iv, 1) + " / " + (p.ask_iv != null ? num(p.ask_iv, 1) : "—")),
+      h("td", { class: "r num" }, p.ours != null ? num(p.ours, 1) : "—", h("span", { class: "muted small" }, " (" + sgn(p.gap_ours, 1) + ")")),
+      h("td", {}, sigEl(p.sig_ours)),
+      h("td", { class: "r num" }, p.day != null ? num(p.day, 1) : "—", h("span", { class: "muted small" }, " (" + sgn(p.gap_day, 1) + ")")),
+      h("td", {}, sigEl(p.sig_day)),
+      h("td", { class: "r num" }, usd(Math.max(p.usd_ours, p.usd_day), { d: 0 }))))))),
+    dataTable(["Échéance", "Strike", "OTM %", "Bid", "Mark", "Ask", "Notre mark", "Écart", "Smile jour", "Écart", "Vega $"],
+      all.map(p => [p.expiry, num(p.strike, 0), num(p.otm, 1), p.bid_iv != null ? num(p.bid_iv, 1) : "—", num(p.mark_iv, 1),
+        p.ask_iv != null ? num(p.ask_iv, 1) : "—", p.ours != null ? num(p.ours, 1) : "—", sgn(p.gap_ours, 1),
+        p.day != null ? num(p.day, 1) : "—", sgn(p.gap_day, 1), num(p.vega, 1)])));
+}
+function renderVolGrid() {
+  if (!V) { mount("vol-grid"); return; }
+  const g = V.bias_grid, all = g.cells.flat().filter(Boolean), mx = Math.max(0.5, ...all.map(c => Math.abs(c.mean)));
+  const pos = css("--s1"), neg = css("--neg-mark");
+  mount("vol-grid", h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Où notre modèle se trompe"),
+      h("div", { class: "sub" }, "Écart moyen notre mark − marché (pts de vol), tous instantanés. Bleu : on marque plus haut que le marché ; rouge : plus bas."))),
+    h("div", { class: "tscroll" }, h("table", { class: "t heat" },
+      h("thead", {}, h("tr", {}, h("th", {}, "OTM \\ maturité"), g.dte.map(x => h("th", { class: "r" }, x)))),
+      h("tbody", {}, g.otm.map((lab, i) => h("tr", {}, h("td", {}, lab), g.cells[i].map(c => {
+        if (!c) return h("td", { class: "cell muted" }, "—");
+        const a = Math.min(0.55, Math.abs(c.mean) / mx * 0.55);
+        const col = c.mean >= 0 ? pos : neg;
+        return h("td", { class: "cell", style: "background:color-mix(in srgb," + col + " " + (a * 100).toFixed(0) + "%, transparent)",
+          title: c.n + " points" }, sgn(c.mean, 1), h("span", { class: "muted small" }, " · " + c.n));
+      })))))));
+}
+function renderFit() {
+  if (!V) { mount("fit"); return; }
+  const f = V.fit;
+  mount("fit", h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Qualité du fit par maturité"),
+      h("div", { class: "sub" }, "IV = DVOL × niveau × (1 + a·OTM + b·OTM²) · " + (f.coverage ? f.coverage.days + " jours (" + f.coverage.start + " → " + f.coverage.end + ")" : "")))),
+    h("div", { class: "tscroll" }, h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, ["Bucket", "Niveau ATM/DVOL", "a", "b", "R² skew", "Points", "Régime"].map((x, i) => h("th", { class: i ? "r" : "" }, x)))),
+      h("tbody", {}, f.buckets.map(b => h("tr", {}, h("td", {}, b.label), h("td", { class: "r num" }, b.l0 != null ? num(b.l0, 3) + "×" : "—"),
+        h("td", { class: "r num" }, num(b.a0, 4)), h("td", { class: "r num" }, num(b.b0 * 1000, 3) + "e-3"),
+        h("td", { class: "r num" }, num(b.r2, 3)), h("td", { class: "r num" }, num(b.n, 0)),
+        h("td", { class: "r" }, b.regime_aware ? badge("good", "régime-aware") : badge("warning", "statique · DVOL " + num(b.dvol_spread, 1) + " pts vus"))))))),
+    h("div", { class: "callout" }, "Statique tant que le DVOL n'a pas couvert 15 pts d'amplitude : le modèle ne sait pas encore comment le skew se raidit en stress."));
+}
+
+// ── Graphiques ─────────────────────────────────────────────────────────────
+function destroyCharts() { while (CHARTS.length) { try { CHARTS.pop().destroy(); } catch (e) {} } }
+function renderCharts() {
+  destroyCharts();
+  const c1 = css("--s1"), c2 = css("--s2"), c3 = css("--s3");
+  // Equity
+  const curve = B.curve || [];
+  chartCard("equity", "Equity — config de production", "Frais et funding inclus · hedge rejoué heure par heure", null, (box) => {
+    if (curve.length < 2) return null;
+    const cv = canvasIn(box, "Courbe d'equity du backtest", { endFmt: v => usd(v, { sign: true }), refLines: [{ value: 0, color: css("--axis") }] });
+    CHARTS.push(new Chart(cv, { type: "line", data: { datasets: [lineDs("Equity", curve.map(c => ({ x: Date.parse(c[0] + "T00:00:00Z"), y: c[1] })), c1, true, 3 * 86400000)] },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false }, layout: { padding: { top: 16 } },
+        plugins: { legend: { display: false }, tooltip: tooltipOpts(v => usd(v, { sign: true }), fdate) },
+        scales: axes(v => usd(v, { compact: true }), (v) => mFmt.format(new Date(v)), { time: true }) } }));
+  }, { headers: ["Jour", "Equity"], rows: curve.filter((_, i) => i % 7 === 0).map(c => [c[0], usd(c[1])]) });
+
+  if (!V) return;
+  // Smiles (petits multiples, une échéance par carte)
+  const host = document.getElementById("smiles");
+  host.replaceChildren(...V.smiles.map((s, i) => h("section", { class: "card", id: "smile-" + i })));
+  V.smiles.forEach((s, i) => {
+    chartCard("smile-" + i, "Échéance " + s.expiry + " · " + num(s.dte, 0) + " j", "ATM marché " + num(s.atm_iv, 1) + " %",
+      [{ name: "Marché (mark)", color: c1, kind: "rect" }, { name: "Notre mark", color: c2 }, { name: "Smile du jour", color: c3 }],
+      (box) => {
+        const pts = s.points; if (pts.length < 2) return null;
+        const cv = canvasIn(box, "Smile de l'échéance " + s.expiry);
+        const ds = (label, key, color, dots) => ({ label, data: pts.map(p => ({ x: p.otm, y: p[key] })), borderColor: color, backgroundColor: color,
+          borderWidth: dots ? 0 : 2, showLine: !dots, pointRadius: dots ? 4 : 0, pointHoverRadius: 5, pointBorderColor: css("--surface"), pointBorderWidth: dots ? 2 : 0, tension: 0 });
+        CHARTS.push(new Chart(cv, { type: "line", data: { datasets: [ds("Marché", "mark_iv", c1, true), ds("Notre mark", "ours", c2, false), ds("Smile du jour", "day", c3, false)] },
+          options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+            plugins: { legend: { display: false }, tooltip: tooltipOpts(v => num(v, 1) + " %", v => "OTM " + num(v, 1) + " %") },
+            scales: axes(v => num(v, 0) + " %", v => num(v, 0) + " % OTM", { time: true }) } }));
+      },
+      { headers: ["OTM %", "Marché", "Notre mark", "Smile jour"], rows: s.points.map(p => [num(p.otm, 1), num(p.mark_iv, 1), p.ours != null ? num(p.ours, 1) : "—", p.day != null ? num(p.day, 1) : "—"]) });
+  });
+  // Historique du biais
+  const hist = V.history || [];
+  chartCard("vol-hist", "Notre mark vs marché dans le temps", "Par instantané, en points de vol : biais moyen (notre mark − marché) et erreur quadratique",
+    [{ name: "Biais moyen", color: c1 }, { name: "RMSE", color: c2 }],
+    (box) => {
+      if (hist.length < 2) return null;
+      const cv = canvasIn(box, "Biais et RMSE du modèle", { endFmt: v => sgn(v, 1), refLines: [{ value: 0, color: css("--axis") }] });
+      const xs = d => Date.parse(d + "T12:00:00Z");
+      CHARTS.push(new Chart(cv, { type: "line", data: { datasets: [
+          lineDs("Biais moyen", hist.map(p => ({ x: xs(p.d), y: p.bias })), c1, true, 3 * 86400000),
+          lineDs("RMSE", hist.map(p => ({ x: xs(p.d), y: p.rmse })), c2, true, 3 * 86400000)] },
+        options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false }, layout: { padding: { top: 16 } },
+          plugins: { legend: { display: false }, tooltip: tooltipOpts(v => sgn(v, 2, " pt"), fdate) },
+          scales: axes(v => num(v, 0), fdate, { time: true }) } }));
+    },
+    { headers: ["Jour", "Biais", "RMSE", "DVOL − ATM échéances", "DVOL"], rows: hist.slice().reverse().map(p => [p.d, sgn(p.bias, 2), num(p.rmse, 2), p.level != null ? sgn(p.level, 2) : "—", p.dvol != null ? num(p.dvol, 1) : "—"]) });
+  // Courbes de skew fitées
+  const xs = Array.from({ length: 31 }, (_, i) => i);
+  const cols = [c1, c2, c3];
+  const fits = (V.fit.buckets || []);
+  chartCard("skew", "Skew fité — IV / IV ATM", "Par bucket de maturité, au régime de référence ; pointillés : ancien modèle linéaire",
+    fits.map((b, i) => ({ name: b.label, color: cols[i % 3] })).concat([{ name: "linéaire 0,013", color: css("--ink-2") }]),
+    (box) => {
+      if (!fits.length) return null;
+      const cv = canvasIn(box, "Courbes de skew fitées");
+      const dsets = fits.map((b, i) => lineDs(b.label, xs.map(x => ({ x, y: +(1 + b.a0 * x + b.b0 * x * x).toFixed(3) })), cols[i % 3], false, 100));
+      const lin = lineDs("linéaire 0,013", xs.map(x => ({ x, y: +(1 + 0.013 * x).toFixed(3) })), css("--ink-2"), false, 100);
+      lin.borderDash = [6, 4]; lin.borderWidth = 1.5;
+      CHARTS.push(new Chart(cv, { type: "line", data: { datasets: [...dsets, lin] },
+        options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: false }, tooltip: tooltipOpts(v => num(v, 3) + "×", v => "OTM " + num(v, 0) + " %") },
+          scales: axes(v => num(v, 2) + "×", v => num(v, 0) + " %", { time: true }) } }));
+    },
+    { headers: ["OTM %", ...fits.map(b => b.label), "linéaire"], rows: xs.filter(x => x % 5 === 0).map(x => [x, ...fits.map(b => num(1 + b.a0 * x + b.b0 * x * x, 3)), num(1 + 0.013 * x, 3)]) });
+}
+
+function renderFoot() {
+  mount("foot", h("span", {}, "Généré " + fdt(D.meta.generated_at)), h("span", {}, "Sources : backtest_routine.json · vol_surface.jsonl · vol_model_fit.json"),
+    h("span", {}, "Backtest : un pas par jour pour les entrées, hedge rejoué heure par heure"));
+}
+
+renderTop(); renderKpis(); renderDecisions(); renderVolText(); renderOpps(); renderVolGrid(); renderFit();
+renderCharts(); renderSweeps(); renderFoot();
+})();
+</script>
+</body>
+</html>

@@ -385,33 +385,37 @@ class Model:
 
         funding_events = self._funding_events()
         funding_total = sum(v for _, v in funding_events)
+        fee_events, fee_split = self._fee_events()
+        fees_total = sum(v for _, v in fee_events)          # négatif
 
         opt_real = sum(v for _, v in opt_events)
         hqty, havg = fnum(self.hedge.get("qty")), fnum(self.hedge.get("avg_entry"))
         hedge_mtm = hqty * (self.spot - havg) if hqty else 0.0
         latent = book_tot["latent_usd"]
-        net = opt_real + hedge_real + hedge_mtm + funding_total + latent
+        net = opt_real + hedge_real + hedge_mtm + funding_total + latent + fees_total
 
-        # Séries journalières cumulées (réalisé)
+        # Séries journalières cumulées (réalisé, net de frais estimés)
         daily = []
         if start:
             day, end = start.date(), self.now.date()
-            idx = {"o": 0, "h": 0, "f": 0}
-            acc = {"o": 0.0, "h": 0.0, "f": 0.0}
-            ev = {"o": opt_events, "h": hedge_events, "f": funding_events}
+            keys = ("options", "hedge", "funding", "fees")
+            ev = {"options": opt_events, "hedge": hedge_events, "funding": funding_events, "fees": fee_events}
+            idx = {k: 0 for k in keys}
+            acc = {k: 0.0 for k in keys}
             while day <= end:
                 lim = datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
-                for k in ("o", "h", "f"):
+                for k in keys:
                     while idx[k] < len(ev[k]) and ev[k][idx[k]][0] < lim:
                         acc[k] += ev[k][idx[k]][1]; idx[k] += 1
-                daily.append({"d": day.isoformat(), "options": round(acc["o"], 2), "hedge": round(acc["h"], 2),
-                              "funding": round(acc["f"], 2), "net": round(acc["o"] + acc["h"] + acc["f"], 2)})
+                daily.append({"d": day.isoformat(), **{k: round(acc[k], 2) for k in keys},
+                              "net": round(sum(acc.values()), 2)})
                 day += timedelta(days=1)
 
-        monthly = defaultdict(lambda: {"options": 0.0, "hedge": 0.0, "funding": 0.0})
-        for t, v in opt_events:     monthly[t.strftime("%Y-%m")]["options"] += v
-        for t, v in hedge_events:   monthly[t.strftime("%Y-%m")]["hedge"] += v
-        for t, v in funding_events: monthly[t.strftime("%Y-%m")]["funding"] += v
+        monthly = defaultdict(lambda: {"options": 0.0, "hedge": 0.0, "funding": 0.0, "fees": 0.0})
+        for key, events in (("options", opt_events), ("hedge", hedge_events),
+                            ("funding", funding_events), ("fees", fee_events)):
+            for t, v in events:
+                monthly[t.strftime("%Y-%m")][key] += v
         months = [{"m": m, **{k: round(v, 2) for k, v in d.items()},
                    "net": round(sum(d.values()), 2)} for m, d in sorted(monthly.items())]
 
@@ -436,7 +440,9 @@ class Model:
             "start": iso(start), "days": round(days_live, 1) if days_live else None,
             "totals": {"options_realized": round(opt_real, 2), "hedge_realized": round(hedge_real, 2),
                        "hedge_mtm": round(hedge_mtm, 2), "funding": round(funding_total, 2),
-                       "latent_options": round(latent, 2), "net": round(net, 2)},
+                       "latent_options": round(latent, 2), "fees": round(fees_total, 2),
+                       "fees_split": {k: round(v, 2) for k, v in fee_split.items()},
+                       "net_before_fees": round(net - fees_total, 2), "net": round(net, 2)},
             "kept_pct": round(net / opt_real * 100, 1) if opt_real > 0 else None,
             "daily": daily, "monthly": months,
             "events": {"n": len(events), "wins": wins, "lots": len(self.closed),
@@ -445,6 +451,36 @@ class Model:
                             "bt_annual": round(bt_annual) if bt_annual else None,
                             "bt_calmar": bt.get("calmar"), "bt_maxdd": bt.get("maxdd")},
         }
+
+    def _fee_events(self):
+        """Frais Deribit ESTIMÉS (le bot est en paper, rien n'est réellement débité) avec la grille
+        de greeks_hedge.py (FEE_*), identique à celle du backtest :
+        entrée de chaque lot, rachat (allègement CB, fermeture CB, roll), livraison si ITM,
+        et chaque rebalancement du hedge perp. Retourne ([(date, −frais)], répartition)."""
+        rate, cap = fnum(self.p("FEE_OPTION_RATE", 0.0003)), fnum(self.p("FEE_OPTION_CAP", 0.125))
+        drate, prate = fnum(self.p("FEE_DELIVERY_RATE", 0.00015)), fnum(self.p("FEE_PERP_RATE", 0.00035))
+        out, split = [], {"options": 0.0, "livraison": 0.0, "perp": 0.0}
+
+        def add(ts, amount, key):
+            t = parse_ts(ts)
+            if t and amount > 0:
+                out.append((t, -amount)); split[key] -= amount
+
+        for lot in self.closed + self.positions:
+            n, es, ep = fnum(lot.get("contracts"), 1), fnum(lot.get("entry_spot")), fnum(lot.get("entry_price"))
+            add(lot.get("entry_ts"), n * min(rate * es, cap * ep * es), "options")
+        for lot in self.closed:
+            n, xs, xp = fnum(lot.get("contracts"), 1), fnum(lot.get("exit_spot")), fnum(lot.get("exit_price"))
+            reason = lot.get("exit_reason")
+            if reason in ("cb_tier1_trim", "circuit_breaker", "roll"):
+                add(lot.get("exit_ts"), n * min(rate * xs, cap * xp * xs), "options")
+            elif reason in ("expiration", "expired", "expiry"):
+                intrinsic = max(fnum(lot.get("strike")) - xs, 0.0)
+                add(lot.get("exit_ts"), n * min(drate * xs, cap * intrinsic), "livraison")
+        for e in self.hedge.get("history", []) or []:
+            add(e.get("ts"), abs(fnum(e.get("qty"))) * fnum(e.get("spot")) * prate, "perp")
+        out.sort(key=lambda x: x[0])
+        return out, split
 
     def _funding_events(self):
         """Funding réellement encaissé/payé par le hedge : Σ −qty(t) × index × interest_1h."""
@@ -525,7 +561,8 @@ class Model:
             recos.append({"param": s.get("param"), "current": cur.get("label"),
                           "proposed": s.get("opt_label") or s.get("best_label"),
                           "gain": s.get("gain_vs_current"), "wins": s.get("fold_wins"), "n": s.get("n_folds")})
-        inert = [s.get("param") for s in self.routine.get("sweeps", []) or [] if fnum(s.get("sensitivity")) < 0.1]
+        inert = [s.get("param") for s in self.routine.get("sweeps", []) or []
+                 if fnum(s.get("sensitivity")) < 0.1 and s.get("kind", "param") == "param"]
         return {"generated_at": iso(parse_ts(self.routine.get("generated_at"))), "recommendations": recos,
                 "inert": inert, "n_sweeps": len(self.routine.get("sweeps", []) or [])}
 
@@ -625,8 +662,14 @@ class Model:
         }
 
 
+ASSETS = HERE / "dashboard_assets"
+
+
 def render(model: dict, template: Path) -> str:
+    """Template + CSS/JS communs (dashboard_assets/) + modèle JSON embarqué."""
     html = template.read_text(encoding="utf-8")
+    html = html.replace("/*__COMMON_CSS__*/", (ASSETS / "common.css").read_text(encoding="utf-8"))
+    html = html.replace("/*__COMMON_JS__*/", (ASSETS / "common.js").read_text(encoding="utf-8"))
     payload = json.dumps(model, ensure_ascii=False, separators=(",", ":"), default=str)
     payload = payload.replace("</", "<\\/")   # pas de fermeture de balise dans le JSON embarqué
     return html.replace("/*__DASHBOARD_DATA__*/null", payload)
