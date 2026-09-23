@@ -1,52 +1,122 @@
 """
-backtest_routine.py — Routine automatique de backtests pilotée par le fit de skew actuel.
+backtest_routine.py — Routine automatique de backtests (hebdo, GitHub Actions).
 
 À chaque exécution :
   1. fitte la surface de skew réelle (par maturité + régime DVOL, en mémoire) ;
-  2. rejoue une batterie COMPLÈTE de sweeps de paramètres SOUS ce skew réel :
-     scoring (poids, normalisations IV/HV & skew, horizon HV 5/10/30j), entrée,
-     plancher de prime, pénalité gamma, sizing (convexité, cap, plancher de rang),
-     et tous les paramètres du circuit breaker (paliers, seuils, keep, reprise) ;
-  3. classe chaque paramètre par SENSIBILITÉ (amplitude du Calmar) ;
-  4. marque la config ACTUELLE et la meilleure ; écrit backtest_routine.json.
+  2. rejoue la config de PRODUCTION puis une batterie de sweeps, famille par famille :
+     scoring, entrée, sizing, HEDGE (ratio, cadence, contrôle horaire/journalier, bande,
+     mise à plat du résiduel), circuit breaker ;
+  3. stresse les HYPOTHÈSES du modèle (frais Deribit, spread bid/ask, funding) : elles
+     mesurent la fragilité du résultat, elles ne sont jamais « recommandées » ;
+  4. juge chaque paramètre sur 5 folds contigus (≈ régimes) : pire fold (maximin),
+     accord du vainqueur entre folds, plateau → verdict ✅ robuste / ⛔ / ⚠ ;
+  5. écrit backtest_routine.json (lu par generate_backtest_html.py et le dashboard v2).
 
-Tourne 1×/semaine via GitHub Actions. Usage : python backtest_routine.py [--years 4]
+Source unique des valeurs de prod : les constantes de backtest.py (elles-mêmes miroir
+du live, vérifié par check_params_sync.py). Aucune copie à tenir à jour ici.
+
+Usage : python backtest_routine.py [--years 4]
 """
-import sys, io, contextlib, math, json, argparse
+import sys, io, contextlib, json, argparse, statistics
 from datetime import datetime, timezone
 sys.path.insert(0, '.')
 import backtest as bt
 import fit_vol_model as fm
 
 OUT_FILE = "backtest_routine.json"
-
-# Config de PRODUCTION actuelle (référence des sweeps + ligne mise en avant)
-PROD = dict(
-    W_IVHV=0.30, W_YIELD=0.25, W_SKEW=0.45,
-    SKEW_NORM=0.60, IVHV_NORM=1.50, YLDNORM=0.30,
-    HV5=0.0, HV10=0.5, HV30=0.5,
-    ENTRY=0.45, PREMIUM=150.0, GPEN=5.0, GCAP=10.0,
-    CONVEX=1.5, MAXBTC=5.0, RANKFLOOR=0.7,
-    CB_T2M=10.0, CB_T2D=12.0, CB_T1M1=5.0, CB_T1M3=6.0, CB_T1K=0.30, CB_T1R=3.0,
-    REENTRY_BOOST=0.05,
-    T1_COOLDOWN=0, GAMMA_ECAP=0.0,
-    DVOLMIN=35.0,
-)
+NFOLDS   = 5      # folds contigus (~10 mois chacun sur 4 ans) → autant de sous-régimes
+MIN_GAIN = 1.0    # gain minimal de Calmar moyen (folds) pour recommander un changement
+MIN_SENSITIVITY = 0.5  # amplitude minimale du Calmar complet pour qu'un paramètre soit « actif »
+DD_FLOOR_FRAC = 0.25   # plancher de drawdown d'un fold = 25 % du MaxDD de la prod (Calmar borné)
 
 
-def _apply(c):
-    bt.SCORE_W_IVHV, bt.SCORE_W_YIELD, bt.SCORE_W_SKEW = c['W_IVHV'], c['W_YIELD'], c['W_SKEW']
-    bt.SKEW_NORM, bt.IVHV_NORM, bt.YIELD_NORM = c['SKEW_NORM'], c['IVHV_NORM'], c['YLDNORM']
-    bt.HV_W5, bt.HV_W10, bt.HV_W30 = c['HV5'], c['HV10'], c['HV30']
-    bt.ENTRY_SCORE_MIN, bt.MIN_PREMIUM_USD = c['ENTRY'], c['PREMIUM']
-    bt.GAMMA_PEN_START, bt.GAMMA_SCORE_CAP = c['GPEN'], c['GCAP']
-    bt.SIZE_CONVEXITY, bt.MAX_PORTFOLIO_BTC, bt.RANK_FLOOR = c['CONVEX'], c['MAXBTC'], c['RANKFLOOR']
-    bt.CB_MOVE_3D_PCT, bt.CB_DVOL_3D_PTS = c['CB_T2M'], c['CB_T2D']
-    bt.CB_T1_MOVE_1D, bt.CB_T1_MOVE_3D = c['CB_T1M1'], c['CB_T1M3']
-    bt.CB_T1_KEEP, bt.CB_T1_RESTORE = c['CB_T1K'], c['CB_T1R']
-    bt.ENTRY_SCORE_REENTRY_BOOST = c['REENTRY_BOOST']
-    bt.CB_T1_COOLDOWN_D, bt.GAMMA_ENTRY_CAP = c['T1_COOLDOWN'], c['GAMMA_ECAP']
-    bt.DVOL_MIN = c['DVOLMIN']
+def f2(v):  return f"{v:.2f}"
+def f0(v):  return f"{v:.0f}"
+def pct0(v): return f"{v:.0%}"
+def off_if(th, fmt):
+    return lambda v: "OFF" if (v >= th if th > 0 else v == 0) else fmt(v)
+
+
+# (famille, libellé, attribut(s) de backtest.py, valeurs, format, type)
+SWEEPS = [
+    ("Scoring", "Poids score (ivhv/yield/skew)", ("SCORE_W_IVHV", "SCORE_W_YIELD", "SCORE_W_SKEW"),
+     [(0.40, 0.30, 0.30), (0.35, 0.30, 0.35), (0.30, 0.25, 0.45), (0.30, 0.20, 0.50),
+      (0.25, 0.20, 0.55), (0.20, 0.15, 0.65), (0.50, 0.25, 0.25), (0.20, 0.40, 0.40)],
+     lambda v: "/".join(f"{x:g}" for x in v), "param"),
+    ("Scoring", "Skew — normalisation", "SKEW_NORM", [0.15, 0.20, 0.30, 0.40, 0.50, 0.60, 0.80, 1.0, 1.2], f2, "param"),
+    ("Scoring", "IV/HV — normalisation", "IVHV_NORM", [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0], f2, "param"),
+    ("Scoring", "Yield — normalisation", "YIELD_NORM", [0.15, 0.20, 0.30, 0.40, 0.50, 0.60], f2, "param"),
+    ("Scoring", "IV/HV — horizon HV (5/10/30 j)", ("HV_W5", "HV_W10", "HV_W30"),
+     [(0, 0, 1.0), (0, 1.0, 0), (1.0, 0, 0), (0, 0.5, 0.5), (0.5, 0.5, 0), (0.34, 0.33, 0.33), (0, 0.7, 0.3)],
+     lambda v: {(0, 0, 1.0): "30j", (0, 1.0, 0): "10j", (1.0, 0, 0): "5j", (0, 0.5, 0.5): "10/30",
+                (0.5, 0.5, 0): "5/10", (0.34, 0.33, 0.33): "5/10/30", (0, 0.7, 0.3): "10>30"}.get(tuple(v), str(v)),
+     "param"),
+
+    ("Entrée", "Seuil d'entrée (score)", "ENTRY_SCORE_MIN", [0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.70], f2, "param"),
+    ("Entrée", "Plancher de prime ($/BTC)", "MIN_PREMIUM_USD", [50, 100, 150, 200, 250, 300, 400], lambda v: f"{v:.0f}$", "param"),
+    ("Entrée", "Porte DVOL min", "DVOL_MIN", [25.0, 28.0, 30.0, 32.0, 35.0, 38.0, 40.0], f0, "param"),
+    ("Entrée", "Delta max (proximité ATM)", "SCAN_DELTA_MIN", [-0.12, -0.16, -0.20, -0.25, -0.30], f2, "param"),
+    ("Entrée", "Échéances candidates (j)", "TTE_CHOICES",
+     [[3, 7], [3, 7, 14], [3, 7, 14, 21], [7, 14, 21], [14, 21]], lambda v: "/".join(map(str, v)), "param"),
+    ("Entrée", "Ré-entrée — boost de score", "ENTRY_SCORE_REENTRY_BOOST", [0.0, 0.03, 0.05, 0.08, 0.10, 0.15],
+     lambda v: f"+{v:.2f}", "param"),
+    ("Entrée", "Espacement delta (même échéance)", "DELTA_MIN_SPACING", [0.0, 0.04, 0.06, 0.08, 0.12], f2, "param"),
+    ("Entrée", "Pénalité gamma (début, pts)", "GAMMA_PEN_START", [3.0, 4.0, 5.0, 6.0, 8.0, 100.0], off_if(100, f0), "param"),
+    ("Entrée", "Gamma — cap dur (pts)", "GAMMA_ENTRY_CAP", [0.0, 3.0, 4.0, 5.0, 7.0], off_if(0, lambda v: f"{v:.1f}"), "param"),
+
+    ("Sizing", "Convexité (score^x)", "SIZE_CONVEXITY", [1.0, 1.25, 1.5, 1.75, 2.0], f2, "param"),
+    ("Sizing", "Cap notionnel (BTC)", "MAX_PORTFOLIO_BTC", [3.0, 4.0, 5.0, 6.0, 7.0], f0, "param"),
+    ("Sizing", "Plancher rang DVOL", "RANK_FLOOR", [0.1, 0.3, 0.5, 0.6, 0.7, 0.85, 1.0], f2, "param"),
+
+    ("Hedge", "Hedge — ratio couvert", "HEDGE_RATIO", [0.0, 0.5, 0.7, 0.85, 1.0], pct0, "param"),
+    ("Hedge", "Hedge — contrôle", "HEDGE_INTRADAY", [True, False],
+     lambda v: "horaire (live)" if v else "1×/j à la clôture", "param"),
+    ("Hedge", "Hedge — cadence min (h)", "HEDGE_EVERY_H", [1, 4, 8, 24], lambda v: f"{v} h", "param"),
+    ("Hedge", "Hedge — bande de base (%)", "HEDGE_THRESHOLD_BASE_PCT", [2.0, 3.0, 5.0, 7.0, 10.0], f0, "param"),
+    ("Hedge", "Hedge — bande", "HEDGE_THRESHOLD_MODE", ["absolute", "notional"],
+     lambda v: {"absolute": "BTC fixe (live)", "notional": "× notionnel"}[v], "param"),
+    ("Hedge", "Hedge — mise à plat du résiduel (BTC)", "HEDGE_FLATTEN_DELTA", [0.0, 0.01, 0.02, 0.05],
+     off_if(0, lambda v: f"<{v:.2f}"), "param"),
+
+    ("Circuit breaker", "Fermeture — move 3 j (%)", "CB_MOVE_3D_PCT", [8.0, 10.0, 12.0, 15.0, 100.0], off_if(100, lambda v: f"−{v:.0f}%"), "param"),
+    ("Circuit breaker", "Fermeture — DVOL 3 j (pts)", "CB_DVOL_3D_PTS", [8.0, 10.0, 12.0, 15.0, 100.0], off_if(100, lambda v: f"+{v:.0f}"), "param"),
+    ("Circuit breaker", "Re-entrée après fermeture — |move 3 j| (%)", "CB_REENTRY_MOVE", [2.0, 3.0, 4.0, 6.0, 8.0], lambda v: f"{v:.0f}%", "param"),
+    ("Circuit breaker", "Allègement — move 1 j (%)", "CB_T1_MOVE_1D", [4.0, 5.0, 6.0, 7.0, 100.0], off_if(100, lambda v: f"−{v:.0f}%"), "param"),
+    ("Circuit breaker", "Allègement — move 3 j (%)", "CB_T1_MOVE_3D", [5.0, 6.0, 7.0, 8.0, 100.0], off_if(100, lambda v: f"−{v:.0f}%"), "param"),
+    ("Circuit breaker", "Allègement — part conservée", "CB_T1_KEEP", [0.2, 0.3, 0.4, 0.5, 1.0], lambda v: "OFF" if v >= 1 else f"{v:.0%}", "param"),
+    ("Circuit breaker", "Allègement — reprise |move 3 j| (%)", "CB_T1_RESTORE", [2.0, 3.0, 4.0, 5.0], lambda v: f"{v:.0f}%", "param"),
+    ("Circuit breaker", "Allègement — cooldown après reprise (j)", "CB_T1_COOLDOWN_D", [0, 1, 2, 3, 5], off_if(0, lambda v: f"{v:.0f}j"), "param"),
+
+    ("Hypothèses", "Frais Deribit (× grille)", "FEE_MULT", [0.0, 0.5, 1.0, 1.5, 2.0], lambda v: f"×{v:g}", "assumption"),
+    ("Hypothèses", "Spread à l'entrée (pts de vol)", "BA_HAIRCUT_VOLPTS", [0.5, 1.0, 1.5, 2.5, 4.0], lambda v: f"{v:g} pt", "assumption"),
+    ("Hypothèses", "Funding du hedge", "USE_REAL_FUNDING", [True, False], lambda v: "réel" if v else "forfait payé", "assumption"),
+]
+
+ATTRS = sorted({a for s in SWEEPS for a in (s[2] if isinstance(s[2], tuple) else (s[2],))})
+PROD = {a: getattr(bt, a) for a in ATTRS}   # config de production = valeurs du module
+
+
+def _apply(cfg):
+    for a, v in cfg.items():
+        setattr(bt, a, list(v) if isinstance(v, list) else v)
+
+
+def _as_cfg(attrs, value):
+    if isinstance(attrs, tuple):
+        return dict(zip(attrs, value))
+    return {attrs: value}
+
+
+def _is_current(attrs, value):
+    cfg = _as_cfg(attrs, value)
+    for a, v in cfg.items():
+        p = PROD[a]
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and isinstance(p, (int, float)) and not isinstance(p, bool):
+            if abs(v - p) > 1e-9:
+                return False
+        elif list(v) != list(p) if isinstance(v, (list, tuple)) else v != p:
+            return False
+    return True
 
 
 def _stats(ec):
@@ -54,21 +124,17 @@ def _stats(ec):
     peak, dd = eq[0], 0.0
     for v in eq:
         peak = max(peak, v); dd = max(dd, peak - v)
-    rets = [eq[i]-eq[i-1] for i in range(1, len(eq))]
-    m = sum(rets)/len(rets); s = (sum((r-m)**2 for r in rets)/len(rets))**0.5
-    sharpe = m/s*math.sqrt(365) if s > 0 else 0
-    worst = min(ec[i][2] for i in range(1, len(ec)))
-    cal = eq[-1]/len(eq)*365/dd if dd > 0 else 0
-    return dict(pnl=round(eq[-1]), maxdd=round(dd), calmar=round(cal, 2),
-                sharpe=round(sharpe, 2), worst=round(worst))
+    rets = [eq[i] - eq[i - 1] for i in range(1, len(eq))]
+    m = sum(rets) / len(rets); s = (sum((r - m) ** 2 for r in rets) / len(rets)) ** 0.5
+    return dict(pnl=round(eq[-1]), maxdd=round(dd),
+                calmar=round(eq[-1] / len(eq) * 365 / dd, 2) if dd > 0 else 0,
+                sharpe=round(m / s * 365 ** 0.5, 2) if s > 0 else 0,
+                worst=round(min(ec[i][2] for i in range(1, len(ec)))))
 
 
-NFOLDS = 5   # folds contigus (~6 mois chacun) → autant de sous-régimes échantillonnés.
-             # Un seul split contigu 60/40 serait biaisé (2024 fort en IS, 2025 dur en OOS) :
-             # on juge plutôt sur le PIRE fold (maximin) + l'accord du vainqueur entre folds.
-
-def _calmar_slice(eq, lo, hi):
-    """Calmar sur la fenêtre [lo:hi] de eq=[(date,equity),...]."""
+def _calmar_slice(eq, lo, hi, dd_floor):
+    """Calmar d'un fold avec plancher de drawdown : un fold calme (DD ≈ 0) ne produit plus
+    de Calmar démesuré qui écrase la moyenne (défaut des versions précédentes)."""
     sub = eq[lo:hi]
     if len(sub) < 30:
         return None
@@ -76,35 +142,89 @@ def _calmar_slice(eq, lo, hi):
     peak, dd = sub[0][1], 0.0
     for _, v in sub:
         peak = max(peak, v); dd = max(dd, peak - v)
-    return round(pnl/len(sub)*365/dd, 2) if dd > 0 else 0.0
+    return round(pnl / len(sub) * 365 / max(dd, dd_floor), 2)
 
 
-def _folds(ec):
-    """Calmar par fold contigu (chaque fold ≈ un régime de vol différent), + pire fold
-    (maximin, robustesse régime) et moyenne. Découpage contigu → respecte la dépendance
-    de chemin (positions/hedge/CB qui se propagent)."""
+def _folds(ec, dd_floor):
     eq = [(e[0], e[1]) for e in ec]
     n = len(eq)
-    bnd = [round(n*i/NFOLDS) for i in range(NFOLDS+1)]
-    cals = [_calmar_slice(eq, bnd[i], bnd[i+1]) for i in range(NFOLDS)]
+    bnd = [round(n * i / NFOLDS) for i in range(NFOLDS + 1)]
+    cals = [_calmar_slice(eq, bnd[i], bnd[i + 1], dd_floor) for i in range(NFOLDS)]
     valid = [c for c in cals if c is not None]
     return dict(folds=cals,
+                fold_dates=[str(eq[bnd[i]][0]) for i in range(NFOLDS)],
                 worst_fold=round(min(valid), 2) if valid else None,
-                mean_fold=round(sum(valid)/len(valid), 2) if valid else None)
+                mean_fold=round(sum(valid) / len(valid), 2) if valid else None,
+                median_fold=round(statistics.median(valid), 2) if valid else None)
 
 
-def _run(years, cfg, want_curve=False):
+def _run(years, cfg, dd_floor, want_curve=False):
     _apply(cfg)
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
+    with contextlib.redirect_stdout(io.StringIO()):
         ec = bt.run(years, circuit_breaker=True)
-    ntr = [l for l in buf.getvalue().splitlines() if "Trades" in l]
+    _apply(PROD)
     st = _stats(ec)
-    st.update(_folds(ec))
-    st['trades'] = int(ntr[0].split(":")[1].split("|")[0].strip()) if ntr else None
+    st.update(_folds(ec, dd_floor))
+    L = bt._LAST_RUN
+    fees = sum(L["fees"].values())
+    opt = L["attrib"]["options"]
+    st.update(trades=L["trades"], rebalances=L["rebalances"], fees=round(fees),
+              fees_detail={k: round(v) for k, v in L["fees"].items()},
+              hedge=round(L["attrib"]["hedge"]), options=round(opt), funding=round(L["funding"]),
+              kept_pct=round((opt + L["attrib"]["hedge"] + L["funding"] - fees) / opt * 100, 1) if opt > 0 else None)
     if want_curve:
-        st['curve'] = [[str(e[0]), round(e[1])] for e in ec]
+        st["curve"] = [[str(e[0]), round(e[1])] for e in ec]
     return st
+
+
+def _judge(name, family, kind, results):
+    """Verdict anti-overfit d'un sweep (maximin + accord entre folds + plateau)."""
+    cals = [r["calmar"] for r in results]
+    fold_winner = []
+    for fi in range(NFOLDS):
+        cand = [(i, results[i]["folds"][fi]) for i in range(len(results)) if results[i]["folds"][fi] is not None]
+        if cand:
+            fold_winner.append(max(cand, key=lambda t: t[1])[0])
+    pos = [r for r in results if (r.get("worst_fold") or -1e9) > 0]
+    pool = pos if pos else results
+    best = max(pool, key=lambda r: r.get("mean_fold") if r.get("mean_fold") is not None else -1e9)
+    bi = results.index(best)
+    for i, r in enumerate(results):
+        r["is_best"] = (i == bi)
+    wins = fold_winner.count(bi)
+    n, bf = len(results), best.get("mean_fold")
+    left = results[bi - 1].get("mean_fold") if bi - 1 >= 0 else None
+    right = results[bi + 1].get("mean_fold") if bi + 1 < n else None
+    present = [c for c in (left, right) if c is not None]
+    plateau = bool(present) and bf is not None and bf > 0 and all(c >= 0.8 * bf for c in present)
+    mf = [r.get("mean_fold") for r in results]
+    at_edge = (bi == 0 or bi == n - 1) and all(x is not None for x in mf) and n >= 3
+    monotonic = False
+    if at_edge:
+        monotonic = (all(mf[i] <= mf[i + 1] + 1e-9 for i in range(n - 1)) if bi == n - 1
+                     else all(mf[i] >= mf[i + 1] - 1e-9 for i in range(n - 1)))
+    extend = at_edge and monotonic
+    if n == 2:   # binaire (on/off, mode) : pas de voisinage → l'accord entre folds suffit
+        plateau = True
+    robust = ((best.get("worst_fold") or -1) > 0 and wins >= (NFOLDS + 1) // 2 and (plateau or extend))
+    cur = next((r for r in results if r.get("is_current")), None)
+    gain = (round(best["mean_fold"] - cur["mean_fold"], 2)
+            if cur and best.get("mean_fold") is not None and cur.get("mean_fold") is not None else None)
+    sensitivity = round(max(cals) - min(cals), 2)
+    # Garde-fous : un paramètre quasi sans effet sur la période complète (Δ < MIN_SENSITIVITY)
+    # ou dont l'optimum dégrade le Calmar complet ne se recommande pas — le gain par fold
+    # viendrait d'une simple redistribution du PnL entre régimes.
+    no_full_loss = cur is not None and best["calmar"] >= cur["calmar"] - 1e-9
+    recommend = bool(kind == "param" and robust and gain is not None and gain >= MIN_GAIN
+                     and sensitivity >= MIN_SENSITIVITY and no_full_loss)
+    return dict(param=name, family=family, kind=kind, results=results,
+                sensitivity=sensitivity, extend=extend,
+                gain_vs_current=gain, current_is_best=(cur is best), recommend_change=recommend,
+                opt_label=best["label"],
+                best_label=(best["label"] if recommend else (cur["label"] if cur else best["label"])),
+                best_calmar=best["calmar"], best_worst_fold=best.get("worst_fold"),
+                best_mean_fold=best.get("mean_fold"), fold_wins=wins, n_folds=NFOLDS,
+                plateau=plateau, robust=robust)
 
 
 def run(years=4.0):
@@ -116,151 +236,65 @@ def run(years=4.0):
     else:
         print("  Pas de surface réelle — sweeps sous skew linéaire 0.013")
 
-    base = _run(years, PROD, want_curve=True)
-    print(f"\n  Config ACTUELLE : PnL {base['pnl']:,}$  MaxDD {base['maxdd']:,}$  Calmar {base['calmar']}\n")
+    # 1) prod d'abord (sans plancher) → fixe le plancher de drawdown des folds
+    probe = _run(years, PROD, dd_floor=1e-9)
+    dd_floor = max(DD_FLOOR_FRAC * probe["maxdd"], 250.0)
+    base = _run(years, PROD, dd_floor, want_curve=True)
+    print(f"\n  Config ACTUELLE : PnL {base['pnl']:,}$  MaxDD {base['maxdd']:,}$  Calmar {base['calmar']}  "
+          f"frais {base['fees']:,}$  hedge {base['hedge']:+,}$  prime gardée {base['kept_pct']}%")
+    print(f"  Plancher de DD des folds : {dd_floor:,.0f}$ ({DD_FLOOR_FRAC:.0%} du MaxDD prod)\n")
 
-    def _cur(key, v):
-        """v correspond-il à la valeur de production ?"""
-        if key == 'WEIGHTS':
-            return abs(v[0]-PROD['W_IVHV'])<1e-6 and abs(v[1]-PROD['W_YIELD'])<1e-6 and abs(v[2]-PROD['W_SKEW'])<1e-6
-        if key == 'HV':
-            return abs(v[0]-PROD['HV5'])<1e-6 and abs(v[1]-PROD['HV10'])<1e-6 and abs(v[2]-PROD['HV30'])<1e-6
-        return abs(v-PROD[key])<1e-9
-
-    def sweep(name, key, values, fmt=str):
+    sweeps = []
+    for family, name, attrs, values, fmt, kind in SWEEPS:
         results = []
         for v in values:
-            cfg = dict(PROD)
-            if key == 'WEIGHTS':
-                cfg['W_IVHV'], cfg['W_YIELD'], cfg['W_SKEW'] = v; label = f"{v[0]}/{v[1]}/{v[2]}"
-            elif key == 'HV':
-                cfg['HV5'], cfg['HV10'], cfg['HV30'] = v; label = fmt(v)
-            else:
-                cfg[key] = v; label = fmt(v)
-            st = _run(years, cfg)
-            st['label'] = label; st['is_current'] = _cur(key, v)
+            st = _run(years, {**PROD, **_as_cfg(attrs, v)}, dd_floor)
+            st["label"] = fmt(v)
+            st["is_current"] = _is_current(attrs, v)
             results.append(st)
-        cals = [r['calmar'] for r in results]
-        # Vainqueur par fold (chaque fold = un régime) → accord inter-régimes
-        fold_winner = []
-        for fi in range(NFOLDS):
-            cand = [(i, results[i]['folds'][fi]) for i in range(len(results))
-                    if results[i]['folds'][fi] is not None]
-            if cand:
-                fold_winner.append(max(cand, key=lambda t: t[1])[0])
-        # Recommandation : meilleur Calmar MOYEN parmi ceux dont le PIRE fold est > 0
-        #  (maximin souple → bonne perf moyenne mais qui ne s'effondre dans aucun régime)
-        pos = [r for r in results if (r.get('worst_fold') or -1e9) > 0]
-        pool = pos if pos else results
-        best = max(pool, key=lambda r: (r.get('mean_fold') if r.get('mean_fold') is not None else -1e9))
-        bi = results.index(best)
-        for i, r in enumerate(results):
-            r['is_best'] = (i == bi)
-        wins = fold_winner.count(bi)                       # nb de folds où le reco gagne
-        n = len(results); bf = best.get('mean_fold')
-        # Voisins présents (un seul si le meilleur est au bord de la plage testée)
-        left  = results[bi-1].get('mean_fold') if bi-1 >= 0 else None
-        right = results[bi+1].get('mean_fold') if bi+1 < n else None
-        present = [c for c in (left, right) if c is not None]
-        # Plateau : tous les voisins PRÉSENTS restent ≥80% du meilleur
-        plateau = bool(present) and bf and all(c >= 0.8*bf for c in present)
-        # Optimum au bord + tendance monotone vers ce bord → pas un pic, plage trop étroite
-        mf = [r.get('mean_fold') for r in results]
-        at_edge = (bi == 0 or bi == n-1) and all(x is not None for x in mf) and n >= 3
-        monotonic = False
-        if at_edge:
-            if bi == n-1:  monotonic = all(mf[i] <= mf[i+1] + 1e-9 for i in range(n-1))
-            else:          monotonic = all(mf[i] >= mf[i+1] - 1e-9 for i in range(n-1))
-        extend = at_edge and monotonic          # tendance claire mais optimum hors plage
-        # Robuste : pire fold > 0, majorité des régimes, ET (plateau OU tendance monotone au bord)
-        robust = ((best.get('worst_fold') or -1) > 0 and wins >= (NFOLDS+1)//2
-                  and (plateau or extend))
-        # Gain réel vs la config ACTUELLE (sur le mean_fold robuste) — 0 si on y est déjà
-        cur = next((r for r in results if r.get('is_current')), None)
-        gain = None
-        if cur is not None and best.get('mean_fold') is not None and cur.get('mean_fold') is not None:
-            gain = round(best['mean_fold'] - cur['mean_fold'], 2)
-        # On ne RECOMMANDE un changement que s'il est robuste ET significatif (≥1.0 de Calmar).
-        # Sinon « garder l'actuel » — évite de suggérer du bruit (ex. seuil 0.65 inerte).
-        MIN_GAIN = 1.0
-        recommend_change = bool(robust and gain is not None and gain >= MIN_GAIN)
-        return dict(param=name, results=results, sensitivity=round(max(cals)-min(cals), 2),
-                    extend=extend, gain_vs_current=gain, current_is_best=(cur is best),
-                    recommend_change=recommend_change,
-                    opt_label=best['label'],                              # optimum sous fit (info)
-                    best_label=(best['label'] if recommend_change else (cur['label'] if cur else best['label'])),
-                    best_calmar=best['calmar'],
-                    best_worst_fold=best.get('worst_fold'), best_mean_fold=best.get('mean_fold'),
-                    fold_wins=wins, n_folds=NFOLDS, plateau=plateau, robust=robust)
+        sweeps.append(_judge(name, family, kind, results))
+        s = sweeps[-1]
+        tag = f"→ {s['opt_label']} (+{s['gain_vs_current']})" if s["recommend_change"] else "="
+        print(f"  [{family:<15}] {name:<42} Δ {s['sensitivity']:>6}  {tag}")
 
-    sweeps = [
-        sweep("Poids score (ivhv/yield/skew)", 'WEIGHTS',
-              [(0.40,0.30,0.30),(0.35,0.30,0.35),(0.30,0.25,0.45),(0.30,0.20,0.50),
-               (0.25,0.20,0.55),(0.20,0.15,0.65),(0.50,0.25,0.25),(0.20,0.40,0.40)]),
-        sweep("SKEW_NORM", 'SKEW_NORM', [0.15,0.20,0.30,0.40,0.50,0.60,0.80,1.0,1.2], lambda v:f"{v:.2f}"),
-        sweep("IV/HV — normalisation", 'IVHV_NORM', [0.5,0.75,1.0,1.5,2.0,2.5,3.0], lambda v:f"{v:.2f}"),
-        sweep("Yield — normalisation", 'YLDNORM', [0.15,0.20,0.30,0.40,0.50,0.60], lambda v:f"{v:.2f}"),
-        sweep("IV/HV — horizon HV (5/10/30j)", 'HV',
-              [(0,0,1.0),(0,1.0,0),(1.0,0,0),(0,0.5,0.5),(0.5,0.5,0),(0.34,0.33,0.33),(0,0.7,0.3)],
-              lambda v:{(0,0,1.0):"30j",(0,1.0,0):"10j",(1.0,0,0):"5j",(0,0.5,0.5):"10/30",
-                        (0.5,0.5,0):"5/10",(0.34,0.33,0.33):"5/10/30",(0,0.7,0.3):"10>30"}.get(tuple(v),str(v))),
-        sweep("Seuil d'entrée", 'ENTRY', [0.40,0.45,0.50,0.55,0.60,0.65,0.70,0.75], lambda v:f"{v:.2f}"),
-        sweep("Plancher prime $", 'PREMIUM', [50,100,150,200,250,300,400], lambda v:f"{int(v)}$"),
-        sweep("Pénalité gamma (start)", 'GPEN', [3.0,4.0,5.0,6.0,8.0,100.0], lambda v:"OFF" if v>=100 else f"{int(v)}"),
-        sweep("Sizing — convexité", 'CONVEX', [1.0,1.25,1.5,1.75,2.0], lambda v:f"{v:.2f}"),
-        sweep("Sizing — cap notionnel BTC", 'MAXBTC', [3.0,4.0,5.0,6.0,7.0], lambda v:f"{v:.0f}"),
-        sweep("Sizing — plancher rang DVOL", 'RANKFLOOR', [0.1,0.2,0.3,0.4,0.5,0.6,0.7,1.0], lambda v:f"{v:.2f}"),
-        sweep("CB — fermeture move 3j %", 'CB_T2M', [8.0,10.0,12.0,15.0,100.0], lambda v:"OFF" if v>=100 else f"−{int(v)}%"),
-        sweep("CB — fermeture DVOL 3j pts", 'CB_T2D', [8.0,10.0,12.0,15.0,100.0], lambda v:"OFF" if v>=100 else f"+{int(v)}"),
-        sweep("CB — allègement move 1j %", 'CB_T1M1', [4.0,5.0,6.0,7.0,100.0], lambda v:"OFF" if v>=100 else f"−{int(v)}%"),
-        sweep("CB — allègement move 3j %", 'CB_T1M3', [5.0,6.0,7.0,8.0,100.0], lambda v:"OFF" if v>=100 else f"−{int(v)}%"),
-        sweep("CB — allègement keep", 'CB_T1K', [0.2,0.3,0.4,0.5,1.0], lambda v:"OFF" if v>=1 else f"{v:.0%}"),
-        sweep("CB — reprise move 3j %", 'CB_T1R', [2.0,3.0,4.0,5.0], lambda v:f"{v:.0f}%"),
-        sweep("Re-entrée boost", 'REENTRY_BOOST', [0.0,0.03,0.05,0.08,0.10,0.15], lambda v:f"+{v:.2f}"),
-        sweep("CB T1 — cooldown post-reprise (j)", 'T1_COOLDOWN', [0,1,2,3,5], lambda v:"OFF" if v==0 else f"{int(v)}j"),
-        sweep("Gamma — cap dur entrée (pts)", 'GAMMA_ECAP', [0.0,7.0,8.0,8.5,9.0,9.5], lambda v:"OFF" if v==0 else f"{v:.1f}"),
-        sweep("Porte DVOL min (entrées)", 'DVOLMIN', [25.0,28.0,30.0,32.0,35.0,38.0,40.0], lambda v:f"{v:.0f}"),
-    ]
+    recos = [f"{s['param']} → {s['opt_label']} (+{s['gain_vs_current']}, {s['fold_wins']}/{NFOLDS})"
+             for s in sweeps if s["recommend_change"]]
+    print(f"\n  → Changements robustes (gain ≥ {MIN_GAIN} de Calmar moyen, multi-régimes) :")
+    print("     " + ("\n     ".join(recos) if recos else "aucun"))
 
-    ranked = sorted(sweeps, key=lambda s: -s['sensitivity'])
-    print(f"  ── Sweeps · {NFOLDS} folds contigus (≈régimes) — maximin & accord inter-folds ──")
-    print(f"  {'Paramètre':<32} {'Δ':>5} {'reco':>10} {'gain':>7} {'pireFold':>8} {'moyFold':>7} {'gagne':>5}  verdict")
-    for s in ranked:
-        def g(x): return "—" if x is None else f"{x}"
-        if s['sensitivity'] < 0.5:      verdict = "· peu sensible"
-        elif s['robust'] and s.get('extend'):  verdict = "✅↗ robuste (optimum au bord → étendre la plage)"
-        elif s['robust']:               verdict = "✅ robuste (multi-régimes)"
-        elif (s.get('best_worst_fold') or -1) <= 0:  verdict = "⛔ s'effondre dans ≥1 régime"
-        elif s['fold_wins'] < (s['n_folds']+1)//2:   verdict = "⛔ un régime porte tout"
-        elif s.get('extend'):           verdict = "↗ à étendre (tendance monotone au bord)"
-        elif not s['plateau']:          verdict = "⚠ pic isolé"
-        else:                           verdict = "⚠ limite"
-        gv = s.get('gain_vs_current')
-        if s.get('recommend_change'):
-            gtag = f"+{gv}"
-        elif s.get('current_is_best') or (gv is not None and gv <= 0.01):
-            gtag = "=actuel"
-        else:
-            gtag = "garder"     # un optimum existe mais non robuste/marginal → ne pas suivre
-        print(f"  {s['param']:<32} {s['sensitivity']:>5} {s['best_label']:>10} {gtag:>7} "
-              f"{g(s['best_worst_fold']):>8} {g(s['best_mean_fold']):>7} {s['fold_wins']}/{s['n_folds']:>1}  {verdict}")
-
-    actionable = [f"{s['param']}→{s['opt_label']} (+{s['gain_vs_current']})" for s in ranked if s.get('recommend_change')]
-    print(f"\n  → À ajuster en priorité (robuste, gain ≥1.0 vs actuel, multi-régimes) :")
-    print(f"     {chr(10)+'     '.join(actionable) if actionable else 'aucun — données insuffisantes / pas de gain robuste'}")
-    print(f"  Rappel anti-overfit : changer 1-2 params à la fois, confirmer sur ETH, ne pas empiler les optima.")
-
+    period = {"start": base["curve"][0][0], "end": base["curve"][-1][0], "days": len(base["curve"])}
     out = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        "years": years, "skew_fit": surf, "prod_config": PROD,
-        "baseline": base, "sweeps": ranked,
+        "years": years, "period": period, "n_folds": NFOLDS, "dd_floor": round(dd_floor),
+        "min_gain": MIN_GAIN, "skew_fit": surf,
+        "prod_config": {k: (list(v) if isinstance(v, (list, tuple)) else v) for k, v in PROD.items()},
+        "baseline": base, "sweeps": sweeps,
     }
     with open(OUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(out, f, indent=2, ensure_ascii=False)
-    print(f"\n  → {OUT_FILE} écrit ({len(sweeps)} sweeps).")
+        json.dump(out, f, indent=2, ensure_ascii=False, default=str)
+    print(f"\n  → {OUT_FILE} écrit ({len(sweeps)} sweeps, {sum(len(s['results']) for s in sweeps) + 2} backtests).")
     return out
 
 
+def rejudge(path=OUT_FILE):
+    """Recalcule les verdicts d'un backtest_routine.json existant (sans rejouer les backtests),
+    utile quand seule la règle de décision change."""
+    with open(path, encoding="utf-8") as f:
+        d = json.load(f)
+    d["sweeps"] = [_judge(s["param"], s.get("family", "?"), s.get("kind", "param"), s["results"])
+                   for s in d["sweeps"]]
+    d["min_gain"], d["min_sensitivity"] = MIN_GAIN, MIN_SENSITIVITY
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(d, f, indent=2, ensure_ascii=False, default=str)
+    return [(s["param"], s["opt_label"], s["gain_vs_current"]) for s in d["sweeps"] if s["recommend_change"]]
+
+
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(); ap.add_argument('--years', type=float, default=4.0)
-    run(ap.parse_args().years)
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--years', type=float, default=4.0)
+    ap.add_argument('--rejudge', action='store_true', help='recalcule seulement les verdicts du JSON existant')
+    a = ap.parse_args()
+    if a.rejudge:
+        print(rejudge())
+    else:
+        run(a.years)

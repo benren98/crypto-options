@@ -61,6 +61,22 @@ def _fit(otm, ratio, dvol):
             "dvol_spread": round(spread, 1), "r2": round(r2, 4), "n": n}
 
 
+def _fit_level(ratios, dvol):
+    """Niveau ATM de l'échéance relatif au DVOL : atm/DVOL = l0 + l1·(DVOL − ref).
+    Le DVOL est une vol ATM à 30 jours ; les échéances courtes cotent en moyenne ~7 % plus bas
+    en régime calme (structure par terme). Sans ce terme, le modèle surestimait la vol de
+    ~3,5 pts (analyse du 2026-09-23 sur 101 jours). Pente de régime seulement si le DVOL a
+    couvert MIN_DVOL_SPREAD pts, comme pour le skew."""
+    r = np.asarray(ratios, float); dv = np.asarray(dvol, float)
+    if len(r) < 3:
+        return {"l0": 1.0, "l1": 0.0}
+    ref = float(np.nanmean(dv)); dc = dv - ref
+    if float(np.nanmax(dv) - np.nanmin(dv)) >= MIN_DVOL_SPREAD:
+        coef, *_ = np.linalg.lstsq(np.column_stack([np.ones_like(dc), dc]), r, rcond=None)
+        return {"l0": round(float(coef[0]), 4), "l1": round(float(coef[1]), 5), "l_ref": round(ref, 2)}
+    return {"l0": round(float(np.mean(r)), 4), "l1": 0.0, "l_ref": round(ref, 2)}
+
+
 def fit_surface(min_snapshots: int = MIN_SNAPSHOTS):
     cov = vs.coverage()
     if not cov or cov["days"] < min_snapshots:
@@ -68,8 +84,16 @@ def fit_surface(min_snapshots: int = MIN_SNAPSHOTS):
 
     pooled_pts = ([], [], [])
     by_bucket = {lab: ([], [], []) for _, _, lab in BUCKETS}
+    levels = {lab: ([], []) for _, _, lab in BUCKETS}     # (atm/DVOL, DVOL) une fois par échéance/jour
+    seen_atm = set()
     for d, dte, mny, iv, atm, dv in vs.all_points_dvol():
-        if mny is None or iv is None or not atm or mny >= 1.0 or dte is None or dv is None:
+        if mny is None or iv is None or not atm or dte is None or dv is None:
+            continue
+        for lo, hi, lab in BUCKETS:
+            if lo <= dte < hi and (d, dte) not in seen_atm:
+                seen_atm.add((d, dte)); levels[lab][0].append(atm / dv); levels[lab][1].append(dv)
+                break
+        if mny >= 1.0:
             continue
         otm = (1.0 - mny) * 100.0; r = iv / atm
         pooled_pts[0].append(otm); pooled_pts[1].append(r); pooled_pts[2].append(dv)
@@ -81,6 +105,8 @@ def fit_surface(min_snapshots: int = MIN_SNAPSHOTS):
     pooled = _fit(*pooled_pts)
     if pooled is None:
         return None
+    all_lv = ([x for lab in levels for x in levels[lab][0]], [x for lab in levels for x in levels[lab][1]])
+    pooled.update(_fit_level(*all_lv))
 
     buckets = []
     for lo, hi, lab in BUCKETS:
@@ -88,11 +114,13 @@ def fit_surface(min_snapshots: int = MIN_SNAPSHOTS):
         fit = _fit(o, r, dv) if len(o) >= MIN_POINTS else None
         if fit is None:
             fit = dict(pooled); fit["n"] = len(o); fit["from_pooled"] = True
+        fit.update(_fit_level(*levels[lab]) if len(levels[lab][0]) >= 5 else
+                   {k: pooled[k] for k in ("l0", "l1", "l_ref") if k in pooled})
         fit.update({"dte_lo": lo, "dte_hi": hi, "label": lab})
         buckets.append(fit)
 
     return {
-        "form": "iv_ratio = 1 + a(DVOL)*OTM% + b(DVOL)*OTM%^2, par bucket de maturité",
+        "form": "IV = DVOL × level(DVOL) × (1 + a(DVOL)*OTM% + b(DVOL)*OTM%^2), par bucket de maturité",
         "buckets": buckets, "pooled": pooled,
         "coverage": cov, "n_snapshots": cov["days"],
         "fitted_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -111,7 +139,8 @@ def main():
     print(f"Surface écrite dans {OUT_FILE} ({surf['n_snapshots']}j) :")
     for bk in surf["buckets"]:
         reg = "régime-aware" if bk["regime_aware"] else "statique"
-        print(f"  {bk['label']:>6} : a={bk['a0']:.4f}{bk['a1']:+.5f}·ΔDVOL  b={bk['b0']:.5f}{bk['b1']:+.7f}·ΔDVOL "
+        print(f"  {bk['label']:>6} : niveau ATM/DVOL={bk.get('l0', 1):.3f}  a={bk['a0']:.4f}{bk['a1']:+.5f}·ΔDVOL  "
+              f"b={bk['b0']:.5f}{bk['b1']:+.7f}·ΔDVOL "
               f"(ref {bk['dvol_ref']}, spread {bk['dvol_spread']}, {reg}, R²={bk['r2']}, n={bk['n']})")
     return surf
 
