@@ -1,1 +1,24 @@
-[]
+[
+  {
+    "instrument": "BTC-25SEP26-83000-P",
+    "tte_days": 2.0426,
+    "days_held": 0.2464,
+    "entry_spot": 86605.36,
+    "entry_price_btc": 0.0018,
+    "current_price_btc": 0.0018,
+    "current_ask_btc": 0.0019,
+    "current_bid_btc": 0.0016,
+    "current_iv_pct": 45.5,
+    "entry_iv_pct": 44.49,
+    "iv_change": 1.01,
+    "pnl_option_btc": 1e-06,
+    "pnl_option_usd": 0.06,
+    "pnl_pct_of_premium": 0.14,
+    "theta_theory_usd": 8.76,
+    "theta_daily_now_usd": 39.62,
+    "vrp_capture_pct": NaN,
+    "live_delta": -0.03181,
+    "live_gamma": 1.8e-05,
+    "live_vega": 3.5569
+  }
+]
