@@ -1,4 +1,4 @@
-﻿# CLAUDE.md — VRP Options Bot
+# CLAUDE.md — VRP Options Bot
 
 Guidance opérationnelle pour Claude Code. La **stratégie** est documentée dans `README.md`
 (dont le log « Approaches Tested and Rejected ») ; ce fichier couvre le **comment opérer**.
