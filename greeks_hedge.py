@@ -19,7 +19,7 @@ import json
 import math
 import time
 import warnings
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from gist_sync import push_positions
@@ -54,11 +54,15 @@ HEDGE_RATIO          = 0.7       # fraction du delta options couverte — 1.0 �
                                  # direct (Calmar 3.98 → 4.71, rendement/capital 17.8 → 22.4 %/an,
                                  # coût du hedge −18.6 k → −7.4 k$ sur 4 ans ; MaxDD 2.6 → 2.8 k$)
 HEDGE_FLATTEN_DELTA  = 0.0       # si |delta options| < X BTC → hedge remis à plat (0 = off)
-HEDGE_EVERY_H        = 1         # au plus un rebalancement toutes les N heures (1 = chaque run)
-                                 # 24 h testé le 2026-09-23 : ne se cumule pas avec le ratio 70 %
-                                 # (Calmar retombe à 3.96, MaxDD +30 %) → gardé à 1 h
+HEDGE_EVERY_H        = 1         # au plus un rebalancement « normal » toutes les N heures (1 = chaque
+                                 # run). Le scan, les entrées et le circuit breaker tournent à chaque
+                                 # run quelle que soit cette cadence. Politique 24 h + rehedge si le
+                                 # book change + bande d'urgence : évaluée par la routine (sweep
+                                 # « Hedge — politique »), à n'adopter que si elle est ✅ robuste.
 HEDGE_CADENCE_EXEMPT = True      # après un changement du book (entrée, expiration, roll, CB), la
                                  # cadence est ignorée : rehedge immédiat si le seuil est dépassé
+HEDGE_URGENT_MULT    = 0.0       # bande d'urgence (cadence > 1 h seulement) : si la dérive dépasse
+                                 # MULT × bande normale, rehedge immédiat malgré la cadence (0 = off)
 
 # Frais Deribit — grille Standard vérifiée le 2026-09-23 (support.deribit.com, page Fees).
 # Le bot est en paper : ces frais ne sont pas débités, ils servent au backtest (miroir) et
@@ -109,6 +113,7 @@ CB_T1_MOVE_1D_PCT        = 5.0   # allège le book si chute spot >5% en 1 jour (
 CB_T1_MOVE_3D_PCT        = 6.0   # ou >6% en 3 jours
 CB_T1_KEEP               = 0.30  # fraction du book conservée à l'allègement (on rachète 70%)
 CB_T1_RESTORE_MOVE_PCT   = 3.0   # reprise pleine taille quand |move 3j| < 3% (sans attendre HV5<HV10)
+CB_T1_COOLDOWN_D         = 0     # après une reprise, pas de nouvel allègement pendant N jours (0 = off)
 ENTRY_IV_HV_MIN          = 1.10  # ratio IV/HV minimum pour entrée opportuniste
 ENTRY_SCORE_REENTRY_BOOST= 0.05  # amélioration score nécessaire pour re-entrer un instrument déjà tenu
 DELTA_MIN_SPACING        = 0.08  # espacement min |delta| entre positions sur la même expiry
@@ -121,6 +126,11 @@ RANK_FLOOR               = 0.7   # plancher du multiplicateur de rang DVOL (sizi
                                   # ex: gamma=5 → ×1.00 ; gamma=7.5 → ×0.50 ; gamma≥10 → éliminé
 SCAN_TTE_MIN       = 1.0  # TTE min pour le scan (roll + opportuniste)
 SCAN_TTE_MAX       = 30.0 # TTE max pour le scan
+MAX_ENTRIES_PER_DAY = 0   # nouvelles positions max par jour UTC (0 = illimité ; le process tourne
+                          # toutes les heures et peut sinon empiler plusieurs entrées le même jour)
+HV_W5              = 0.0  # pondération de l'HV de référence du score (5 j / 10 j / 30 j)
+HV_W10             = 0.5
+HV_W30             = 0.5
 SCAN_DELTA_MIN     = -0.30  # plafond d'exposition : pas plus proche de l'ATM que -0.30
 SCAN_DELTA_MAX     = 0.0    # pas de plancher : les puts loin OTM (petit delta) sont éligibles
 # Sizing score-based : contracts = round(score, 1) BTC, max portfolio MAX_PORTFOLIO_BTC
@@ -805,7 +815,11 @@ def apply_circuit_breaker(state: dict, spot: float, cb: dict) -> bool:
 
     # ── Palier d'allègement gradué (tier 1) : on rachète une fraction, on garde le reste ──
     reduced = bool(state.get("cb_reduced", False))
-    if GRADUATED_CB and not risk_off and not reduced and state.get("positions") and cb.get("tier1_triggered"):
+    try:
+        _cool = datetime.fromisoformat(state["cb_t1_cooldown_until"]) > datetime.now(timezone.utc)
+    except (KeyError, TypeError, ValueError):
+        _cool = False
+    if GRADUATED_CB and not risk_off and not reduced and state.get("positions") and cb.get("tier1_triggered")             and not _cool:
         print_section("CIRCUIT BREAKER — ALLEGEMENT (palier 1)")
         print(f"  Move 1j : {cb.get('move_1d_pct')}%  (seuil −{CB_T1_MOVE_1D_PCT}%)  |  "
               f"Move 3j : {cb.get('move_3d_pct')}%  (seuil −{CB_T1_MOVE_3D_PCT}%)")
@@ -843,6 +857,9 @@ def apply_circuit_breaker(state: dict, spot: float, cb: dict) -> bool:
         print_section("CIRCUIT BREAKER — REPRISE PLEINE TAILLE (palier 1)")
         print(f"  move 3j {cb.get('move_3d_pct')}% < {CB_T1_RESTORE_MOVE_PCT}% -> cap d'allegement relache")
         state["cb_reduced"] = False
+        if CB_T1_COOLDOWN_D > 0:   # anti-whipsaw : pas de nouvel allègement pendant N jours
+            state["cb_t1_cooldown_until"] = (datetime.now(timezone.utc)
+                                             + timedelta(days=CB_T1_COOLDOWN_D)).isoformat()
         return False  # laisser le run continuer : Greeks + hedge rebalance doivent s'executer
 
     if risk_off and cb["reentry_ok"]:
@@ -860,6 +877,16 @@ def apply_circuit_breaker(state: dict, spot: float, cb: dict) -> bool:
 
 
 # ── Main run ──────────────────────────────────────────────────────────────────
+
+def _delivery_price(expiry: datetime):
+    """Prix de livraison Deribit (btc_usd) du jour d'échéance, ou None s'il n'est pas trouvé."""
+    try:
+        data = get("get_delivery_prices", {"index_name": f"{CURRENCY.lower()}_usd", "count": 30})
+        day = expiry.date().isoformat()
+        return next((float(r["delivery_price"]) for r in data.get("data", []) if r.get("date") == day), None)
+    except Exception:
+        return None
+
 
 def expire_positions(state: dict, spot: float) -> list[str]:
     """
@@ -883,22 +910,23 @@ def expire_positions(state: dict, spot: float) -> list[str]:
             remaining.append(pos)
             continue
 
-        # Position expirée : calculer le PnL final
-        exit_price = 0.0  # OTM → expire sans valeur par défaut
-        try:
-            t = fetch_quote(pos["instrument_name"])
-            exit_price = t.get("mark_price") or 0.0
-        except Exception:
-            pass  # instrument retiré de l'API → on suppose worthless
+        # Position expirée : règlement à l'intrinsèque au prix de livraison Deribit (moyenne de
+        # l'index 07:30-08:00 UTC). Avant : le mark d'un instrument expiré n'existe plus → 0,
+        # donc un put expiré ITM était compté comme gain total.
+        settle = _delivery_price(expiry) or spot
+        strike = float(pos.get("strike", 0))
+        exit_price = max(strike - settle, 0.0) / settle   # payoff en BTC par contrat
 
         n = pos.get("contracts", 1)
         pnl_btc = (pos["entry_price"] - exit_price) * n
-        pnl_usd = round(pnl_btc * spot, 2)
+        # Même convention que roll et circuit breaker : prime valorisée au spot d'entrée
+        entry_spot = float(pos.get("entry_spot", spot))
+        pnl_usd = round((pos["entry_price"] * entry_spot - exit_price * settle) * n, 2)
 
         closed = {
             **pos,
             "exit_price":    exit_price,
-            "exit_spot":     spot,
+            "exit_spot":     settle,
             "exit_ts":       now_dt(),
             "tte_at_exit":   0.0,
             "exit_reason":   "expiration",
@@ -992,6 +1020,20 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     state = load_positions()
     _entries_this_run: list = []   # instruments ouverts ce run (hedge délégué au rebalance unifié)
 
+    def _day_cap_ok() -> bool:
+        """MAX_ENTRIES_PER_DAY : nouvelles positions déjà ouvertes aujourd'hui (UTC), lots allégés
+        par le CB comptés une seule fois (même instrument + même horodatage d'entrée)."""
+        if not MAX_ENTRIES_PER_DAY:
+            return True
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        opened = {(p.get("instrument_name"), p.get("entry_ts"))
+                  for p in state.get("positions", []) + state.get("history", [])
+                  if str(p.get("entry_ts", "")).startswith(today)}
+        if len(opened) >= MAX_ENTRIES_PER_DAY:
+            print(f"  [Pas d'entree] {len(opened)} ouverture(s) aujourd'hui >= MAX_ENTRIES_PER_DAY={MAX_ENTRIES_PER_DAY}")
+            return False
+        return True
+
     # ── Expiration automatique ─────────────────────────────────────────────────
     expired = expire_positions(state, spot)
     if expired:
@@ -1025,7 +1067,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     open_positions_now = state.get("positions", [])
     must_open = ALWAYS_IN_POSITION and len(open_positions_now) == 0 and not risk_off   # garantie "toujours ≥1" si activée
 
-    if (state["open"] is None or must_open) and not risk_off and not state.get("cb_reduced", False):
+    if (state["open"] is None or must_open) and not risk_off and not state.get("cb_reduced", False)             and _day_cap_ok():
         reason = ("portfolio vide -- ouverture obligatoire" if must_open
                   else "roll declenche" if rolled else "book vide")
         print_section(f"SELECTION CANDIDAT ({reason.upper()})")
@@ -1053,7 +1095,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         best = candidates.iloc[0] if candidates is not None and not candidates.empty else None
 
         # C2 : entrée non forcée → exiger le seuil de score + signal. Sinon, rester à plat.
-        if not must_open and (float(best["score"]) < ENTRY_SCORE_MIN or not ctx["signal_ok"]):
+        if best is not None and not must_open and (float(best["score"]) < ENTRY_SCORE_MIN or not ctx["signal_ok"]):
             print(f"  [Pas d'entree] meilleur score {best['score']:.3f} < seuil {ENTRY_SCORE_MIN:.2f} "
                   f"ou signal KO -- book laisse a plat")
             # NB : on ne return pas ici -- le rebalance hedge doit quand meme s'executer
@@ -1132,7 +1174,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         cb_info = state.get("cb_reduced_info", {})
         print(f"  [CB-T1 ACTIF] nouvelles entrees bloquees jusqu'a |move 3j| < {CB_T1_RESTORE_MOVE_PCT}%"
               f"  (declenche a move_3j={cb_info.get('move_3d_pct')}%)")
-    if used_btc_now < eff_cap and ctx["signal_ok"] and not risk_off and not state.get("cb_reduced", False):
+    if used_btc_now < eff_cap and ctx["signal_ok"] and not risk_off and not state.get("cb_reduced", False)             and _day_cap_ok():
         candidates = fetch_scored_candidates(
             currency, spot, ctx["hv_blend"], ctx["iv_min"], ctx["iv_max"], ctx["curr_iv"],
         )
@@ -1200,8 +1242,11 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     # Le circuit breaker, lui, remet le hedge à plat sans attendre (apply_circuit_breaker).
     # Exception : si le book a changé ce run (entrée, expiration, roll, allègement), on rehedge
     # tout de suite (HEDGE_CADENCE_EXEMPT) — la cadence ne vise que la dérive normale du delta.
+    # Bande d'urgence : une dérive > HEDGE_URGENT_MULT × bande est corrigée sans attendre.
     book_changed = bool(expired or rolled or _entries_this_run or cb_changed)
-    if hedge["needs_rebalance"] and HEDGE_EVERY_H > 1 and not (HEDGE_CADENCE_EXEMPT and book_changed):
+    urgent = HEDGE_URGENT_MULT > 0 and abs(hedge["delta_drift"]) > HEDGE_URGENT_MULT * hedge["hedge_threshold_btc"]
+    if hedge["needs_rebalance"] and HEDGE_EVERY_H > 1 and not (HEDGE_CADENCE_EXEMPT and book_changed) \
+            and not urgent:
         _hh = hedge_data.get("history") or []
         try:
             _last = pd.to_datetime(_hh[-1]["ts"].replace(" UTC", ""), utc=True) if _hh else None
@@ -1598,8 +1643,18 @@ def fetch_scored_candidates(currency: str, spot: float,
         puts_exp = [i for i in puts if i["expiration_timestamp"] == exp_ts]
         if not puts_exp:
             continue
-        atm_inst = min(puts_exp, key=lambda i: abs(i["strike"] - spot))
-        atm_iv_by_exp[exp_ts] = atm_inst.get("mark_iv") or curr_iv
+        # IV interpolée au spot entre les deux strikes qui l'encadrent (un seul strike « le plus
+        # proche » bruitait l'ATM de ±3-4 pts, donc le skew et le score de ±0,07)
+        pts = sorted((i["strike"], i["mark_iv"]) for i in puts_exp if i.get("mark_iv"))
+        lo = [p for p in pts if p[0] <= spot]
+        hi = [p for p in pts if p[0] >= spot]
+        if lo and hi and hi[0][0] > lo[-1][0]:
+            (k0, v0), (k1, v1) = lo[-1], hi[0]
+            atm_iv_by_exp[exp_ts] = v0 + (v1 - v0) * (spot - k0) / (k1 - k0)
+        elif pts:
+            atm_iv_by_exp[exp_ts] = min(pts, key=lambda p: abs(p[0] - spot))[1]
+        else:
+            atm_iv_by_exp[exp_ts] = curr_iv
 
     # ── Scoring ────────────────────────────────────────────────────────────────
     # rang DVOL 30j : sorti du score (commun à tous les candidats), utilisé par
@@ -1657,9 +1712,10 @@ def get_market_context(currency: str = CURRENCY) -> dict:
     """Retourne HV 10j/30j/blend, IV range 30j, IV courante et régime de vol."""
     hv_10d         = fetch_hv(currency, days=10)
     hv_30d         = fetch_hv(currency, days=30)
-    # Blend 50/50 : garde la réactivité du 10j en amortissant l'effet falaise
+    hv_5d          = fetch_hv(currency, days=5) if HV_W5 > 0 else hv_10d
+    # Blend (défaut 50/50 10j/30j) : garde la réactivité du 10j en amortissant l'effet falaise
     # (un seul gros jour qui entre/sort de la fenêtre 10j faisait basculer tous les scores)
-    hv_blend       = round(0.5 * hv_10d + 0.5 * hv_30d, 2)
+    hv_blend       = round(HV_W5 * hv_5d + HV_W10 * hv_10d + HV_W30 * hv_30d, 2)
     iv_min, iv_max = fetch_iv_range(currency, days=30)
 
     # IV courante + move 1j : DVOL index live sur 26h pour avoir curr et prev_1d

@@ -54,27 +54,33 @@ SWEEPS = [
 
     ("Entrée", "Seuil d'entrée (score)", "ENTRY_SCORE_MIN", [0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.70], f2, "param"),
     ("Entrée", "Plancher de prime ($/BTC)", "MIN_PREMIUM_USD", [50, 100, 150, 200, 250, 300, 400], lambda v: f"{v:.0f}$", "param"),
-    ("Entrée", "Porte DVOL min", "DVOL_MIN", [25.0, 28.0, 30.0, 32.0, 35.0, 38.0, 40.0], f0, "param"),
-    ("Entrée", "Delta max (proximité ATM)", "SCAN_DELTA_MIN", [-0.12, -0.16, -0.20, -0.25, -0.30], f2, "param"),
-    ("Entrée", "Échéances candidates (j)", "TTE_CHOICES",
-     [[3, 7], [3, 7, 14], [3, 7, 14, 21], [7, 14, 21], [14, 21]], lambda v: "/".join(map(str, v)), "param"),
+    ("Entrée", "Porte DVOL min", "DVOL_MIN", [32.0, 35.0, 38.0, 40.0, 42.0], f0, "param"),
+    ("Entrée", "Delta max (proximité ATM)", "SCAN_DELTA_MIN", [-0.08, -0.10, -0.12, -0.16, -0.20, -0.30], f2, "param"),
+    ("Entrée", "Fenêtre d'échéances scannée (j)", ("SCAN_TTE_MIN", "SCAN_TTE_MAX"),
+     [(1.0, 30.0), (1.0, 14.0), (1.0, 8.0), (3.0, 30.0), (7.0, 30.0), (14.0, 30.0), (3.0, 14.0)],
+     lambda v: f"{v[0]:g}–{v[1]:g} j", "param"),
+    ("Entrée", "Nouvelles positions max / jour", "MAX_ENTRIES_PER_DAY", [1, 2, 3, 4, 0],
+     lambda v: "illimité" if v == 0 else str(v), "param"),
     ("Entrée", "Ré-entrée — boost de score", "ENTRY_SCORE_REENTRY_BOOST", [0.0, 0.03, 0.05, 0.08, 0.10, 0.15],
      lambda v: f"+{v:.2f}", "param"),
     ("Entrée", "Espacement delta (même échéance)", "DELTA_MIN_SPACING", [0.0, 0.04, 0.06, 0.08, 0.12], f2, "param"),
-    ("Entrée", "Pénalité gamma (début, pts)", "GAMMA_PEN_START", [3.0, 4.0, 5.0, 6.0, 8.0, 100.0], off_if(100, f0), "param"),
-    ("Entrée", "Gamma — cap dur (pts)", "GAMMA_ENTRY_CAP", [0.0, 3.0, 4.0, 5.0, 7.0], off_if(0, lambda v: f"{v:.1f}"), "param"),
+    ("Entrée", "Pénalité gamma (début, pts)", "GAMMA_PEN_START", [3.0, 4.0, 5.0, 6.0, 100.0], off_if(100, f0), "param"),
+    ("Entrée", "Gamma — cap dur (pts)", "GAMMA_ENTRY_CAP", [0.0, 3.0, 4.0, 5.0], off_if(0, lambda v: f"{v:.1f}"), "candidate"),
 
-    ("Sizing", "Convexité (score^x)", "SIZE_CONVEXITY", [1.0, 1.25, 1.5, 1.75, 2.0], f2, "param"),
+    ("Sizing", "Convexité (score^x)", "SIZE_CONVEXITY", [1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0], f2, "param"),
     ("Sizing", "Cap notionnel (BTC)", "MAX_PORTFOLIO_BTC", [3.0, 4.0, 5.0, 6.0, 7.0], f0, "param"),
     ("Sizing", "Plancher rang DVOL", "RANK_FLOOR", [0.1, 0.3, 0.5, 0.6, 0.7, 0.85, 1.0], f2, "param"),
 
     ("Hedge", "Hedge — ratio couvert", "HEDGE_RATIO", [0.0, 0.5, 0.7, 0.85, 1.0], pct0, "param"),
-    ("Hedge", "Hedge — contrôle", "HEDGE_INTRADAY", [True, False],
-     lambda v: "horaire (live)" if v else "1×/j à la clôture", "param"),
-    ("Hedge", "Hedge — cadence min (h)", "HEDGE_EVERY_H", [1, 4, 8, 24], lambda v: f"{v} h", "param"),
-    ("Hedge", "Hedge — cadence 24 h, rehedge immédiat si le book change", ("HEDGE_EVERY_H", "HEDGE_CADENCE_EXEMPT"),
-     [(1, True), (24, True), (24, False)],
-     lambda v: "1 h" if v[0] == 1 else ("24 h + exception" if v[1] else "24 h strict"), "param"),
+    # Politique hybride : au plus un rebalancement « normal » toutes les N h (si la bande est dépassée),
+    # mais contrôle à chaque run horaire : rehedge immédiat si le book change et/ou si la dérive
+    # dépasse une bande d'urgence = MULT × bande normale.
+    ("Hedge", "Hedge — politique (cadence · rehedge si le book change · bande d'urgence)",
+     ("HEDGE_EVERY_H", "HEDGE_CADENCE_EXEMPT", "HEDGE_URGENT_MULT"),
+     [(1, True, 0.0), (4, True, 0.0), (8, True, 0.0), (24, False, 0.0), (24, True, 0.0), (24, True, 1.5),
+      (24, True, 2.0), (24, True, 3.0), (24, False, 3.0), (8, True, 2.0)],
+     lambda v: "1 h (live)" if v[0] == 1 else
+     f"{v[0]} h" + (" + book" if v[1] else " strict") + (f" + urgence ×{v[2]:g}" if v[2] else ""), "param"),
     ("Hedge", "Hedge — bande de base (%)", "HEDGE_THRESHOLD_BASE_PCT", [2.0, 3.0, 5.0, 7.0, 10.0], f0, "param"),
     ("Hedge", "Hedge — bande", "HEDGE_THRESHOLD_MODE", ["absolute", "notional"],
      lambda v: {"absolute": "BTC fixe (live)", "notional": "× notionnel"}[v], "param"),
@@ -86,13 +92,28 @@ SWEEPS = [
     ("Circuit breaker", "Re-entrée après fermeture — |move 3 j| (%)", "CB_REENTRY_MOVE", [2.0, 3.0, 4.0, 6.0, 8.0], lambda v: f"{v:.0f}%", "param"),
     ("Circuit breaker", "Allègement — move 1 j (%)", "CB_T1_MOVE_1D", [4.0, 5.0, 6.0, 7.0, 100.0], off_if(100, lambda v: f"−{v:.0f}%"), "param"),
     ("Circuit breaker", "Allègement — move 3 j (%)", "CB_T1_MOVE_3D", [5.0, 6.0, 7.0, 8.0, 100.0], off_if(100, lambda v: f"−{v:.0f}%"), "param"),
-    ("Circuit breaker", "Allègement — part conservée", "CB_T1_KEEP", [0.2, 0.3, 0.4, 0.5, 1.0], lambda v: "OFF" if v >= 1 else f"{v:.0%}", "param"),
+    ("Circuit breaker", "Allègement — part conservée", "CB_T1_KEEP", [0.0, 0.2, 0.3, 0.4, 0.5, 0.7], pct0, "param"),
+    ("Circuit breaker", "Allègement gradué (palier 1)", "GRADUATED_CB", [True, False],
+     lambda v: "ON" if v else "OFF (fermeture seule)", "param"),
+    ("Circuit breaker", "Allègement — seuils 1 j / 3 j (%)", ("CB_T1_MOVE_1D", "CB_T1_MOVE_3D"),
+     [(4.0, 5.0), (5.0, 6.0), (6.0, 7.0), (7.0, 8.0), (8.0, 10.0), (10.0, 12.0)],
+     lambda v: f"−{v[0]:g} % / −{v[1]:g} %", "param"),
     ("Circuit breaker", "Allègement — reprise |move 3 j| (%)", "CB_T1_RESTORE", [2.0, 3.0, 4.0, 5.0], lambda v: f"{v:.0f}%", "param"),
     ("Circuit breaker", "Allègement — cooldown après reprise (j)", "CB_T1_COOLDOWN_D", [0, 1, 2, 3, 5], off_if(0, lambda v: f"{v:.0f}j"), "param"),
+    ("Circuit breaker", "Allègement — reprise × cooldown", ("CB_T1_RESTORE", "CB_T1_COOLDOWN_D"),
+     [(3.0, 0), (3.0, 2), (4.0, 1), (4.0, 2), (5.0, 2), (2.0, 3)],
+     lambda v: f"|3 j| < {v[0]:g} % · {v[1]:g} j", "param"),
 
     ("Hypothèses", "Frais Deribit (× grille)", "FEE_MULT", [0.0, 0.5, 1.0, 1.5, 2.0], lambda v: f"×{v:g}", "assumption"),
-    ("Hypothèses", "Spread à l'entrée (pts de vol)", "BA_HAIRCUT_VOLPTS", [0.5, 1.0, 1.5, 2.5, 4.0], lambda v: f"{v:g} pt", "assumption"),
-    ("Hypothèses", "Funding du hedge", "USE_REAL_FUNDING", [True, False], lambda v: "réel" if v else "forfait payé", "assumption"),
+    ("Hypothèses", "Demi-spread bid/ask (pts de vol, DVOL ≤ 40)", "BA_HAIRCUT_VOLPTS", [0.5, 0.7, 1.0, 1.5, 2.5],
+     lambda v: f"{v:g} pt", "assumption"),
+    ("Hypothèses", "Échéances disponibles", "EXPIRY_CALENDAR", ["deribit", "fixed"],
+     lambda v: "calendrier Deribit (live)" if v == "deribit" else "3/7/14/21 j (ancien modèle)", "assumption"),
+    ("Hypothèses", "Funding du hedge", "USE_REAL_FUNDING", [True, False], lambda v: "réel" if v else "forfait payé (0,01 %/j)", "assumption"),
+    ("Hypothèses", "Contrôle intraday (hedge + circuit breaker)", "HEDGE_INTRADAY", [True, False],
+     lambda v: "horaire (live)" if v else "clôture seule", "assumption"),
+    ("Hypothèses", "Cadence effective du process (h)", "RUN_EVERY_H", [1, 2, 3, 6],
+     lambda v: f"toutes les {v} h", "assumption"),
 ]
 
 ATTRS = sorted({a for s in SWEEPS for a in (s[2] if isinstance(s[2], tuple) else (s[2],))})
@@ -186,14 +207,27 @@ def _run(years, cfg, dd_floor, want_curve=False):
     return st
 
 
-def _judge(name, family, kind, results):
-    """Verdict anti-overfit d'un sweep (maximin + accord entre folds + plateau)."""
+def _is_ordinal(attrs, values):
+    """Sweep ordonné (valeurs numériques d'un seul attribut) : le voisinage a un sens (plateau,
+    extension de grille). Combinaisons, listes et catégories : non."""
+    return isinstance(attrs, str) and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values)
+
+
+def _judge(name, family, kind, results, ordinal=True):
+    """Verdict anti-overfit d'un sweep (maximin + accord entre folds + plateau).
+    kind : "param" (levier live, recommandable) · "candidate" (levier sans code live : affiché,
+    jamais recommandé) · "assumption" (hypothèse de modélisation stressée)."""
     cals = [r["calmar"] for r in results]
+    cur_i = next((i for i, r in enumerate(results) if r.get("is_current")), None)
     fold_winner = []
     for fi in range(NFOLDS):
         cand = [(i, results[i]["folds"][fi]) for i in range(len(results)) if results[i]["folds"][fi] is not None]
         if cand:
-            fold_winner.append(max(cand, key=lambda t: t[1])[0])
+            top = max(c for _, c in cand)
+            tied = [i for i, c in cand if abs(c - top) < 0.005]
+            # Ex-aequo : la victoire va à la config actuelle si elle en fait partie, sinon à personne
+            # (avant : au premier de la liste → « robustes » artificiels sur des valeurs inertes).
+            fold_winner.append(tied[0] if len(tied) == 1 else (cur_i if cur_i in tied else None))
     pos = [r for r in results if (r.get("worst_fold") or -1e9) > 0]
     pool = pos if pos else results
     best = max(pool, key=lambda r: r.get("mean_fold") if r.get("mean_fold") is not None else -1e9)
@@ -212,8 +246,8 @@ def _judge(name, family, kind, results):
     if at_edge:
         monotonic = (all(mf[i] <= mf[i + 1] + 1e-9 for i in range(n - 1)) if bi == n - 1
                      else all(mf[i] >= mf[i + 1] - 1e-9 for i in range(n - 1)))
-    extend = at_edge and monotonic
-    if n == 2:   # binaire (on/off, mode) : pas de voisinage → l'accord entre folds suffit
+    extend = at_edge and monotonic and ordinal
+    if n == 2 or not ordinal:   # binaire / catégoriel : pas de voisinage → l'accord entre folds suffit
         plateau = True
     robust = ((best.get("worst_fold") or -1) > 0 and wins >= (NFOLDS + 1) // 2 and (plateau or extend))
     cur = next((r for r in results if r.get("is_current")), None)
@@ -226,7 +260,7 @@ def _judge(name, family, kind, results):
     no_full_loss = cur is not None and best["calmar"] >= cur["calmar"] - 1e-9
     recommend = bool(kind == "param" and robust and gain is not None and gain >= MIN_GAIN
                      and sensitivity >= MIN_SENSITIVITY and no_full_loss)
-    return dict(param=name, family=family, kind=kind, results=results,
+    return dict(param=name, family=family, kind=kind, ordinal=ordinal, results=results,
                 sensitivity=sensitivity, extend=extend,
                 gain_vs_current=gain, current_is_best=(cur is best), recommend_change=recommend,
                 opt_label=best["label"],
@@ -261,7 +295,7 @@ def run(years=4.0):
             st["label"] = fmt(v)
             st["is_current"] = _is_current(attrs, v)
             results.append(st)
-        sweeps.append(_judge(name, family, kind, results))
+        sweeps.append(_judge(name, family, kind, results, _is_ordinal(attrs, values)))
         s = sweeps[-1]
         tag = f"→ {s['opt_label']} (+{s['gain_vs_current']})" if s["recommend_change"] else "="
         print(f"  [{family:<15}] {name:<42} Δ {s['sensitivity']:>6}  {tag}")
@@ -271,11 +305,27 @@ def run(years=4.0):
     print(f"\n  → Changements robustes (gain ≥ {MIN_GAIN} de Calmar moyen, multi-régimes) :")
     print("     " + ("\n     ".join(recos) if recos else "aucun"))
 
+    # Validation conjointe : les recommandations sont mesurées une à une ; plusieurs peuvent
+    # agir sur le même levier (ex. trois façons d'alléger le hedge) et ne pas s'additionner.
+    combined = None
+    chosen = [(spec, s) for spec, s in zip(SWEEPS, sweeps) if s["recommend_change"]]
+    if len(chosen) >= 2:
+        cfg = dict(PROD)
+        for spec, s in chosen:
+            v = spec[3][next(i for i, r in enumerate(s["results"]) if r["label"] == s["opt_label"])]
+            cfg.update(_as_cfg(spec[2], v))
+        combined = _run(years, cfg, dd_floor)
+        combined["changes"] = [f"{s['param']} → {s['opt_label']}" for _, s in chosen]
+        combined["gain_vs_current"] = (round(combined["mean_fold"] - base["mean_fold"], 2)
+                                       if combined.get("mean_fold") is not None else None)
+        print(f"  → Toutes ensemble : PnL {combined['pnl']:,}$  MaxDD {combined['maxdd']:,}$  "
+              f"Calmar {combined['calmar']}  (moyenne des folds {combined['gain_vs_current']:+} vs actuel)")
+
     period = {"start": base["curve"][0][0], "end": base["curve"][-1][0], "days": len(base["curve"])}
     out = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "years": years, "period": period, "n_folds": NFOLDS, "dd_floor": round(dd_floor),
-        "min_gain": MIN_GAIN, "skew_fit": surf,
+        "min_gain": MIN_GAIN, "min_sensitivity": MIN_SENSITIVITY, "skew_fit": surf, "combined": combined,
         "prod_config": {k: (list(v) if isinstance(v, (list, tuple)) else v) for k, v in PROD.items()},
         "baseline": base, "sweeps": sweeps,
     }
@@ -290,8 +340,13 @@ def rejudge(path=OUT_FILE):
     utile quand seule la règle de décision change."""
     with open(path, encoding="utf-8") as f:
         d = json.load(f)
-    d["sweeps"] = [_judge(s["param"], s.get("family", "?"), s.get("kind", "param"), s["results"])
-                   for s in d["sweeps"]]
+    cur = {k: (list(v) if isinstance(v, (list, tuple)) else v) for k, v in PROD.items()}
+    diff = {k: (d.get("prod_config", {}).get(k), v) for k, v in cur.items() if d.get("prod_config", {}).get(k) != v}
+    if diff:
+        # Les « is_current » du JSON désignent l'ancienne config : les verdicts seraient faux.
+        raise SystemExit(f"Config de prod changée depuis la routine ({diff}) — relancer la routine complète.")
+    d["sweeps"] = [_judge(s["param"], s.get("family", "?"), s.get("kind", "param"), s["results"],
+                          s.get("ordinal", True)) for s in d["sweeps"]]
     d["min_gain"], d["min_sensitivity"] = MIN_GAIN, MIN_SENSITIVITY
     with open(path, "w", encoding="utf-8") as f:
         json.dump(d, f, indent=2, ensure_ascii=False, default=str)

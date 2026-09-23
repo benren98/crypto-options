@@ -2,11 +2,42 @@ name: PnL Monitor — Short Put VRP
 
 on:
   schedule:
-    - cron: '0 * * * *'   # toutes les heures
-  workflow_dispatch:        # déclenchement manuel depuis GitHub
+    # Deux créneaux par heure, hors de la minute :00 (saturée : avec '0 * * * *' le cron ne
+    # tournait qu'environ toutes les 3 h en septembre 2026, jusqu'à 12 h d'écart). La garde
+    # ci-dessous saute un créneau si le dernier run a moins de 40 min → ~1 run/heure, et le
+    # second créneau rattrape le premier quand GitHub le laisse tomber.
+    - cron: '17,47 * * * *'
+  workflow_dispatch:        # déclenchement manuel depuis GitHub (jamais sauté)
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.age.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scan_entry.json
+          sparse-checkout-cone-mode: false
+      - id: age
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json
+          from datetime import datetime, timezone
+          run = True
+          if "${{ github.event_name }}" == "schedule":
+              try:
+                  ts = json.load(open("scan_entry.json"))["ts"]
+                  last = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc)
+                  run = (datetime.now(timezone.utc) - last).total_seconds() >= 40 * 60
+              except Exception:
+                  run = True
+          print(f"run={'true' if run else 'false'}")
+          EOF
+
   monitor:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write

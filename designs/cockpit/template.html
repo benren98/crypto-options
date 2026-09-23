@@ -1,0 +1,1509 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="900">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#070a11">
+<title>VRP Cockpit · BTC</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='1' y='1' width='30' height='30' rx='8' fill='%230e1420' stroke='%235cd3ff' stroke-opacity='.5'/%3E%3Cpath d='M8.5 21 A8.5 8.5 0 1 1 23.5 21' fill='none' stroke='%235cd3ff' stroke-width='2.4' stroke-linecap='round'/%3E%3Cpath d='M16 17 L21 11' stroke='%23e8eef8' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<!--
+  Variante de design « COCKPIT » du dashboard de pilotage (thème sombre unique).
+  Template rendu par generate_dashboard.py --template designs/cockpit/template.html :
+  le modèle JSON est injecté à la place du marqueur dans #dash-data, les helpers
+  communs (dashboard_assets/common.js) à la place du marqueur JS. CSS propre à la variante.
+  Palette de séries validée CVD (validate_palette.js, --mode dark --surface #0e1420) :
+  #4d8dff · #e8662e · #1aa97a · #c98500 → ALL CHECKS PASS.
+-->
+<style>
+:root {
+  color-scheme: dark;
+  --page:#070a11; --surface:#0e1420; --surface-2:#131b2a; --surface-3:#1a2438;
+  --line:rgba(150,180,230,.10); --line-2:rgba(150,180,230,.18); --border:rgba(150,180,230,.16);
+  --ink:#e8eef8; --ink-2:#aab6ca; --muted:#7c889d;
+  --grid:rgba(150,180,230,.08); --axis:rgba(150,180,230,.26); --track:rgba(150,180,230,.09);
+  --accent:#5cd3ff; --accent-ink:#a6e8ff; --glow:rgba(92,211,255,.35);
+  --s1:#4d8dff; --s2:#e8662e; --s3:#1aa97a; --s4:#c98500;
+  --up:#4d8dff; --down:#ef5f5c;
+  --pos-text:#4ade80; --neg-text:#ff7b7b;
+  --good:#3ddc84; --warning:#f5b53d; --critical:#f25757; --info:#6aa6ff; --idle:#6f7b90; --serious:#f08a5d;
+  --f-ui:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-disp:"Space Grotesk","Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,monospace;
+  --r:14px; --pad:18px; --ease:cubic-bezier(.22,.8,.24,1);
+}
+* { box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; scroll-behavior:smooth; }
+body { margin:0; background:var(--page); color:var(--ink); font:14px/1.5 var(--f-ui); -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:6px; }
+h1,h2,h3 { margin:0; font-weight:600; }
+.muted { color:var(--muted); } .small { font-size:12px; }
+.num { font-variant-numeric:tabular-nums; }
+.pos { color:var(--pos-text); } .neg { color:var(--neg-text); }
+.mono { font-family:var(--f-mono); }
+.k { font:500 10.5px/1.3 var(--f-mono); letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
+
+/* Fond : halos + trame fine qui s'estompe */
+.bg { position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(900px 520px at 8% -10%, rgba(77,141,255,.16), transparent 62%),
+    radial-gradient(760px 440px at 96% -6%, rgba(92,211,255,.10), transparent 62%),
+    radial-gradient(1200px 620px at 50% 115%, rgba(110,90,255,.07), transparent 60%),
+    var(--page); }
+.bg::after { content:""; position:absolute; inset:0;
+  background-image:linear-gradient(rgba(150,180,230,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(150,180,230,.035) 1px, transparent 1px);
+  background-size:44px 44px;
+  -webkit-mask-image:linear-gradient(180deg, #000 0, transparent 75%); mask-image:linear-gradient(180deg, #000 0, transparent 75%); }
+
+/* Barre supérieure */
+.bar { position:sticky; top:0; z-index:50; background:rgba(7,10,17,.74); -webkit-backdrop-filter:saturate(150%) blur(14px); backdrop-filter:saturate(150%) blur(14px); border-bottom:1px solid var(--line); }
+.bar-in { max-width:1320px; margin:0 auto; padding:10px 20px 6px; display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; }
+.brand { display:inline-flex; align-items:center; gap:10px; color:var(--ink); }
+.brand:hover { text-decoration:none; }
+.brand svg { width:28px; height:28px; flex:none; filter:drop-shadow(0 0 10px rgba(92,211,255,.25)); }
+.brand-t { font:700 16px/1 var(--f-disp); letter-spacing:.02em; }
+.brand-dot { color:var(--accent); margin:0 1px; }
+.brand-s { font:500 9.5px/1 var(--f-mono); letter-spacing:.2em; text-transform:uppercase; color:var(--accent); padding:4px 6px; border:1px solid rgba(92,211,255,.3); border-radius:4px; background:rgba(92,211,255,.06); }
+.pill { font:600 10px/1 var(--f-mono); letter-spacing:.14em; text-transform:uppercase; padding:5px 8px; border-radius:999px; color:var(--ink-2); background:var(--surface-2); border:1px solid var(--line-2); }
+.bot { display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-2); padding:4px 11px 4px 9px; border-radius:999px; background:rgba(14,20,32,.8); border:1px solid color-mix(in srgb, var(--lvl) 30%, var(--line)); min-width:0; }
+.bot-w { color:var(--ink); font-weight:600; display:inline-flex; align-items:center; gap:5px; }
+.bot-w i { font-style:normal; font-size:10px; width:14px; height:14px; border-radius:50%; display:grid; place-items:center; background:var(--lvl); color:#06101c; font-weight:800; }
+.pulse { width:7px; height:7px; border-radius:50%; background:var(--lvl); flex:none; animation:pulse 2.6s ease-out infinite; }
+@keyframes pulse { 0% { box-shadow:0 0 0 0 color-mix(in srgb, var(--lvl) 65%, transparent); } 70% { box-shadow:0 0 0 7px transparent; } 100% { box-shadow:0 0 0 0 transparent; } }
+.links { margin-left:auto; display:flex; gap:4px; flex-wrap:wrap; }
+.lk { font:500 12px/1 var(--f-ui); color:var(--ink-2); padding:7px 10px; border-radius:8px; border:1px solid var(--line); background:rgba(14,20,32,.6); }
+.lk:hover { color:var(--ink); border-color:var(--line-2); text-decoration:none; background:var(--surface-2); }
+.anchors { max-width:1320px; margin:0 auto; padding:0 12px; display:flex; gap:2px; overflow-x:auto; scrollbar-width:none; }
+.anchors::-webkit-scrollbar { display:none; }
+.anchors a { font:500 12px/1 var(--f-ui); color:var(--muted); padding:9px 8px 10px; border-bottom:2px solid transparent; white-space:nowrap; }
+.anchors a:hover { color:var(--ink); text-decoration:none; }
+.anchors a.on { color:var(--ink); border-bottom-color:var(--accent); }
+
+/* Mise en page */
+.wrap { max-width:1320px; margin:0 auto; padding:22px 20px 64px; }
+.sect { scroll-margin-top:104px; margin-top:44px; }
+.sect.first { margin-top:0; }
+.sect-h { display:flex; align-items:center; flex-wrap:wrap; gap:10px 12px; margin-bottom:14px; }
+.sect-n { font:500 11px/1 var(--f-mono); color:var(--accent); letter-spacing:.1em; padding:4px 6px; border:1px solid rgba(92,211,255,.25); border-radius:4px; background:rgba(92,211,255,.06); }
+.sect-h h2 { font:600 12.5px/1 var(--f-ui); letter-spacing:.16em; text-transform:uppercase; color:var(--ink-2); }
+.sect-rule { flex:1; min-width:30px; height:1px; background:linear-gradient(90deg, var(--line-2), transparent); }
+.grid { display:grid; grid-template-columns:repeat(12, minmax(0,1fr)); gap:16px; }
+.c-5 { grid-column:span 5; } .c-6 { grid-column:span 6; } .c-7 { grid-column:span 7; } .c-12 { grid-column:span 12; }
+.grid3 { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%,340px), 1fr)); gap:16px; }
+.mt { margin-top:16px; }
+@media (max-width:1060px) { .c-5, .c-7 { grid-column:span 12; } }
+@media (max-width:820px) { .c-6 { grid-column:span 12; } }
+
+/* Panneaux */
+.panel { position:relative; min-width:0; padding:var(--pad); border-radius:var(--r);
+  background:linear-gradient(180deg, rgba(255,255,255,.024), transparent 140px), var(--surface);
+  border:1px solid var(--line);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 24px 48px -34px rgba(0,0,0,.8); }
+.ph { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:14px; }
+.ph-l { min-width:0; }
+.ph h3 { font:600 15.5px/1.3 var(--f-ui); letter-spacing:-.005em; margin-top:5px; color:var(--ink); }
+.ph .sub { font-size:12.5px; color:var(--muted); margin-top:3px; }
+.ph .k { color:var(--accent); opacity:.85; }
+.note { margin-top:12px; padding:10px 12px; border-radius:10px; background:var(--surface-2); border:1px solid var(--line); font-size:12.5px; color:var(--ink-2); }
+.note b { color:var(--ink); }
+.empty { display:grid; place-items:center; min-height:120px; height:100%; color:var(--muted); font-size:13px; text-align:center; padding:14px; }
+.tag { font:500 10px/1 var(--f-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--ink-2); padding:4px 7px; border-radius:5px; border:1px solid var(--line-2); background:var(--surface-2); margin-left:8px; white-space:nowrap; }
+
+/* Niveaux / badges */
+.lvl-good { --lvl:var(--good); } .lvl-ok { --lvl:var(--accent); } .lvl-warning { --lvl:var(--warning); }
+.lvl-critical { --lvl:var(--critical); } .lvl-idle { --lvl:var(--idle); } .lvl-info { --lvl:var(--info); }
+.lvl-serious { --lvl:var(--serious); } .lvl-na { --lvl:var(--idle); }
+.badge { display:inline-flex; align-items:center; gap:6px; font:600 11.5px/1.2 var(--f-ui); padding:3px 9px 3px 4px; border-radius:999px; color:var(--ink); white-space:nowrap;
+  background:color-mix(in srgb, var(--lvl) 13%, transparent); border:1px solid color-mix(in srgb, var(--lvl) 32%, transparent); }
+.badge i { font-style:normal; width:15px; height:15px; border-radius:50%; background:var(--lvl); color:#06101c; display:grid; place-items:center; font-size:9.5px; font-weight:800; }
+
+/* Annonciateur (verdict) */
+.ann { position:relative; overflow:hidden; display:grid; grid-template-columns:auto minmax(0,1fr); gap:16px; padding:18px 20px 18px 22px; border-radius:var(--r);
+  background:linear-gradient(90deg, color-mix(in srgb, var(--lvl) 11%, transparent), transparent 60%), var(--surface);
+  border:1px solid color-mix(in srgb, var(--lvl) 30%, var(--line)); }
+.ann::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--lvl); box-shadow:0 0 18px 1px var(--lvl); }
+.ann-lamp { width:46px; height:46px; border-radius:12px; display:grid; place-items:center;
+  background:color-mix(in srgb, var(--lvl) 15%, transparent); border:1px solid color-mix(in srgb, var(--lvl) 50%, transparent);
+  box-shadow:0 0 26px -4px color-mix(in srgb, var(--lvl) 70%, transparent), inset 0 0 14px color-mix(in srgb, var(--lvl) 22%, transparent); }
+.ann-lamp span { font:700 21px/1 var(--f-disp); color:var(--lvl); }
+.ann-kick { display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px; }
+.ann-kick .lw { font:600 10.5px/1 var(--f-mono); letter-spacing:.16em; text-transform:uppercase; color:var(--lvl); }
+.ann-head { font:600 23px/1.2 var(--f-disp); letter-spacing:-.015em; margin:6px 0 6px; }
+.ann-lines { display:grid; gap:3px; color:var(--ink-2); font-size:13.5px; }
+.ann-lines .bk { color:var(--ink); font-weight:500; }
+.ann-items { list-style:none; margin:12px 0 0; padding:12px 0 0; border-top:1px dashed var(--line-2); display:grid; gap:7px; }
+.ann-items li { display:flex; gap:10px; align-items:baseline; font-size:13px; color:var(--ink-2); }
+.ann-items .badge { flex:none; }
+
+/* Hero PnL */
+.hero { margin-top:16px; display:grid; grid-template-columns:minmax(0,1.04fr) minmax(0,1fr); border-radius:var(--r); overflow:hidden; border:1px solid var(--line);
+  background:radial-gradient(640px 320px at 0% 0%, rgba(77,141,255,.13), transparent 70%), radial-gradient(520px 300px at 100% 100%, rgba(92,211,255,.06), transparent 70%), var(--surface);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 30px 60px -40px rgba(0,0,0,.9); }
+.hero-l { padding:22px 24px 16px; border-right:1px solid var(--line); min-width:0; display:flex; flex-direction:column; }
+.hero-r { padding:22px 24px 16px; min-width:0; }
+.hero .k .tag { margin-left:8px; }
+.hero-fig { display:flex; align-items:baseline; gap:10px; margin:14px 0 8px; --hl:rgba(92,211,255,.35); }
+.hero-fig.pos { --hl:rgba(74,222,128,.32); } .hero-fig.neg { --hl:rgba(255,123,123,.34); }
+.hero-num { font:600 clamp(58px, 8.4vw, 108px)/.92 var(--f-disp); letter-spacing:-.045em; white-space:nowrap;
+  background:linear-gradient(180deg, #ffffff 25%, #b8c6de 100%); -webkit-background-clip:text; background-clip:text; color:transparent;
+  filter:drop-shadow(0 0 26px var(--hl)); }
+.hero-unit { font:500 clamp(22px, 2.8vw, 34px)/1 var(--f-disp); color:var(--ink-2); }
+.hero-dir { font:600 11px/1 var(--f-mono); letter-spacing:.1em; text-transform:uppercase; padding:5px 8px; border-radius:6px; align-self:center; margin-left:4px; white-space:nowrap; }
+.hero-fig.pos .hero-dir { color:var(--pos-text); background:rgba(74,222,128,.10); border:1px solid rgba(74,222,128,.25); }
+.hero-fig.neg .hero-dir { color:var(--neg-text); background:rgba(255,123,123,.10); border:1px solid rgba(255,123,123,.25); }
+.hero-meta { display:flex; flex-wrap:wrap; gap:4px 14px; color:var(--ink-2); font-size:13px; }
+.hero-meta > span { white-space:nowrap; }
+.hero-rate { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; margin:16px 0 14px; }
+.hero-rate > div { padding:9px 11px; border-radius:10px; background:rgba(150,180,230,.04); border:1px solid var(--line); min-width:0; }
+.hero-rate .k { font-size:9.5px; letter-spacing:.12em; }
+.hero-rate b { display:block; font:600 16px/1.2 var(--f-disp); margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.spark-cap { display:flex; justify-content:space-between; gap:8px; font:500 10.5px/1 var(--f-mono); color:var(--muted); margin-top:7px; letter-spacing:.04em; }
+.spark-cap span:nth-child(2) { text-align:center; }
+.hero-spark { margin-top:auto; }
+
+/* Waterfall */
+.wf { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); gap:10px; margin-top:6px; }
+.wf-col { display:grid; grid-template-rows:196px auto; min-width:0; }
+.wf-plot { position:relative; }
+.wf-plot::before { content:""; position:absolute; left:0; right:-10px; top:var(--z); height:1px; background:var(--axis); }
+.wf-col:last-child .wf-plot::before { right:0; }
+.wf-bar { position:absolute; left:50%; width:26px; margin-left:-13px; min-height:2px; border-radius:3px; background:var(--c);
+  box-shadow:0 0 18px -3px var(--c); transform:scaleY(0); transition:transform .9s var(--ease); }
+.wf-bar.up { transform-origin:50% 100%; } .wf-bar.dn { transform-origin:50% 0; }
+.in .wf-bar { transform:scaleY(1); }
+.wf-col.total .wf-bar { width:32px; margin-left:-16px; background:linear-gradient(180deg, var(--accent), #2f8fd6); box-shadow:0 0 22px -2px var(--glow); }
+.wf-conn { position:absolute; left:calc(50% + 13px); width:calc(100% - 16px); border-top:1px dashed var(--axis); }
+.wf-val { position:absolute; left:-8px; right:-8px; text-align:center; font:600 12px/1.2 var(--f-ui); font-variant-numeric:tabular-nums; color:var(--ink); white-space:nowrap; }
+.wf-col.total .wf-val { font:700 13.5px/1.2 var(--f-disp); color:var(--accent-ink); }
+.wf-lbl { text-align:center; font-size:11.5px; color:var(--ink-2); padding-top:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.wf-lbl small { display:block; font-size:10.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; }
+.wf-key { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:12px; font-size:11.5px; color:var(--ink-2); }
+.wf-key span { display:inline-flex; align-items:center; gap:6px; }
+.wf-key i { width:10px; height:10px; border-radius:2px; display:inline-block; }
+
+/* KPI */
+.kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%,208px), 1fr)); gap:12px; margin-top:16px; }
+.tile { position:relative; min-width:0; overflow:hidden; display:flex; flex-direction:column; padding:14px 16px 12px; border-radius:12px;
+  background:linear-gradient(180deg, rgba(255,255,255,.025), transparent 90px), var(--surface); border:1px solid var(--line); }
+.tile > .k { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.tile .v { font:600 28px/1.1 var(--f-disp); letter-spacing:-.02em; margin-top:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tile .v small { font:500 12.5px/1 var(--f-ui); color:var(--ink-2); letter-spacing:0; margin-left:6px; }
+.tile .m { font-size:12px; color:var(--muted); margin-top:6px; display:grid; gap:2px; }
+.tile .m b { color:var(--ink-2); font-weight:600; }
+.tile .spk { margin-top:auto; padding-top:12px; }
+.tile .pbar { width:100%; margin:10px 0 0; }
+
+/* Sparklines */
+.spark { position:relative; height:44px; touch-action:pan-y; }
+.spark svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.sp-line { fill:none; vector-effect:non-scaling-stroke; stroke-linejoin:round; stroke-linecap:round; }
+.sp-zero { stroke:var(--axis); stroke-width:1; stroke-dasharray:3 3; vector-effect:non-scaling-stroke; }
+.sp-dot { position:absolute; width:8px; height:8px; margin:-4px 0 0 -4px; border-radius:50%; background:var(--c); box-shadow:0 0 0 2px var(--surface), 0 0 10px var(--c); pointer-events:none; }
+.sp-guide { position:absolute; top:0; bottom:0; width:1px; background:var(--axis); display:none; pointer-events:none; }
+.sp-hd { display:none; background:var(--ink); }
+.sp-tip { position:absolute; top:-30px; transform:translateX(-50%); font:500 11px/1 var(--f-ui); padding:5px 8px; border-radius:6px; background:var(--surface-3); border:1px solid var(--line-2); white-space:nowrap; color:var(--ink); display:none; pointer-events:none; z-index:3; font-variant-numeric:tabular-nums; }
+.spark.hov .sp-guide, .spark.hov .sp-tip, .spark.hov .sp-hd { display:block; }
+
+/* Barres de progression */
+.pbar { position:relative; display:inline-block; vertical-align:middle; width:84px; height:6px; border-radius:3px; background:var(--track); overflow:hidden; }
+.pbar > span { position:absolute; left:0; top:0; bottom:0; border-radius:3px; background:var(--accent); box-shadow:0 0 10px -1px var(--glow); }
+.pbar.neg > span { background:var(--down); box-shadow:none; }
+
+/* Jauges radiales */
+.gauges { display:grid; grid-template-columns:repeat(var(--n, 2), minmax(0,1fr)); gap:10px 14px; }
+.gauge { display:flex; flex-direction:column; align-items:center; text-align:center; min-width:0; }
+.g-dial { position:relative; width:100%; max-width:252px; aspect-ratio:260/182; container-type:inline-size; }
+.g-dial svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.g-read { position:absolute; left:50%; top:65.9%; width:50%; transform:translate(-50%,-60%); display:flex; flex-direction:column; align-items:center; pointer-events:none; }
+.g-val { font:600 24px/1 var(--f-disp); font-size:clamp(15px, 10.2cqw, 27px); letter-spacing:-.02em; white-space:nowrap; }
+.g-unit { font:500 10px/1.2 var(--f-mono); font-size:clamp(8.5px, 3.9cqw, 10.5px); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-top:6px; white-space:nowrap; }
+.g-txt { min-width:0; width:100%; display:flex; flex-direction:column; align-items:center; }
+.g-name { font:600 13.5px/1.3 var(--f-ui); margin-top:4px; }
+.g-hint { font-size:11.5px; color:var(--muted); }
+.g-status { margin-top:9px; display:inline-flex; align-items:center; gap:6px; font-size:12px; line-height:1.25; padding:4px 10px 4px 5px; border-radius:999px; color:var(--ink); text-align:left;
+  background:color-mix(in srgb, var(--lvl) 12%, transparent); border:1px solid color-mix(in srgb, var(--lvl) 32%, transparent); max-width:100%; }
+.g-status i { font-style:normal; flex:none; width:16px; height:16px; border-radius:50%; display:grid; place-items:center; font-size:10px; font-weight:800; background:var(--lvl); color:#06101c; }
+.g-legend { margin-top:9px; display:grid; gap:3px; font-size:11.5px; color:var(--muted); width:100%; max-width:250px; }
+.g-lrow { display:flex; justify-content:space-between; gap:8px; align-items:center; border-top:1px solid var(--line); padding-top:4px; }
+.g-lrow > span { display:inline-flex; align-items:center; gap:6px; text-align:left; }
+.g-lrow b { color:var(--ink-2); font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.g-tk { width:2px; height:10px; background:var(--ink-2); border-radius:1px; flex:none; }
+.g-minor { stroke:var(--line-2); stroke-width:1; }
+.g-major { stroke:var(--axis); stroke-width:1.6; }
+.g-track { fill:none; stroke:var(--track); stroke-width:10; }
+.g-zone { fill:none; stroke-width:3.5; }
+.g-zone.z-warning { stroke:color-mix(in srgb, var(--warning) 70%, transparent); }
+.g-zone.z-critical { stroke:color-mix(in srgb, var(--critical) 85%, transparent); }
+.g-fill { fill:none; stroke:var(--lvl); stroke-width:10; transition:stroke-dashoffset 1.5s var(--ease); }
+.g-thr { stroke:var(--ink-2); stroke-width:2; stroke-linecap:round; }
+.g-thr.minor { stroke:var(--axis); stroke-width:1.5; }
+.g-tl { fill:var(--ink-2); font:500 10.5px var(--f-mono); }
+.g-end { fill:var(--muted); font:500 9.5px var(--f-mono); }
+.g-needle { transform-box:view-box; transform-origin:100px 100px; transition:transform 1.5s var(--ease); }
+.g-needle line { stroke:var(--ink); stroke-width:2; stroke-linecap:round; }
+.g-needle circle { fill:var(--lvl); stroke:var(--surface); stroke-width:2.5; }
+.cb-meta { display:flex; flex-wrap:wrap; gap:4px 16px; font-size:12px; color:var(--muted); margin:-4px 0 12px; }
+.cb-meta b { color:var(--ink-2); font-weight:500; }
+@media (max-width:560px) {
+  .gauges { grid-template-columns:1fr; gap:18px; }
+  .gauge { display:grid; grid-template-columns:148px minmax(0,1fr); align-items:center; text-align:left; gap:4px 12px; }
+  .g-dial { width:148px; }
+  .g-txt { align-items:flex-start; }
+  .g-legend { grid-column:1 / -1; max-width:none; margin-top:4px; }
+}
+
+/* Séquence d'entrée */
+.seq { list-style:none; margin:0; padding:0; position:relative; }
+.seq::before { content:""; position:absolute; left:56.5px; top:20px; bottom:20px; width:1px; background:var(--axis); }
+.seq-i { position:relative; display:grid; grid-template-columns:24px 22px minmax(0,1fr) auto; align-items:center; gap:8px 12px; padding:9px 10px; border-radius:10px; }
+.seq-n { font:500 10.5px/1 var(--f-mono); color:var(--muted); text-align:right; }
+.seq-ic { position:relative; z-index:1; width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font-size:11px; font-weight:800; color:#06101c; background:var(--good); box-shadow:0 0 0 4px var(--surface); }
+.seq-i.ko .seq-ic { background:var(--critical); box-shadow:0 0 0 4px var(--surface), 0 0 16px color-mix(in srgb, var(--critical) 70%, transparent); }
+.seq-i.block { background:color-mix(in srgb, var(--critical) 8%, transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--critical) 32%, transparent); }
+.seq-l { font-size:13.5px; min-width:0; }
+.seq-tag { margin-left:8px; font:600 9.5px/1 var(--f-mono); letter-spacing:.12em; text-transform:uppercase; color:var(--critical); border:1px solid color-mix(in srgb, var(--critical) 50%, transparent); padding:3px 5px; border-radius:4px; white-space:nowrap; vertical-align:1px; }
+.seq-d { font:500 12px/1.3 var(--f-mono); color:var(--ink-2); text-align:right; }
+.why { margin-top:12px; font-size:13px; color:var(--ink-2); }
+@media (max-width:560px) { .seq-i { grid-template-columns:24px 22px minmax(0,1fr); } .seq-d { grid-column:3; text-align:left; } }
+
+/* Meilleur candidat */
+.best-top { display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:10px 16px; }
+.best-sc { font:600 44px/1 var(--f-disp); letter-spacing:-.03em; }
+.best-gap { font:600 12px/1 var(--f-mono); padding:5px 8px; border-radius:6px; margin-left:10px; vertical-align:10px; white-space:nowrap; }
+.best-gap.up { color:var(--pos-text); background:rgba(74,222,128,.10); } .best-gap.dn { color:var(--neg-text); background:rgba(255,123,123,.09); }
+.instr { font:600 12.5px/1.2 var(--f-mono); letter-spacing:.01em; color:var(--ink); }
+.thrbar { position:relative; height:10px; border-radius:5px; background:var(--track); margin:16px 0 26px; }
+.thrbar > .f { position:absolute; left:0; top:0; bottom:0; border-radius:5px; background:linear-gradient(90deg, rgba(92,211,255,.25), var(--accent)); box-shadow:0 0 14px -2px var(--glow); }
+.thrbar > .t { position:absolute; top:-5px; bottom:-5px; width:2px; margin-left:-1px; background:var(--ink); border-radius:1px; }
+.thrbar > .tl { position:absolute; top:17px; transform:translateX(-50%); font:500 10.5px/1 var(--f-mono); color:var(--ink-2); white-space:nowrap; }
+.comps { display:grid; gap:10px; }
+.comp { display:grid; grid-template-columns:minmax(150px, 1.1fr) minmax(0,2fr) 40px; align-items:center; gap:12px; font-size:12.5px; }
+.comp .cn { color:var(--ink-2); display:flex; align-items:center; gap:8px; min-width:0; white-space:nowrap; }
+.comp .cn i { width:9px; height:9px; border-radius:2px; flex:none; }
+.comp .cn small { color:var(--muted); font-weight:400; }
+.comp .weak-tag { display:block; margin-top:3px; }
+.comp .cb { position:relative; height:8px; border-radius:0 4px 4px 0; background:var(--track); }
+.comp .cb > span { position:absolute; left:0; top:0; bottom:0; border-radius:0 4px 4px 0; }
+.comp .cv { text-align:right; font-variant-numeric:tabular-nums; color:var(--ink); font-weight:600; }
+.comp.weak .cn { color:var(--ink); font-weight:600; }
+.weak-tag { font:600 9.5px/1 var(--f-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--warning); white-space:nowrap; }
+.facts { display:flex; flex-wrap:wrap; gap:6px; margin-top:14px; }
+.fact { font-size:11.5px; padding:4px 8px; border-radius:6px; background:var(--surface-2); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+.fact b { color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums; }
+
+/* Tableaux */
+.tscroll { overflow-x:auto; margin:0 calc(-1 * var(--pad)); padding:0 var(--pad); }
+table.t { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+table.t th { text-align:left; font:500 10px/1.3 var(--f-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:8px 10px; border-bottom:1px solid var(--line-2); white-space:nowrap; }
+table.t td { padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:middle; white-space:nowrap; font-variant-numeric:tabular-nums; }
+table.t th.r, table.t td.r { text-align:right; }
+table.t tbody tr:last-child td { border-bottom:0; }
+table.t tbody tr:hover > td { background:rgba(150,180,230,.035); }
+table.t tr.clickable { cursor:pointer; }
+table.t tr.clickable:focus-visible { outline:none; }
+table.t tr.clickable:focus-visible > td { background:rgba(92,211,255,.07); }
+table.t tr.lots > td { background:var(--surface-2); padding:6px 10px 12px; }
+table.t tr.lots table.t td, table.t tr.lots table.t th { background:transparent; padding:6px 10px; }
+.caret { display:inline-block; width:14px; color:var(--accent); transition:transform .2s; }
+tr[aria-expanded="true"] .caret { transform:rotate(90deg); }
+.sub2 { font-size:11px; color:var(--muted); margin-top:2px; }
+.cap { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:4px; }
+.cap .pbar { width:64px; }
+
+/* Scanner */
+table.scan td.sc-td, table.scan th:first-child { position:sticky; left:0; z-index:1; background:var(--surface); }
+table.scan th:first-child { z-index:2; }
+table.scan td.sc-td { box-shadow:1px 0 0 var(--line); }
+table.scan tr.above td.sc-td { box-shadow:inset 3px 0 0 var(--good), 1px 0 0 var(--line); }
+.sc { display:flex; align-items:center; gap:10px; }
+.sc-n { font:600 19px/1 var(--f-disp); letter-spacing:-.01em; font-variant-numeric:tabular-nums; min-width:58px; }
+tr.above .sc-n { color:var(--accent-ink); text-shadow:0 0 14px var(--glow); }
+.sc-d { display:inline-flex; align-items:center; gap:3px; font:600 11px/1 var(--f-mono); padding:4px 6px; border-radius:5px; white-space:nowrap; }
+.sc-d.up { color:var(--pos-text); background:rgba(74,222,128,.10); }
+.sc-d.dn { color:var(--neg-text); background:rgba(255,123,123,.08); }
+.cbar { position:relative; width:170px; height:10px; display:flex; gap:2px; }
+.cbar::before { content:""; position:absolute; inset:0; background:var(--track); border-radius:0 5px 5px 0; }
+.cbar > span.s { position:relative; height:100%; }
+.cbar > span.s:last-of-type { border-radius:0 4px 4px 0; }
+.cbar > .t { position:absolute; top:-4px; bottom:-4px; width:2px; margin-left:-1px; background:var(--ink); border-radius:1px; }
+
+/* Légendes (helpers communs) */
+.legend { display:flex; flex-wrap:wrap; gap:6px 16px; font-size:12px; color:var(--ink-2); margin:-4px 0 10px; }
+.legend .key { display:inline-flex; align-items:center; gap:7px; }
+.legend .sw { display:inline-block; }
+.legend .sw.line { width:16px; height:2px; border-radius:1px; }
+.legend .sw.rect { width:10px; height:10px; border-radius:2px; }
+.legend .sw.diamond { width:8px; height:8px; transform:rotate(45deg); }
+.legend .sw.tick { width:2px; height:12px; border-radius:1px; }
+
+/* Stress test */
+.dbar { position:relative; display:inline-block; vertical-align:middle; width:110px; height:8px; margin-left:10px; }
+.dbar::before { content:""; position:absolute; left:50%; top:-4px; bottom:-4px; width:1px; background:var(--axis); }
+.dbar > span { position:absolute; top:0; bottom:0; }
+.dbar > span.p { left:50%; background:var(--up); border-radius:0 3px 3px 0; }
+.dbar > span.n { right:50%; background:var(--down); border-radius:3px 0 0 3px; }
+tr.worst > td { background:rgba(239,95,92,.06); }
+.shock { font:600 13px/1.2 var(--f-disp); }
+
+/* Capital */
+.mrow { display:grid; gap:6px; padding:12px 0; border-bottom:1px solid var(--line); }
+.mrow:last-of-type { border-bottom:0; }
+.mrow-h { display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap; }
+.mrow-h .n { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-2); }
+.mrow-h .n i { width:10px; height:10px; border-radius:2px; }
+.mrow-h .v { font:600 22px/1 var(--f-disp); letter-spacing:-.02em; }
+.mbar { position:relative; height:10px; border-radius:0 5px 5px 0; background:var(--track); }
+.mbar > span { position:absolute; left:0; top:0; bottom:0; border-radius:0 4px 4px 0; }
+.mbar > .mm { position:absolute; top:-4px; bottom:-4px; width:2px; margin-left:-1px; background:var(--ink); border-radius:1px; }
+.mrow .sub2 { font-size:11.5px; }
+.deposit { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+.deposit > div { padding:10px 12px; border-radius:10px; background:var(--surface-2); border:1px solid var(--line); min-width:0; }
+.deposit b { display:block; font:600 18px/1.2 var(--f-disp); margin-top:6px; }
+.deposit .sub2 { margin-top:3px; }
+
+/* Segmented control */
+.seg { display:inline-flex; padding:3px; gap:2px; border-radius:10px; background:var(--surface); border:1px solid var(--line-2); }
+.seg button { font:500 12px/1 var(--f-ui); color:var(--muted); background:transparent; border:0; border-radius:7px; padding:7px 12px; cursor:pointer; }
+.seg button:hover { color:var(--ink); }
+.seg button[aria-pressed="true"] { color:var(--ink); background:var(--surface-3); box-shadow:inset 0 0 0 1px var(--line-2), 0 0 14px -4px var(--glow); }
+.seg .sl { font:500 10px/1 var(--f-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:0 6px 0 8px; align-self:center; }
+
+/* Graphiques */
+.chartbox { position:relative; height:260px; }
+details.dt { margin-top:10px; font-size:12px; }
+details.dt summary { cursor:pointer; color:var(--muted); font:500 10.5px/1 var(--f-mono); letter-spacing:.1em; text-transform:uppercase; padding:4px 0; }
+details.dt summary:hover { color:var(--ink-2); }
+details.dt .tscroll { max-height:260px; overflow:auto; margin-top:6px; }
+
+/* Stats */
+.stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%,186px), 1fr)); gap:12px; margin-top:16px; }
+.stat { display:flex; gap:12px; align-items:flex-start; min-width:0; padding:13px 14px; border-radius:12px; background:var(--surface); border:1px solid var(--line); }
+.stat .sx { min-width:0; }
+.stat .v { font:600 20px/1.15 var(--f-disp); letter-spacing:-.01em; margin-top:6px; white-space:nowrap; }
+.stat .m { font-size:11.5px; color:var(--muted); margin-top:3px; }
+.ring { width:40px; height:40px; flex:none; }
+.ring-t { fill:none; stroke:var(--track); stroke-width:4; }
+.ring-f { fill:none; stroke-width:4; stroke-linecap:round; filter:drop-shadow(0 0 4px var(--glow)); }
+
+/* Rendement du collatéral */
+table.t td b.roc { font:600 14px/1 var(--f-disp); }
+table.t td.lab { white-space:normal; min-width:190px; }
+.best-roc b.roc::after { content:" ★"; color:var(--accent); font-size:11px; }
+
+/* Panneaux graphiques : le graphique occupe la hauteur disponible quand la rangée est étirée */
+.panel.chart { display:flex; flex-direction:column; }
+.panel.chart .chartbox { flex:1 1 260px; min-height:260px; height:auto; }
+.panel.chart .chartbox canvas { position:absolute; inset:0; }
+
+/* Décisions / paramètres */
+.reco { display:grid; gap:6px; padding:12px 0; border-bottom:1px solid var(--line); }
+.reco:last-of-type { border-bottom:0; }
+.reco-h { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.reco-h b { font-size:13.5px; }
+.reco-v { display:flex; align-items:center; flex-wrap:wrap; gap:6px 8px; font-size:12.5px; color:var(--muted); }
+.chipv { font:600 12px/1 var(--f-mono); padding:4px 7px; border-radius:5px; background:var(--surface-2); border:1px solid var(--line); color:var(--ink-2); }
+.chipv.prop { color:var(--accent-ink); border-color:rgba(92,211,255,.35); background:rgba(92,211,255,.08); }
+.arrow { color:var(--accent); }
+.params { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:6px; margin-top:10px; }
+.param { padding:8px 10px; border-radius:8px; background:var(--surface-2); border:1px solid var(--line); min-width:0; }
+.param .pk { font:500 9.5px/1.3 var(--f-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+.param .pv { font:600 13px/1.3 var(--f-ui); font-variant-numeric:tabular-nums; margin-top:3px; }
+.inert { margin-top:12px; font-size:12px; color:var(--muted); }
+h4.mini { font:500 10.5px/1 var(--f-mono); letter-spacing:.14em; text-transform:uppercase; color:var(--accent); opacity:.85; margin:18px 0 0; }
+.jscroll { max-height:440px; overflow:auto; }
+
+/* Pied de page */
+.foot { margin-top:48px; padding-top:18px; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px 24px; font-size:12px; color:var(--muted); }
+.foot .fl { display:flex; flex-wrap:wrap; gap:6px; }
+.err { margin:40px auto; max-width:640px; padding:24px; border-radius:12px; background:var(--surface); border:1px solid var(--line); }
+
+/* Apparition */
+.rv { opacity:0; transform:translateY(12px); transition:opacity .65s ease, transform .75s var(--ease); }
+.rv.in { opacity:1; transform:none; }
+
+@media (max-width:900px) {
+  .hero { grid-template-columns:minmax(0,1fr); }
+  .hero-l { border-right:0; border-bottom:1px solid var(--line); }
+}
+@media (max-width:640px) {
+  :root { --pad:14px; }
+  .wrap { padding:16px 16px 48px; }
+  .bar-in { padding:8px 16px 4px; gap:8px 10px; }
+  .anchors { padding:0 8px; }
+  .bot-d, .brand-s { display:none; }
+  .bar .links { display:none; }   /* les liens restent disponibles en pied de page */
+  .sect { margin-top:36px; scroll-margin-top:112px; }
+  .ann { padding:16px 14px 16px 16px; gap:12px; }
+  .ann-lamp { width:38px; height:38px; }
+  .ann-head { font-size:20px; }
+  .hero-l, .hero-r { padding:18px 16px 14px; }
+  .hero-rate { gap:6px; }
+  .hero-rate > div { padding:8px; }
+  .hero-rate b { font-size:14px; }
+  .wf { gap:6px; }
+  .wf-col { grid-template-rows:170px auto; }
+  .wf-plot::before { right:-6px; }
+  .wf-bar { width:20px; margin-left:-10px; }
+  .wf-col.total .wf-bar { width:24px; margin-left:-12px; }
+  .wf-conn { left:calc(50% + 10px); width:calc(100% - 14px); }
+  .wf-val { font-size:10.5px; }
+  .wf-col.total .wf-val { font-size:12px; }
+  .wf-lbl { font-size:10.5px; }
+  .tile .v { font-size:25px; }
+  .chartbox { height:220px; }
+  .deposit { grid-template-columns:1fr; }
+  .ph { flex-wrap:wrap; }
+  .stats { grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
+  .stat { padding:12px; gap:10px; }
+  .stat .ring { width:32px; height:32px; }
+  .stat .v { font-size:18px; }
+  table.t td.lab { min-width:150px; }
+  .dbar { width:60px; margin-left:8px; }
+  .comp { grid-template-columns:minmax(0,1fr) 40px; }
+  .comp .cb { grid-column:1 / -1; grid-row:2; }
+  .best-sc { font-size:38px; }
+  .foot { flex-direction:column; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior:auto; }
+  .rv { opacity:1; transform:none; transition:none; }
+  .wf-bar, .g-fill, .g-needle, .caret { transition:none !important; }
+  .pulse { animation:none; }
+}
+@media print {
+  .bar { position:static; } .anchors, .seg, details.dt { display:none; }
+  .rv { opacity:1 !important; transform:none !important; }
+}
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"></div>
+<header class="bar" id="bar"></header>
+<main class="wrap" id="main">
+  <section class="sect first" id="s-synthese" aria-label="Synthèse">
+    <div id="verdict" aria-live="polite"></div>
+    <div class="hero" id="hero"></div>
+    <div class="kpis" id="kpis" aria-label="Indicateurs clés"></div>
+  </section>
+
+  <section class="sect" id="s-risque" aria-labelledby="h-risque">
+    <div class="sect-h"><span class="sect-n">01</span><h2 id="h-risque">Risque</h2><span class="sect-rule"></span></div>
+    <div class="grid">
+      <div class="panel c-5" id="g-book"></div>
+      <div class="panel c-7" id="g-cb"></div>
+    </div>
+  </section>
+
+  <section class="sect" id="s-book" aria-labelledby="h-book">
+    <div class="sect-h"><span class="sect-n">02</span><h2 id="h-book">Book &amp; capital</h2><span class="sect-rule"></span></div>
+    <div class="panel" id="book"></div>
+    <div class="grid mt">
+      <div class="panel c-7" id="stress"></div>
+      <div class="panel c-5" id="capnow"></div>
+    </div>
+  </section>
+
+  <section class="sect" id="s-entrees" aria-labelledby="h-entrees">
+    <div class="sect-h"><span class="sect-n">03</span><h2 id="h-entrees">Entrées &amp; scanner</h2><span class="sect-rule"></span></div>
+    <div class="grid">
+      <div class="panel c-6" id="entry"></div>
+      <div class="panel c-6" id="best"></div>
+    </div>
+    <div class="panel mt" id="scanner"></div>
+  </section>
+
+  <section class="sect" id="s-perf" aria-labelledby="h-perf">
+    <div class="sect-h"><span class="sect-n">04</span><h2 id="h-perf">Performance</h2><span class="sect-rule"></span><div class="seg" id="range" role="group" aria-label="Période des graphiques"></div></div>
+    <div class="grid">
+      <div class="panel chart c-7" id="perf-cum"></div>
+      <div class="panel chart c-5" id="perf-month"></div>
+    </div>
+    <div class="stats" id="perf-stats"></div>
+    <div class="grid mt">
+      <div class="panel chart c-7" id="cap-chart"></div>
+      <div class="panel c-5" id="cap-yield"></div>
+    </div>
+  </section>
+
+  <section class="sect" id="s-marche" aria-labelledby="h-marche">
+    <div class="sect-h"><span class="sect-n">05</span><h2 id="h-marche">Marché</h2><span class="sect-rule"></span><div class="seg" id="range2" role="group" aria-label="Période des graphiques (marché)"></div></div>
+    <div class="grid3">
+      <div class="panel chart" id="mk-spot"></div>
+      <div class="panel chart" id="mk-vol"></div>
+      <div class="panel chart" id="mk-fund"></div>
+    </div>
+  </section>
+
+  <section class="sect" id="s-journal" aria-labelledby="h-journal">
+    <div class="sect-h"><span class="sect-n">06</span><h2 id="h-journal">Routine &amp; journal</h2><span class="sect-rule"></span></div>
+    <div class="grid">
+      <div class="panel c-6" id="decisions"></div>
+      <div class="panel c-6" id="journal"></div>
+    </div>
+    <div id="reconcile"></div>
+  </section>
+
+  <footer class="foot" id="foot"></footer>
+</main>
+
+<script type="application/json" id="dash-data">/*__DASHBOARD_DATA__*/null</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+"use strict";
+
+// ── Données ────────────────────────────────────────────────────────────────
+let D;
+try { D = JSON.parse(document.getElementById("dash-data").textContent); } catch (e) { D = null; }
+if (!D) {
+  const main = document.getElementById("main");
+  const box = document.createElement("div"); box.className = "err";
+  box.textContent = "Template non rendu : lancer generate_dashboard.py --template designs/cockpit/template.html";
+  main.replaceChildren(box);
+  return;
+}
+
+/*__COMMON_JS__*/
+
+// ── Helpers Cockpit (formats insécables, SVG, animations) ──────────────────
+const NB = " ";
+const nb = (x) => String(x).replace(/[  ]/g, NB);          // aucune coupure entre nombre et unité
+const fU = (v, o) => nb(usd(v, o || {}));
+const fP = (v, d = 1, sg = false) => nb(pct(v, d, sg));
+const fS = (v, d = 3, u = "") => nb(sgn(v, d, u));
+const fN = (v, d = 0) => (v == null || !isFinite(v)) ? "—" : nb(num(v, d));
+// Textes du modèle → décimales fr ; insécable seulement entre un nombre et son unité (le reste doit pouvoir passer à la ligne)
+const frText = (x) => x == null ? "" : String(x).replace(/(\d)\.(\d)/g, "$1,$2").replace(/(\d) (?=(%|\$|k\$|BTC|pts?\b|j\b|h\b))/g, "$1" + NB);
+const REDUCED = !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
+const SVGNS = "http://www.w3.org/2000/svg";
+const GEN = Date.parse(D.meta.generated_at) || Date.now();
+const TZ = tzName ? " " + tzName : "";
+const DAY = 86400000;
+let UID = 0;
+
+function svg(tag, attrs, ...kids) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) { if (v == null || v === false) continue; e.setAttribute(k, v); }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid == null || kid === false) continue;
+    e.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+  return e;
+}
+function mny(v, o) { return h("span", { class: "num " + tone(v) }, fU(v, Object.assign({ sign: true }, o || {}))); }
+function arrowPct(v, d = 1) { return h("span", { class: "num " + tone(v) }, (v > 0 ? "▲ " : v < 0 ? "▼ " : "") + fP(v, d, true)); }
+function hexA(hex, a) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return "rgba(" + (n >> 16) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")";
+}
+function phead(kicker, title, sub, right) {
+  return h("div", { class: "ph" },
+    h("div", { class: "ph-l" }, kicker ? h("div", { class: "k" }, kicker) : null, h("h3", {}, title), sub ? h("div", { class: "sub" }, sub) : null),
+    right || null);
+}
+function run(fn, id) {
+  try { fn(); } catch (e) {
+    if (window.console) console.error(e);
+    if (id && document.getElementById(id)) mount(id, h("div", { class: "empty" }, "Erreur de rendu de ce bloc : " + (e && e.message)));
+  }
+}
+function countUp(el, to, fmt, dur = 1100, from = 0) {
+  if (to == null || !isFinite(to) || REDUCED || !window.requestAnimationFrame) { el.textContent = fmt(to); return; }
+  const t0 = performance.now();
+  el.textContent = fmt(from);
+  const step = (t) => {
+    const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = fmt(from + (to - from) * e);
+    if (k < 1) requestAnimationFrame(step); else el.textContent = fmt(to);
+  };
+  requestAnimationFrame(step);
+  setTimeout(() => { el.textContent = fmt(to); }, dur + 400);   // garde-fou (onglet en arrière-plan)
+}
+const signedInt = (v) => (v < 0 ? MINUS : v > 0 ? "+" : "") + fN(Math.abs(v), 0);
+
+// ── Sparkline SVG (axe x = temps réel ; trous → segments séparés) ──────────
+function spark(series, o = {}) {
+  const S0 = series.filter(s => s && s.pts && s.pts.length);
+  const valid = (p) => p && p.y != null && isFinite(p.y) && isFinite(p.x);
+  const all = S0.flatMap(s => s.pts.filter(valid));
+  if (all.length < 2) return null;
+  const W = 300, H = o.h || 44, pad = 4;
+  let lo = Math.min(...all.map(p => p.y)), hi = Math.max(...all.map(p => p.y));
+  if (o.zero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+  const span = hi - lo || Math.abs(hi) || 1;
+  const x0 = Math.min(...all.map(p => p.x)), x1 = Math.max(...all.map(p => p.x)), xs = x1 - x0 || 1;
+  const X = (x) => (x - x0) / xs * W, Y = (y) => pad + (1 - (y - lo) / span) * (H - 2 * pad);
+  const gap = o.gap || Infinity, main = S0[0], gid = "spg" + (++UID);
+  const kids = [svg("defs", {}, svg("linearGradient", { id: gid, x1: 0, y1: 0, x2: 0, y2: 1 },
+    svg("stop", { offset: "0", "stop-color": main.color, "stop-opacity": o.areaTop != null ? o.areaTop : 0.3 }),
+    svg("stop", { offset: "1", "stop-color": main.color, "stop-opacity": 0 })))];
+  if (o.zero && lo < 0 && hi > 0) kids.push(svg("line", { x1: 0, x2: W, y1: Y(0).toFixed(1), y2: Y(0).toFixed(1), class: "sp-zero" }));
+  S0.forEach((s, si) => {
+    const segs = []; let cur = [], prev = null;
+    for (const p of s.pts) {
+      if (!valid(p)) { if (cur.length) segs.push(cur); cur = []; prev = null; continue; }
+      if (prev && p.x - prev.x > gap) { segs.push(cur); cur = []; }
+      cur.push(p); prev = p;
+    }
+    if (cur.length) segs.push(cur);
+    segs.forEach(seg => {
+      const d = seg.map((p, i) => (i ? "L" : "M") + X(p.x).toFixed(1) + " " + Y(p.y).toFixed(1)).join(" ");
+      if (si === 0 && o.area !== false && seg.length > 1) {
+        const base = o.zero ? Y(0) : H;
+        kids.push(svg("path", { d: d + " L" + X(seg[seg.length - 1].x).toFixed(1) + " " + base.toFixed(1) + " L" + X(seg[0].x).toFixed(1) + " " + base.toFixed(1) + " Z", fill: "url(#" + gid + ")" }));
+      }
+      kids.push(svg("path", { d, class: "sp-line", stroke: s.color, "stroke-width": s.w || 1.75 }));
+    });
+  });
+  const wrap = h("div", { class: "spark" + (o.cls ? " " + o.cls : ""), style: "height:" + H + "px;--c:" + main.color });
+  wrap.append(svg("svg", { viewBox: "0 0 " + W + " " + H, preserveAspectRatio: "none", "aria-hidden": "true" }, kids));
+  const pts = main.pts.filter(valid);
+  const last = pts[pts.length - 1];
+  if (last) wrap.append(h("span", { class: "sp-dot", style: "left:" + (X(last.x) / W * 100).toFixed(2) + "%;top:" + (Y(last.y) / H * 100).toFixed(2) + "%" }));
+  if (o.fmtY && pts.length > 1) {
+    const guide = h("span", { class: "sp-guide" }), hd = h("span", { class: "sp-dot sp-hd" }), tip = h("span", { class: "sp-tip" });
+    wrap.append(guide, hd, tip);
+    wrap.addEventListener("pointermove", (ev) => {
+      const r = wrap.getBoundingClientRect(); if (!r.width) return;
+      const tx = x0 + Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * xs;
+      let best = pts[0];
+      for (const p of pts) if (Math.abs(p.x - tx) < Math.abs(best.x - tx)) best = p;
+      const lx = X(best.x) / W * 100, ly = Y(best.y) / H * 100;
+      guide.style.left = lx + "%"; hd.style.left = lx + "%"; hd.style.top = ly + "%";
+      tip.textContent = (o.fmtX ? o.fmtX(best.x) + " · " : "") + o.fmtY(best.y);
+      wrap.classList.add("hov");
+      const tw = tip.offsetWidth, px = lx / 100 * r.width;
+      tip.style.left = Math.max(tw / 2, Math.min(r.width - tw / 2, px)) + "px";
+    });
+    wrap.addEventListener("pointerleave", () => wrap.classList.remove("hov"));
+  }
+  return wrap;
+}
+
+// ── Jauge radiale SVG (240°, zones, paliers, aiguille animée) ──────────────
+const GC = 100, GR = 76;
+function polar(a, r) { const t = a * Math.PI / 180; return [GC + r * Math.sin(t), GC - r * Math.cos(t)]; }
+function arcPath(a1, a2, r) {
+  const [x1, y1] = polar(a1, r), [x2, y2] = polar(a2, r);
+  const large = Math.abs(a2 - a1) > 180 ? 1 : 0, sweep = a2 > a1 ? 1 : 0;
+  return "M" + x1.toFixed(2) + " " + y1.toFixed(2) + " A" + r + " " + r + " 0 " + large + " " + sweep + " " + x2.toFixed(2) + " " + y2.toFixed(2);
+}
+const GICON = { ok: "✓", good: "✓", warning: "!", critical: "✕", na: "?", idle: "–", info: "i" };
+function gauge(o) {
+  const ang = o.bidir ? (f) => Math.max(-1, Math.min(1, f)) * 120 : (f) => -120 + Math.max(0, Math.min(1, f)) * 240;
+  const fid = "gg" + (++UID);
+  const k = [svg("defs", {}, svg("filter", { id: fid, x: "-40%", y: "-40%", width: "180%", height: "180%" },
+    svg("feGaussianBlur", { stdDeviation: "3", result: "b" }),
+    svg("feMerge", {}, svg("feMergeNode", { in: "b" }), svg("feMergeNode", { in: "SourceGraphic" }))))];
+  for (let a = -120; a <= 120; a += 10) {
+    const major = a % 60 === 0, [x1, y1] = polar(a, 89), [x2, y2] = polar(a, major ? 96 : 93);
+    k.push(svg("line", { x1: x1.toFixed(2), y1: y1.toFixed(2), x2: x2.toFixed(2), y2: y2.toFixed(2), class: major ? "g-major" : "g-minor" }));
+  }
+  k.push(svg("path", { d: arcPath(-120, 120, GR), class: "g-track" }));
+  (o.zones || []).forEach(z => { if (z.b - z.a > 1e-4) k.push(svg("path", { d: arcPath(ang(z.a), ang(z.b), 84.5), class: "g-zone z-" + z.level })); });
+  (o.ticks || []).forEach(t => {
+    const a = ang(t.at), [x1, y1] = polar(a, t.minor ? 70 : 63), [x2, y2] = polar(a, t.minor ? 82 : 97);
+    k.push(svg("line", { x1: x1.toFixed(2), y1: y1.toFixed(2), x2: x2.toFixed(2), y2: y2.toFixed(2), class: "g-thr" + (t.minor ? " minor" : "") }));
+    if (t.short) {   // étiquette à l'extérieur du palier, ancrée côté extérieur pour ne pas chevaucher le trait
+      const side = a > 25 ? "start" : a < -25 ? "end" : "middle", [tx, ty] = polar(a, side === "middle" ? 108 : 101);
+      k.push(svg("text", { x: tx.toFixed(1), y: ty.toFixed(1), class: "g-tl", "text-anchor": side, "dominant-baseline": "middle" }, t.short));
+    }
+  });
+  (o.ends || []).forEach((txt, i) => {
+    if (!txt) return;
+    const [tx, ty] = polar(i ? 120 : -120, 100);
+    k.push(svg("text", { x: tx.toFixed(1), y: (ty + 12).toFixed(1), class: "g-end", "text-anchor": "middle" }, txt));
+  });
+  let arm = null;
+  if (o.to != null && isFinite(o.to)) {
+    const a0 = ang(o.from || 0), a1 = ang(o.to);
+    let fill = null;
+    if (Math.abs(a1 - a0) > 0.3) {
+      fill = svg("path", { d: arcPath(a0, a1, GR), class: "g-fill", pathLength: "100", "stroke-dasharray": "100 101", "stroke-dashoffset": "100", filter: "url(#" + fid + ")" });
+      k.push(fill);
+    }
+    const needle = svg("g", { class: "g-needle", style: "transform:rotate(" + a0.toFixed(2) + "deg)" },
+      svg("line", { x1: GC, y1: GC - GR + 15, x2: GC, y2: GC - GR - 8 }),
+      svg("circle", { cx: GC, cy: GC - GR, r: 5 }));
+    k.push(needle);
+    arm = () => { if (fill) fill.style.strokeDashoffset = "0"; needle.style.transform = "rotate(" + a1.toFixed(2) + "deg)"; };
+  }
+  const root = h("div", { class: "gauge lvl-" + (o.level || "ok"), role: "group", "aria-label": o.aria || o.name, "data-arm": arm ? "1" : null },
+    h("div", { class: "g-dial" },
+      svg("svg", { viewBox: "-30 -20 260 182", "aria-hidden": "true", focusable: "false" }, k),
+      h("div", { class: "g-read" }, h("div", { class: "g-val" }, o.value), o.unit ? h("div", { class: "g-unit" }, o.unit) : null)),
+    h("div", { class: "g-txt" },
+      h("div", { class: "g-name" }, o.name),
+      o.hint ? h("div", { class: "g-hint" }, o.hint) : null,
+      o.status ? h("div", { class: "g-status lvl-" + o.status.level }, h("i", { "aria-hidden": "true" }, GICON[o.status.level] || "•"), h("span", {}, o.status.text)) : null),
+    o.legend && o.legend.length ? h("div", { class: "g-legend" }, o.legend) : null);
+  root._arm = arm;
+  return root;
+}
+function lrow(label, value) { return h("div", { class: "g-lrow" }, h("span", {}, h("i", { class: "g-tk", "aria-hidden": "true" }), label), h("b", {}, value)); }
+
+// ── Barre supérieure + navigation ──────────────────────────────────────────
+const SECTIONS = [["s-synthese", "Synthèse"], ["s-risque", "Risque"], ["s-book", "Book"], ["s-entrees", "Entrées"],
+                  ["s-perf", "Performance"], ["s-marche", "Marché"], ["s-journal", "Routine & journal"]];
+function logoSvg() {
+  return svg("svg", { viewBox: "0 0 32 32", "aria-hidden": "true" },
+    svg("rect", { x: 1, y: 1, width: 30, height: 30, rx: 8, fill: "#0e1420", stroke: "rgba(92,211,255,.5)" }),
+    svg("path", { d: "M8.5 21 A8.5 8.5 0 1 1 23.5 21", fill: "none", stroke: "#5cd3ff", "stroke-width": 2.4, "stroke-linecap": "round" }),
+    svg("path", { d: "M16 17 L21 11", stroke: "#e8eef8", "stroke-width": 2.2, "stroke-linecap": "round" }),
+    svg("circle", { cx: 16, cy: 17, r: 2, fill: "#e8eef8" }));
+}
+function renderBar() {
+  const m = D.meta, age = m.bot_age_h;
+  const lvl = age == null || age >= 8 ? "critical" : age >= 4 ? "warning" : "good";
+  const word = { good: "Bot en ligne", warning: "Bot en retard", critical: "Bot à l'arrêt" }[lvl];
+  const link = (href, txt, ext) => h("a", { class: "lk", href, target: ext ? "_blank" : null, rel: ext ? "noopener" : null }, txt);
+  mount("bar",
+    h("div", { class: "bar-in" },
+      h("a", { class: "brand", href: "#s-synthese", "aria-label": "VRP Bot BTC, haut de page" }, logoSvg(),
+        h("span", { class: "brand-t" }, "VRP", h("span", { class: "brand-dot" }, "·"), "BTC"), h("span", { class: "brand-s" }, "Cockpit")),
+      h("span", { class: "pill", title: "Mode d'exécution" }, m.mode),
+      h("div", { class: "bot lvl-" + lvl, title: "Dernier run du bot : " + fdt(m.bot_ts) + TZ + " · âge calculé à la génération de la page" },
+        h("span", { class: "pulse", "aria-hidden": "true" }),
+        h("span", { class: "bot-w" }, h("i", { "aria-hidden": "true" }, GICON[lvl]), word),
+        h("span", { class: "bot-t" }, nb(ago(age))),
+        h("span", { class: "bot-d muted" }, "· " + fdt(m.bot_ts) + TZ)),
+      h("nav", { class: "links", "aria-label": "Autres tableaux de bord" },
+        link("index.html", "Dashboard v1"), link("v2.html", "v2"), link("backtest.html", "Backtests"), link(m.repo + "/actions", "Actions ↗", true))),
+    h("nav", { class: "anchors", "aria-label": "Sections" }, SECTIONS.map(([id, label]) => h("a", { href: "#" + id, "data-sec": id }, label))));
+}
+
+// ── Verdict (annonciateur) ─────────────────────────────────────────────────
+const LVW = { good: "Nominal", warning: "À surveiller", critical: "Action requise", idle: "Au repos" };
+function renderVerdict() {
+  const v = D.verdict;
+  mount("verdict", h("div", { class: "ann lvl-" + v.level },
+    h("div", { class: "ann-lamp", "aria-hidden": "true" }, h("span", {}, (LVL[v.level] || {}).icon || "•")),
+    h("div", { style: "min-width:0" },
+      h("div", { class: "ann-kick" }, h("span", { class: "k" }, "Verdict du moment"), h("span", { class: "lw" }, LVW[v.level] || v.level)),
+      h("h1", { class: "ann-head" }, v.headline),
+      h("div", { class: "ann-lines" }, h("span", { class: "bk" }, frText(v.book)), h("span", {}, frText(v.entry))),
+      v.items && v.items.length ? h("ul", { class: "ann-items" }, v.items.map(it =>
+        h("li", {}, badge(it.level, (LVL[it.level] || {}).label || it.level), h("span", {}, frText(it.text))))) : null)));
+}
+
+// ── Hero : PnL net + décomposition ─────────────────────────────────────────
+function waterfall(t) {
+  const hedge = (t.hedge_realized || 0) + (t.hedge_mtm || 0);
+  const steps = [
+    { name: "Options", sub: "réalisé", v: t.options_realized || 0 },
+    { name: "Hedge", sub: t.hedge_mtm ? "réalisé + latent" : "réalisé", v: hedge,
+      tip: t.hedge_mtm ? "réalisé " + fU(t.hedge_realized, { sign: true }) + ", latent " + fU(t.hedge_mtm, { sign: true }) : null },
+    { name: "Funding", sub: "perp", v: t.funding || 0 }];
+  if (t.latent_options) steps.push({ name: "Latent", sub: "options ouvertes", v: t.latent_options });
+  steps.push({ name: "Frais", sub: "estimés", v: t.fees || 0 });
+  let lvl = 0;
+  const bars = steps.map(s => { const b = Object.assign({}, s, { a: lvl, b: lvl + s.v }); lvl += s.v; return b; });
+  bars.push({ name: "Net", sub: "après frais", v: t.net, a: 0, b: t.net, total: true });
+  const lo0 = Math.min(0, ...bars.map(x => Math.min(x.a, x.b))), hi0 = Math.max(0, ...bars.map(x => Math.max(x.a, x.b)));
+  const sp0 = hi0 - lo0 || 1, lo = lo0 - sp0 * 0.14, hi = hi0 + sp0 * 0.14, span = hi - lo;
+  const Y = (v) => (hi - v) / span * 100;
+  const compact = window.innerWidth < 560;
+  const fmtV = (v) => compact && Math.abs(v) >= 1000 ? (v < 0 ? MINUS : "+") + fN(Math.abs(v) / 1000, 1) + NB + "k$" : fU(v, { sign: true });
+  return h("div", { class: "wf", role: "img", "aria-label": "Décomposition du PnL : " + bars.map(b => b.name + " " + fU(b.v, { sign: true })).join(", ") },
+    bars.map((x, i) => {
+      const top = Y(Math.max(x.a, x.b)), bot = Y(Math.min(x.a, x.b)), hgt = Math.max(bot - top, 0.8);
+      const up = x.b >= x.a;
+      const color = up ? "var(--up)" : "var(--down)";
+      return h("div", { class: "wf-col" + (x.total ? " total" : ""), title: x.name + " (" + (x.tip || x.sub) + ") : " + fU(x.v, { sign: true }) },
+        h("div", { class: "wf-plot", style: "--z:" + Y(0).toFixed(2) + "%" },
+          h("div", { class: "wf-bar " + (up ? "up" : "dn"), style: "top:" + top.toFixed(2) + "%;height:" + hgt.toFixed(2) + "%;--c:" + color + ";transition-delay:" + (120 + i * 110) + "ms" }),
+          i < bars.length - 1 ? h("div", { class: "wf-conn", style: "top:" + Y(x.b).toFixed(2) + "%" }) : null,
+          h("div", { class: "wf-val", style: up ? "bottom:" + (100 - top + 2).toFixed(2) + "%" : "top:" + (bot + 2).toFixed(2) + "%" }, fmtV(x.v))),
+        h("div", { class: "wf-lbl" }, x.name, h("small", {}, x.sub)));
+    }));
+}
+function renderHero() {
+  const p = D.performance, t = p.totals, vb = p.vs_backtest || {};
+  const numEl = h("span", { class: "hero-num" });
+  countUp(numEl, t.net, signedInt, 1400);
+  const daily = (p.daily || []).map(d => ({ x: Date.parse(d.d + "T23:59:00Z"), y: d.net }));
+  const dir = t.net > 0 ? "▲ gain" : t.net < 0 ? "▼ perte" : "à zéro";
+  const left = h("div", { class: "hero-l" },
+    h("div", { class: "k" }, "PnL net de la stratégie", h("span", { class: "tag" }, "après frais estimés")),
+    h("div", { class: "hero-fig " + tone(t.net), "aria-label": "PnL net " + fU(t.net, { sign: true }) }, numEl, h("span", { class: "hero-unit" }, "$"), h("span", { class: "hero-dir" }, dir)),
+    h("div", { class: "hero-meta" },
+      h("span", {}, p.start ? "depuis le " + fdate(p.start) + " · " + fN(p.days, 0) + NB + "jours de live" : "pas encore d'historique"),
+      h("span", {}, "avant frais ", mny(t.net_before_fees))),
+    h("div", { class: "hero-rate" },
+      h("div", {}, h("div", { class: "k" }, "Rythme / an"), h("b", {}, vb.live_annual != null ? fU(vb.live_annual, { sign: true }) : "—")),
+      h("div", { title: "Backtest de la configuration actuelle (optimiste)" }, h("div", { class: "k" }, "Backtest / an"), h("b", {}, vb.bt_annual != null ? fU(vb.bt_annual, { sign: true, compact: true }) : "—")),
+      h("div", { title: "Part de la prime des options restée après hedge, funding et frais" }, h("div", { class: "k" }, "Prime gardée"), h("b", {}, p.kept_pct != null ? fP(p.kept_pct, 1) : "—"))),
+    spark([{ pts: daily, color: css("--accent"), w: 2 }], { h: 70, zero: true, cls: "hero-spark", fmtX: fdate, fmtY: (v) => fU(v, { sign: true }) }),
+    daily.length > 1 ? h("div", { class: "spark-cap" }, h("span", {}, fdate(p.start)), h("span", {}, "PnL net cumulé · jour par jour"), h("span", {}, fdate(D.meta.generated_at))) : null);
+  const right = h("div", { class: "hero-r" },
+    phead("Décomposition", "D'où vient le PnL", "Réalisé + latent · frais Deribit estimés (grille Standard, le bot est en paper)"),
+    waterfall(t),
+    h("div", { class: "wf-key" },
+      h("span", {}, h("i", { style: "background:var(--up)" }), "apport (+)"),
+      h("span", {}, h("i", { style: "background:var(--down)" }), "coût (−)"),
+      h("span", {}, h("i", { style: "background:var(--accent)" }), "net cumulé"),
+      h("span", { class: "muted" }, "frais : options " + fU(-((t.fees_split || {}).options || 0)) + " · perp " + fU(-((t.fees_split || {}).perp || 0)))));
+  mount("hero", left, right);
+}
+
+// ── KPI ────────────────────────────────────────────────────────────────────
+function tile(o) {
+  return h("div", { class: "tile" },
+    h("div", { class: "k" }, h("span", {}, o.k), o.right || null),
+    h("div", { class: "v" }, o.value),
+    o.meta && o.meta.length ? h("div", { class: "m" }, o.meta.map(x => h("div", {}, x))) : null,
+    o.extra || null,
+    o.spark ? h("div", { class: "spk" }, o.spark) : null);
+}
+function renderKpis() {
+  const mk = D.market, S = D.series || {}, t = D.book.totals, p = D.performance.totals;
+  const c1 = css("--s1"), acc = css("--accent");
+  const tiles = [];
+
+  const spotV = h("span", {});
+  countUp(spotV, mk.spot, (v) => fU(v), 900, (mk.spot || 0) * 0.985);
+  tiles.push(tile({ k: "Spot BTC", right: h("span", { class: "muted" }, "14 j"), value: spotV,
+    meta: [["24 h ", arrowPct(mk.move_1d), "   3 j ", arrowPct(mk.move_3d)]],
+    spark: spark([{ pts: (S.spot || []).filter(q => Date.parse(q.t) >= GEN - 14 * DAY).map(q => ({ x: Date.parse(q.t), y: q.v })), color: c1 }],
+      { fmtX: fdt, fmtY: (v) => fU(v), gap: 13 * 3600000 }) }));
+
+  const r = mk.iv_hv;
+  const vrp = r == null ? ["na", "n/a"] : r < 1.1 ? ["warning", "VRP mince"] : r < 1.35 ? ["good", "VRP correct"] : ["good", "VRP riche"];
+  const dv = h("span", {}, mk.dvol != null ? fN(mk.dvol, 1) : "—");
+  tiles.push(tile({ k: "Régime de vol", right: h("span", { class: "muted" }, "30 j"),
+    value: [dv, h("small", {}, "DVOL" + (mk.dvol_1d != null ? " · " + fS(mk.dvol_1d, 1, NB + "pt") + " 24 h" : ""))],
+    meta: [[badge(vrp[0], vrp[1]), " IV/HV ", h("b", {}, r != null ? fN(r, 2) + "×" : "—")],
+           ["HV blend ", h("b", {}, mk.hv_blend != null ? fN(mk.hv_blend, 1) : "—"), " · rang " + (mk.iv_rank != null ? fN(mk.iv_rank * 100, 0) + NB + "%" : "—") + (mk.regime ? " · " + mk.regime : "")]],
+    spark: spark([{ pts: (S.vol || []).filter(q => Date.parse(q.t) >= GEN - 30 * DAY).map(q => ({ x: Date.parse(q.t), y: q.dvol })), color: c1 }],
+      { fmtX: fdt, fmtY: (v) => "DVOL " + fN(v, 1), gap: 13 * 3600000 }) }));
+
+  const fund = (S.funding || []);
+  const fLast = fund.length ? fund[fund.length - 1].v : null;
+  tiles.push(tile({ k: "Funding perp", right: h("span", { class: "muted" }, "30 j"),
+    value: [h("span", {}, fLast != null ? fP(fLast, 1, true) : "—"), h("small", {}, "/ an")],
+    meta: ["moyenne 7 j annualisée", ["encaissé par le hedge ", mny(p.funding)]],
+    spark: spark([{ pts: fund.filter(q => Date.parse(q.t) >= GEN - 30 * DAY).map(q => ({ x: Date.parse(q.t), y: q.v })), color: c1 }],
+      { zero: true, fmtX: fdt, fmtY: (v) => fP(v, 2, true) + "/an", gap: 13 * 3600000 }) }));
+
+  const cap = D.capital || {}, cn = cap.now || {}, sm = cap.sm || {};
+  const capV = h("span", {});
+  countUp(capV, cn.sm_im, (v) => fU(v), 1000);
+  tiles.push(tile({ k: "Capital immobilisé", right: h("span", { class: "muted" }, "60 j"),
+    value: [capV, h("small", {}, "marge std")],
+    meta: [["PM est. ", h("b", {}, fU(cn.pm_im)), " · maint. ", h("b", {}, fU(cn.sm_mm))],
+           sm.capital_usd ? ["à déposer ", h("b", {}, fU(sm.capital_usd)), " (pic + DD)"] : "—"],
+    spark: spark([{ pts: (cap.daily || []).filter(q => Date.parse(q.d) >= GEN - 60 * DAY).map(q => ({ x: Date.parse(q.d + "T23:59:00Z"), y: q.sm })), color: c1 }],
+      { fmtX: fdate, fmtY: (v) => "marge std " + fU(v) }) }));
+
+  const capt = t.premium_usd ? t.latent_usd / t.premium_usd : null;
+  tiles.push(tile({ k: "Book ouvert", right: h("span", { class: "muted" }, D.book.rows.length + " instr."),
+    value: [h("span", {}, fU(t.premium_usd, { d: t.premium_usd < 1000 ? 2 : 0 })), h("small", {}, "de prime")],
+    meta: [["PnL latent ", mny(t.latent_usd, { d: 2 }), " · θ ", mny(t.theta_usd_day, { d: 2 }), "/j"],
+           fN(t.contracts, 2) + NB + "BTC vendus · TTE min " + (t.min_tte != null ? fN(t.min_tte, 1) + NB + "j" : "—")],
+    extra: capt != null ? h("div", { title: "Part de la prime déjà captée" },
+      h("span", { class: "pbar" + (capt < 0 ? " neg" : "") }, h("span", { style: "width:" + Math.min(100, Math.abs(capt) * 100).toFixed(1) + "%" })),
+      h("div", { class: "m" }, fP(capt * 100, 0) + " de la prime captée")) : null }));
+  mount("kpis", tiles);
+}
+
+// ── Risque : jauges ────────────────────────────────────────────────────────
+function expoGauge() {
+  const b = D.book.totals, cap = b.cap || 1, used = b.contracts || 0, eff = b.eff_cap != null ? b.eff_cap : cap;
+  const reduced = eff < cap - 1e-9, free = eff - used;
+  const level = free < 0.1 ? "warning" : "ok";
+  return gauge({ from: 0, to: used / cap, level,
+    zones: reduced ? [{ a: eff / cap, b: 1, level: "critical" }] : [{ a: Math.max(0, (cap - 0.1) / cap), b: 1, level: "warning" }],
+    ticks: reduced ? [{ at: eff / cap, short: fN(eff, 1) }] : [],
+    ends: ["0", fN(cap, 0) + NB + "BTC"],
+    value: fN(used, 2), unit: "BTC sur " + fN(eff, 1),
+    name: "Exposition vs cap", hint: reduced ? "cap réduit par l'allègement CB" : "notionnel des puts vendus",
+    status: level === "ok" ? { level: "good", text: "libre " + fN(free, 2) + NB + "BTC (" + fP(used / eff * 100, 0) + " utilisé)" }
+                           : { level: "warning", text: "capacité pleine — plus d'entrée" },
+    legend: [lrow("cap " + (reduced ? "effectif" : "notionnel"), fN(eff, 1) + NB + "BTC"),
+             lrow(D.book.rows.length + " instrument" + (D.book.rows.length > 1 ? "s" : ""), "TTE min " + (b.min_tte != null ? fN(b.min_tte, 1) + NB + "j" : "—"))],
+    aria: "Exposition " + fN(used, 2) + " BTC sur un cap de " + fN(eff, 1) + " BTC" });
+}
+function deltaGauge() {
+  const b = D.book.totals, thr = b.threshold_btc || 0.05, d = b.drift_btc || 0;
+  const R = Math.max(thr * 1.5, Math.abs(d) * 1.15), tf = thr / R, frac = Math.abs(d) / thr;
+  const level = frac >= 1 ? "critical" : frac >= 0.7 ? "warning" : "ok";
+  const st = level === "critical" ? { level: "critical", text: "seuil dépassé — rebalance attendu" }
+    : level === "warning" ? { level: "warning", text: fP(frac * 100, 0) + " du seuil — rebalance proche" }
+    : { level: "good", text: fP(frac * 100, 0) + " du seuil de rebalance" };
+  return gauge({ bidir: true, from: 0, to: d / R, level,
+    zones: [{ a: tf * 0.7, b: tf, level: "warning" }, { a: tf, b: 1, level: "critical" }, { a: -tf, b: -tf * 0.7, level: "warning" }, { a: -1, b: -tf, level: "critical" }],
+    ticks: [{ at: -tf, short: MINUS + fN(thr, 3) }, { at: tf, short: "+" + fN(thr, 3) }, { at: 0, minor: true }],
+    value: fS(d, 3), unit: "BTC · " + (d < 0 ? "net short" : d > 0 ? "net long" : "neutre"),
+    name: "Delta net vs seuil", hint: "options + hedge perp, non couvert",
+    status: st,
+    legend: [lrow("seuil ±" + fN(thr, 3) + NB + "BTC", fP(b.threshold_pct, 2) + " (IV-ajusté)"),
+             lrow("options " + fS(b.options_delta_btc, 3), "hedge " + fS(b.hedge_qty, 3))],
+    aria: "Delta net " + fS(d, 3) + " BTC, seuil de rebalance plus ou moins " + fN(thr, 3) + " BTC" });
+}
+function parseTick(t) {
+  const m = /([−+-])\s*(\d+(?:[.,]\d+)?)/.exec(String(t.label || ""));
+  return { at: t.at, T: m ? parseFloat(m[2].replace(",", ".")) : null, dir: m && m[1] === "+" ? 1 : -1, sign: m ? (m[1] === "+" ? "+" : MINUS) : "",
+           name: String(t.label || "").replace(/\s*[−+-]\s*\d.*$/, "").trim() || "palier" };
+}
+function cbGauge(m) {
+  const tk = (m.ticks || []).map(parseTick).sort((a, b) => a.at - b.at);
+  const dir = tk.length ? tk[0].dir : 1;
+  const isPct = String(m.unit || "").trim() === "%";
+  const u = isPct ? NB + "%" : NB + "pts";
+  const v = m.value, adv = v == null ? null : v * dir;          // > 0 = sens défavorable
+  const first = tk.length ? tk[0].at : 1;
+  const lvl = m.level || "na";
+  const next = tk.find(t => t.T != null && adv != null && t.T - adv > 0);
+  const status = v == null ? { level: "na", text: "donnée indisponible" }
+    : !next ? { level: "critical", text: "palier " + (tk.length ? tk[tk.length - 1].name : "") + " franchi" }
+    : { level: lvl === "ok" ? "good" : lvl, text: fN(next.T - adv, 1) + NB + "pts avant " + next.name };
+  return gauge({ from: 0, to: v == null ? null : (m.fill || 0), level: lvl,
+    zones: [{ a: first * 0.6, b: first, level: "warning" }, { a: first, b: 1, level: "critical" }],
+    ticks: tk.map(t => ({ at: t.at, short: t.T != null ? t.sign + fN(t.T, 0) : "" })),
+    value: v == null ? "—" : fS(v, 2, u), unit: adv == null ? "" : adv > 0 ? "sens défavorable" : adv < 0 ? "sens favorable" : "neutre",
+    name: m.label, hint: m.hint, status,
+    legend: tk.map(t => lrow(t.name + " " + t.sign + fN(t.T, t.T % 1 ? 1 : 0) + u,
+      adv == null || t.T == null ? "—" : (t.T - adv <= 0 ? "franchi" : "reste " + fN(t.T - adv, 1) + NB + "pts"))),
+    aria: m.label + " " + (v == null ? "indisponible" : fS(v, 2, u)) + " ; " + status.text });
+}
+function renderRisk() {
+  mount("g-book",
+    phead("Book", "Exposition & delta", "Taille du book face au cap · delta non couvert face au seuil de rebalance"),
+    h("div", { class: "gauges", style: "--n:2" }, expoGauge(), deltaGauge()));
+  const cb = D.cb, le = cb.last_event;
+  const st = cb.state === "armed" ? badge("good", "Armé") : cb.state === "reduced" ? badge("warning", "Allégé") : badge("critical", "Risk-off");
+  mount("g-cb",
+    phead("Circuit breaker", "Distance aux paliers", "Aiguille = mouvement défavorable ; zones ambre et rouge = approche et franchissement d'un palier", st),
+    h("div", { class: "cb-meta" },
+      cb.since ? h("span", {}, "depuis ", h("b", {}, fdt(cb.since))) : null,
+      cb.restore_rule ? h("span", {}, "reprise si ", h("b", {}, frText(cb.restore_rule))) : null,
+      le ? h("span", {}, "dernier déclenchement ", h("b", {}, fdate(le.ts) + (le.type === "cb_tier1_trim" ? " · allègement" : " · fermeture"))) : h("span", {}, "aucun déclenchement")),
+    h("div", { class: "gauges", style: "--n:" + Math.max(1, cb.meters.length) }, cb.meters.map(cbGauge)));
+}
+
+// ── Positions ──────────────────────────────────────────────────────────────
+function renderBook() {
+  const rows = D.book.rows, t = D.book.totals;
+  const head = phead("Positions ouvertes",
+    rows.length ? rows.length + " instrument" + (rows.length > 1 ? "s" : "") + " · " + fN(t.contracts, 2) + NB + "BTC de puts vendus" : "Book à plat",
+    rows.length ? "Prime encaissée " + fU(t.premium_usd, { d: 2 }) + " · PnL latent " + fU(t.latent_usd, { sign: true, d: 2 }) + " · θ " + fU(t.theta_usd_day, { sign: true, d: 2 }) + "/j · hedge " + fS(t.hedge_qty, 3, NB + "BTC") : null,
+    rows.length ? h("span", { class: "tag" }, "clic = détail des lots") : null);
+  if (!rows.length) {
+    mount("book", head, h("div", { class: "empty" }, "Book à plat — hedge à " + fS(t.hedge_qty, 3, NB + "BTC") + ". Le bot entrera quand toute la séquence d'entrée sera au vert."));
+    return;
+  }
+  const tb = h("tbody");
+  rows.forEach(r => {
+    const cp = r.captured_pct;
+    const tr = h("tr", { class: "clickable", tabindex: "0", "aria-expanded": "false" },
+      h("td", {}, h("span", { class: "caret", "aria-hidden": "true" }, "▸"), h("span", { class: "instr" }, r.instrument),
+        r.lots.length > 1 ? h("span", { class: "tag" }, r.lots.length + " lots") : null,
+        r.roll_watch ? [" ", badge("warning", "roll attendu")] : null,
+        !r.marked ? h("span", { class: "tag", title: "au moins un lot sans marque live" }, "non marqué") : null),
+      h("td", { class: "r" }, fU(r.strike), h("div", { class: "sub2" }, fP(r.dist_pct, 1, true) + " du spot")),
+      h("td", { class: "r" }, fdate(r.expiry), h("div", { class: "sub2" }, "dans " + fN(r.tte_days, 1) + NB + "j")),
+      h("td", { class: "r" }, fN(r.contracts, 3)),
+      h("td", { class: "r" }, fU(r.premium_usd, { d: 2 })),
+      h("td", { class: "r" }, mny(r.pnl_usd, { d: 2 }),
+        cp != null ? h("div", { class: "cap" }, h("span", { class: "pbar" + (cp < 0 ? " neg" : "") }, h("span", { style: "width:" + Math.min(100, Math.abs(cp)).toFixed(0) + "%" })), h("span", { class: "sub2", style: "margin:0" }, fP(cp, 0) + " capté")) : null),
+      h("td", { class: "r" }, fS(-r.delta_btc, 3)),
+      h("td", { class: "r" }, fN(r.gamma_pts, 1)),
+      h("td", { class: "r" }, fU(r.theta_usd, { sign: true, d: 2 })),
+      h("td", { class: "r" }, (r.iv_entry != null ? fN(r.iv_entry, 1) : "—") + " → " + (r.iv_now != null ? fN(r.iv_now, 1) : "—")),
+      h("td", { class: "r" }, r.score != null ? fN(r.score, 3) : "—"));
+    const sub = h("tr", { class: "lots", hidden: true }, h("td", { colspan: "11" },
+      h("table", { class: "t" },
+        h("thead", {}, h("tr", {}, ["Entrée", "Contrats", "Score", "Prime", "Spot entrée", "IV entrée", "PnL"].map((x, k) => h("th", { class: k ? "r" : "" }, x)))),
+        h("tbody", {}, r.lots.map(l => h("tr", {},
+          h("td", {}, fdt(l.entry_ts)), h("td", { class: "r" }, fN(l.contracts, 4)),
+          h("td", { class: "r" }, l.score != null ? fN(l.score, 3) : "—"), h("td", { class: "r" }, fU(l.premium_usd, { d: 2 })),
+          h("td", { class: "r" }, fU(l.entry_spot)), h("td", { class: "r" }, l.iv_entry != null ? fN(l.iv_entry, 1) + NB + "%" : "—"),
+          h("td", { class: "r" }, l.pnl_usd != null ? mny(l.pnl_usd, { d: 2 }) : h("span", { class: "muted" }, "non marqué"))))))));
+    const toggle = () => { const open = tr.getAttribute("aria-expanded") === "true"; tr.setAttribute("aria-expanded", String(!open)); sub.hidden = open; };
+    tr.addEventListener("click", toggle);
+    tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    tb.append(tr, sub);
+  });
+  const H = ["Instrument", "Strike · distance", "Échéance", "BTC", "Prime", "PnL latent · capté", "Delta (short)", "Gamma pts", "θ / jour", "IV entrée → now", "Score"];
+  mount("book", head, h("div", { class: "tscroll" }, h("table", { class: "t" },
+    h("thead", {}, h("tr", {}, H.map((x, k) => h("th", { class: k ? "r" : "" }, x)))), tb)));
+}
+
+// ── Stress test ────────────────────────────────────────────────────────────
+function renderStress() {
+  const st = D.stress;
+  const head = phead("Stress test", "Si le spot bougeait maintenant", "Variation de PnL options + hedge · Black-Scholes, strikes collants");
+  if (!st) { mount("stress", head, h("div", { class: "empty" }, "Book à plat : aucune exposition. Le stress test s'affiche dès la prochaine position.")); return; }
+  const all = st.scenarios.flatMap(s => s.points.map(p => p.total));
+  const maxAbs = Math.max(1, ...all.map(Math.abs)), worst = Math.min(...all);
+  const bar = (v) => h("span", { class: "dbar", "aria-hidden": "true" },
+    h("span", { class: v < 0 ? "n" : "p", style: "width:" + (Math.abs(v) / maxAbs * 50).toFixed(1) + "%" }));
+  const spot = D.market.spot;
+  mount("stress", head, h("div", { class: "tscroll" }, h("table", { class: "t" },
+    h("thead", {}, h("tr", {}, h("th", {}, "Choc spot"), st.scenarios.map(s => h("th", { class: "r" }, s.label)), h("th", { class: "r" }, "dont hedge"))),
+    h("tbody", {}, st.shocks.map((s, i) => {
+      const isWorst = st.scenarios.some(sc => sc.points[i].total === worst && worst < 0);
+      return h("tr", { class: isWorst ? "worst" : null },
+        h("td", {}, h("span", { class: "shock" }, fS(s, 0, NB + "%")), spot ? h("div", { class: "sub2" }, "spot " + fU(spot * (1 + s / 100))) : null),
+        st.scenarios.map(sc => h("td", { class: "r" }, mny(sc.points[i].total), bar(sc.points[i].total))),
+        h("td", { class: "r" }, mny(st.scenarios[0].points[i].hedge)));
+    })))),
+    h("div", { class: "note" }, "Pire cas du tableau : ", h("b", {}, fU(worst, { sign: true })), " — ligne surlignée. Barre à droite = gain, à gauche = perte (échelle commune)."));
+}
+
+// ── Capital immobilisé maintenant ──────────────────────────────────────────
+function renderCapNow() {
+  const c = D.capital || {}, n = c.now || {}, sm = c.sm, pm = c.pm;
+  const c1 = css("--s1"), c2 = css("--s2");
+  const head = phead("Capital", "Marge requise maintenant", "Marge standard Deribit (exacte) vs portfolio margin (estimée)");
+  if (n.sm_im == null) { mount("capnow", head, h("div", { class: "empty" }, "Spot indisponible : marge non calculée")); return; }
+  const scale = Math.max(1, n.sm_im || 0, n.pm_im || 0);
+  const row = (name, color, im, mm, meta) => h("div", { class: "mrow" },
+    h("div", { class: "mrow-h" }, h("span", { class: "n" }, h("i", { style: "background:" + color }), name), h("span", { class: "v" }, fU(im))),
+    h("div", { class: "mbar", title: "marge initiale " + fU(im) + " · maintenance " + fU(mm) },
+      h("span", { style: "width:" + ((im || 0) / scale * 100).toFixed(1) + "%;background:" + color }),
+      mm != null ? h("span", { class: "mm", style: "left:" + (Math.min(1, mm / scale) * 100).toFixed(1) + "%" }) : null),
+    h("div", { class: "sub2" }, meta));
+  const w = n.pm_worst;
+  mount("capnow", head,
+    legend([{ name: "marge initiale", color: css("--ink-2"), kind: "rect" }, { name: "maintenance", color: css("--ink"), kind: "tick" }]),
+    row("Marge standard", c1, n.sm_im, n.sm_mm, "options " + fU(n.sm_options) + " · perp " + fU(n.sm_perp) + " · maintenance " + fU(n.sm_mm)),
+    row("Portfolio margin (est.)", c2, n.pm_im, n.pm_mm, "maintenance " + fU(n.pm_mm) + (w ? " · pire scénario " + fS(w.move, 0, NB + "%") + " & vol " + (w.vol === "up" ? "↑" : "↓") + " : " + fU(w.pnl_usd, { sign: true }) : "")),
+    h("div", { class: "deposit" },
+      h("div", {}, h("div", { class: "k" }, "À déposer · standard"), h("b", {}, sm ? fU(sm.capital_usd) : "—"),
+        sm ? h("div", { class: "sub2" }, "pic " + fU(sm.peak_margin_usd) + " + drawdown " + fU(sm.buffer_dd_usd)) : null),
+      h("div", {}, h("div", { class: "k" }, "À déposer · portfolio"), h("b", {}, pm ? fU(pm.capital_usd) : "—"),
+        pm ? h("div", { class: "sub2" }, "pic " + fU(pm.peak_margin_usd) + " + drawdown " + fU(pm.buffer_dd_usd)) : null)));
+}
+
+// ── Entrées : séquence + meilleur candidat ─────────────────────────────────
+function renderEntry() {
+  const g = D.gates, firstBad = g.gates.findIndex(x => !x.ok);
+  mount("entry",
+    phead("Conditions d'entrée", "Séquence vérifiée à chaque run", "Dans l'ordre : la première condition rouge bloque l'entrée",
+      badge(g.open ? "good" : "critical", g.open ? "entrées ouvertes" : "entrées fermées")),
+    h("ol", { class: "seq" }, g.gates.map((x, i) => h("li", { class: "seq-i " + (x.ok ? "ok" : "ko") + (i === firstBad ? " block" : "") },
+      h("span", { class: "seq-n" }, String(i + 1).padStart(2, "0")),
+      h("span", { class: "seq-ic", role: "img", "aria-label": x.ok ? "respectée" : "non respectée" }, x.ok ? "✓" : "✕"),
+      h("span", { class: "seq-l" }, frText(x.label), i === firstBad ? h("span", { class: "seq-tag" }, "bloquant") : null),
+      h("span", { class: "seq-d" }, frText(x.detail))))),
+    h("div", { class: "why" }, g.open ? "✓ Toutes les conditions sont réunies : le bot peut entrer au prochain run."
+      : ["✕ Pas d'entrée — ", h("b", {}, frText(g.why)), "."]));
+}
+function renderBest() {
+  const g = D.gates, b = g.best, lim = g.limiting, thr = g.threshold, W = D.scanner.weights || {};
+  const head = phead("Meilleur candidat éligible", b ? b.instrument : "Aucun candidat", b ? "Score vs seuil d'entrée et composantes normalisées (sur 1)" : null,
+    b ? badge(b.score >= thr ? "good" : "idle", b.score >= thr ? "au-dessus du seuil" : "sous le seuil") : null);
+  if (!b) { mount("best", head, h("div", { class: "empty" }, "Aucun candidat éligible au dernier scan")); return; }
+  const scale = Math.max(0.7, thr * 1.5, b.score * 1.1), gap = b.score - thr;
+  const gf = b.gamma_factor || 1;
+  const norm = (lim && lim.norm) || Object.fromEntries(["vrp", "yield", "skew"].map(k => [k, W[k] ? b.contrib[k] / (W[k] * gf) : 0]));
+  const weakest = Object.keys(norm).reduce((a, k) => norm[k] < norm[a] ? k : a, "vrp");
+  const cs = { vrp: css("--s1"), yield: css("--s2"), skew: css("--s3") };
+  const names = { vrp: "VRP (IV/HV)", yield: "Yield ajusté", skew: "Skew vs ATM" };
+  const scEl = h("span", { class: "best-sc" });
+  countUp(scEl, b.score, (v) => fN(v, 3), 1000);
+  mount("best", head,
+    h("div", { class: "best-top" },
+      h("div", {}, scEl, h("span", { class: "best-gap " + (gap >= 0 ? "up" : "dn") }, (gap >= 0 ? "▲ +" : "▼ " + MINUS) + fN(Math.abs(gap), 3) + " vs seuil")),
+      h("span", { class: "muted small" }, gf < 1 ? "pénalité gamma × " + fN(gf, 2) : "sans pénalité gamma")),
+    h("div", { class: "thrbar", role: "img", "aria-label": "Score " + fN(b.score, 3) + " pour un seuil de " + fN(thr, 2) },
+      h("span", { class: "f", style: "width:" + Math.min(100, b.score / scale * 100).toFixed(1) + "%" }),
+      h("span", { class: "t", style: "left:" + (thr / scale * 100).toFixed(1) + "%" }),
+      h("span", { class: "tl", style: "left:" + (thr / scale * 100).toFixed(1) + "%" }, "seuil " + fN(thr, 2))),
+    h("div", { class: "comps" }, ["vrp", "yield", "skew"].map(key => h("div", { class: "comp" + (key === weakest ? " weak" : "") },
+      h("span", { class: "cn" }, h("i", { style: "background:" + cs[key] }),
+        h("span", {}, names[key], h("small", {}, " × " + fN(W[key], 2)), key === weakest ? h("span", { class: "weak-tag" }, "▼ plus faible") : null)),
+      h("span", { class: "cb" }, h("span", { style: "width:" + Math.max(0, Math.min(1, norm[key])) * 100 + "%;background:" + cs[key] })),
+      h("span", { class: "cv" }, fN(norm[key], 2))))),
+    lim && !g.open ? h("div", { class: "note" }, "Composante la plus faible : ", h("b", {}, lim.component), " — ", frText(lim.detail),
+      lim.gap > 0 ? [". Il manque ", h("b", {}, fN(lim.gap, 3)), " de score pour atteindre le seuil."] : ".") : null,
+    h("div", { class: "facts" },
+      [["TTE", fN(b.tte_days, 1) + NB + "j"], ["distance", fP(b.dist_pct, 1, true)], ["prime", fU(b.premium_usd)], ["IV bid", fN(b.bid_iv, 1)],
+       ["IV/HV", fN(b.iv_hv, 2) + "×"], ["skew", fS(b.skew_pct, 1, NB + "%")], ["yield", fP(b.yield_pct, 1) + "/an"], ["delta", fN(b.delta, 3)]]
+        .map(([k2, v]) => h("span", { class: "fact" }, k2 + " ", h("b", {}, v)))));
+}
+
+// ── Scanner (score en première colonne) ────────────────────────────────────
+const STATUS = { eligible: ["good", "éligible"], held: ["idle", "déjà tenu"], held_reentry: ["info", "ré-entrée possible"], filtered: ["idle", "filtré (proche d'une position)"] };
+function renderScanner() {
+  const sc = D.scanner, rows = sc.rows, thr = sc.threshold;
+  const c = [css("--s1"), css("--s2"), css("--s3")];
+  const above = rows.filter(r => r.score >= thr).length;
+  const head = phead("Scanner", "Candidats du dernier scan, classés par score",
+    "Seuil d'entrée " + fN(thr, 2) + " · " + above + " / " + rows.length + " au-dessus · barre = contribution pondérée de chaque composante",
+    rows.length ? h("span", { class: "tag" }, "score = 1re colonne") : null);
+  if (!rows.length) { mount("scanner", head, h("div", { class: "empty" }, "Aucun candidat au dernier scan")); return; }
+  const scale = Math.max(0.7, thr * 1.4, ...rows.map(r => r.score));
+  const lg = legend([{ name: "VRP (IV/HV) · poids " + fN(sc.weights.vrp, 2), color: c[0], kind: "rect" },
+                     { name: "Yield ajusté · " + fN(sc.weights.yield, 2), color: c[1], kind: "rect" },
+                     { name: "Skew · " + fN(sc.weights.skew, 2), color: c[2], kind: "rect" },
+                     { name: "seuil " + fN(thr, 2), color: css("--ink"), kind: "tick" }]);
+  const tb = h("tbody", {}, rows.map(r => {
+    const segs = [r.contrib.vrp, r.contrib.yield, r.contrib.skew];
+    const gap = r.score - thr, up = gap >= 0;
+    const [lvl, txt] = STATUS[r.status] || ["idle", r.status];
+    return h("tr", { class: up ? "above" : null },
+      h("td", { class: "sc-td" }, h("div", { class: "sc" },
+        h("span", { class: "sc-n" }, fN(r.score, 3)),
+        h("span", { class: "sc-d " + (up ? "up" : "dn"), title: "écart au seuil d'entrée " + fN(thr, 2) }, (up ? "▲ +" : "▼ " + MINUS) + fN(Math.abs(gap), 3)))),
+      h("td", {}, h("div", { class: "cbar", title: "VRP " + fN(segs[0], 3) + " · Yield " + fN(segs[1], 3) + " · Skew " + fN(segs[2], 3) + (r.gamma_factor < 1 ? " · pénalité gamma × " + fN(r.gamma_factor, 2) : "") },
+        segs.map((v, i) => v > 0 ? h("span", { class: "s", style: "width:" + (v / scale * 100).toFixed(1) + "%;background:" + c[i] }) : null),
+        h("span", { class: "t", style: "left:" + (thr / scale * 100).toFixed(1) + "%" }))),
+      h("td", {}, h("span", { class: "instr" }, r.instrument)),
+      h("td", {}, badge(lvl, txt), r.held_score != null ? h("span", { class: "muted small" }, "  tenu à " + fN(r.held_score, 3)) : null),
+      h("td", { class: "r" }, fN(r.tte_days, 1) + NB + "j"),
+      h("td", { class: "r" }, fP(r.dist_pct, 1, true)),
+      h("td", { class: "r" }, fU(r.premium_usd)),
+      h("td", { class: "r" }, fN(r.bid_iv, 1)),
+      h("td", { class: "r" }, fN(r.iv_hv, 2) + "×"),
+      h("td", { class: "r" }, fS(r.skew_pct, 1, NB + "%")),
+      h("td", { class: "r" }, fP(r.yield_pct, 1)),
+      h("td", { class: "r" }, fN(r.gamma_pts, 2)));
+  }));
+  const H = ["Score · écart au seuil", "Contributions", "Instrument", "Statut", "TTE", "Distance", "Prime", "IV bid", "IV/HV", "Skew", "Yield/an", "Gamma pts"];
+  mount("scanner", head, lg, h("div", { class: "tscroll" }, h("table", { class: "t scan" },
+    h("thead", {}, h("tr", {}, H.map((x, k) => h("th", { class: k >= 4 ? "r" : "" }, x)))), tb)));
+}
+
+// ── Période (filtre commun à tous les graphiques) ──────────────────────────
+const RANGES = [{ k: "30", label: "30 j" }, { k: "90", label: "90 j" }, { k: "all", label: "Tout" }];
+let range = "90";
+try { const rr = localStorage.getItem("vrp-cockpit-range"); if (RANGES.some(x => x.k === rr)) range = rr; } catch (e) {}
+function cutoffISO() { return range === "all" ? "" : new Date(GEN - Number(range) * DAY).toISOString(); }
+function renderRange() {
+  const ctl = () => [h("span", { class: "sl" }, "Période"), RANGES.map(r => h("button", { type: "button", "aria-pressed": String(r.k === range),
+    onclick: () => { range = r.k; try { localStorage.setItem("vrp-cockpit-range", range); } catch (e) {} renderRange(); run(renderCharts); } }, r.label))];
+  mount("range", ctl()); mount("range2", ctl());
+}
+
+// ── Graphiques Chart.js ────────────────────────────────────────────────────
+const glow = {
+  id: "ckGlow",
+  beforeDatasetDraw(chart, args) { const ds = chart.data.datasets[args.index]; if (!ds.ckGlow) return; const ctx = chart.ctx; ctx.save(); ctx.shadowColor = ds.ckGlow; ctx.shadowBlur = 12; },
+  afterDatasetDraw(chart, args) { const ds = chart.data.datasets[args.index]; if (!ds.ckGlow) return; chart.ctx.restore(); },
+};
+if (window.Chart) {
+  Chart.register(glow);
+  Chart.defaults.font.family = "Inter, system-ui, -apple-system, 'Segoe UI', sans-serif";
+  Chart.defaults.color = css("--muted");
+  Chart.defaults.borderColor = css("--grid");
+}
+function panelChart(id, kicker, title, sub, legendItems, build, table) {
+  const box = h("div", { class: "chartbox" });
+  const nodes = [phead(kicker, title, sub)];
+  if (legendItems && legendItems.length) nodes.push(legend(legendItems));
+  nodes.push(box);
+  if (table) nodes.push(dataTable(table.headers, table.rows));
+  mount(id, nodes);
+  if (!window.Chart) { box.append(h("div", { class: "empty" }, "Graphique indisponible (Chart.js non chargé)")); return; }
+  const r = build(box);
+  if (r === null) box.append(h("div", { class: "empty" }, "Pas encore de données sur cette période"));
+}
+function monthsFilled(arr) {
+  if (!arr.length) return [];
+  const by = {}; arr.forEach(m => { by[m.m] = m; });
+  let [y, mo] = arr[0].m.split("-").map(Number);
+  const [ey, em] = arr[arr.length - 1].m.split("-").map(Number);
+  const out = [];
+  while (y < ey || (y === ey && mo <= em)) {
+    const key = y + "-" + String(mo).padStart(2, "0");
+    out.push(by[key] || { m: key, options: 0, hedge: 0, funding: 0, fees: 0, net: 0 });
+    if (++mo > 12) { mo = 1; y++; }
+  }
+  return out;
+}
+function destroyCharts() { while (CHARTS.length) { try { CHARTS.pop().destroy(); } catch (e) {} } }
+function renderCharts() {
+  destroyCharts();
+  const cut = cutoffISO(), cutD = cut.slice(0, 10);
+  const c1 = css("--s1"), c2 = css("--s2"), c3 = css("--s3"), c4 = css("--s4"), ink = css("--ink"), down = css("--down");
+  const xmin = cut ? Date.parse(cut) : undefined, xmax = GEN;
+  const anim = REDUCED ? false : { duration: 700, easing: "easeOutCubic" };
+  const tAxes = (yFmt, o = {}) => axes(yFmt, fdate, Object.assign({ time: true, xmin, xmax }, o));
+  const lineOpts = (fmt, titleFmt, yFmt, o) => ({ responsive: true, maintainAspectRatio: false, animation: anim,
+    interaction: { mode: "index", intersect: false }, layout: { padding: { top: 18, right: 6 } },
+    plugins: { legend: { display: false }, tooltip: tooltipOpts(fmt, titleFmt) }, scales: tAxes(yFmt, o) });
+  const dayMs = (d) => Date.parse(d + "T23:59:00Z");
+  const withGlow = (ds, color) => Object.assign(ds, { ckGlow: hexA(color, 0.55) });
+
+  // 1. PnL cumulé net vs options brut (rebasé au début de la période)
+  const daily = (D.performance.daily || []).filter(d => !cut || d.d >= cutD);
+  const base = daily.length && cut ? daily[0] : { net: 0, options: 0 };
+  const net = daily.map(d => ({ x: dayMs(d.d), y: +(d.net - base.net).toFixed(2) }));
+  const opt = daily.map(d => ({ x: dayMs(d.d), y: +(d.options - base.options).toFixed(2) }));
+  panelChart("perf-cum", "Performance", "PnL cumulé : net vs options brut",
+    (cut ? "Rebasé à zéro au début de la période · " : "") + "l'écart entre les courbes = hedge + funding + frais estimés",
+    [{ name: "Net stratégie (après frais)", color: c1 }, { name: "Options seules (brut)", color: c2 }],
+    (box) => {
+      if (daily.length < 2) return null;
+      const cv = canvasIn(box, "PnL réalisé cumulé, net et options seules", { endFmt: (v) => fU(v, { sign: true }), refLines: [{ value: 0, color: css("--axis") }] });
+      const dsNet = withGlow(lineDs("Net stratégie", net, c1, true, 2 * DAY), c1);
+      dsNet.fill = { target: "origin", above: hexA(c1, 0.13), below: hexA(down, 0.12) };
+      CHARTS.push(new Chart(cv, { type: "line",
+        data: { datasets: [dsNet, withGlow(lineDs("Options seules", opt, c2, true, 2 * DAY), c2)] },
+        options: lineOpts((v) => fU(v, { sign: true }), fdate, (v) => fU(v, { compact: true })) }));
+    },
+    { headers: ["Jour", "Options (réalisé)", "Hedge (réalisé)", "Funding", "Frais estimés", "Net"],
+      rows: daily.slice().reverse().map(d => [d.d, fU(d.options), fU(d.hedge), fU(d.funding), fU(d.fees), fU(d.net)]) });
+
+  // 2. Attribution mensuelle (mois continus : un mois sans événement reste visible)
+  const months = monthsFilled((D.performance.monthly || []).filter(m => !cut || m.m >= cut.slice(0, 7)));
+  panelChart("perf-month", "Attribution", "PnL par mois et par source", "Prime des options clôturées vs coût du hedge, funding et frais estimés",
+    [{ name: "Options", color: c1, kind: "rect" }, { name: "Hedge", color: c2, kind: "rect" }, { name: "Funding", color: c3, kind: "rect" },
+     { name: "Frais", color: c4, kind: "rect" }, { name: "Net", color: ink, kind: "diamond" }],
+    (box) => {
+      if (!months.length) return null;
+      const cv = canvasIn(box, "Attribution mensuelle du PnL", { refLines: [{ value: 0, color: css("--axis") }] });
+      const bar = (label, key, color) => ({ type: "bar", label, data: months.map(m => m[key]), backgroundColor: color, borderColor: css("--surface"),
+        borderWidth: 1, maxBarThickness: 24, stack: "pnl", vrpKey: color, order: 2 });
+      CHARTS.push(new Chart(cv, { type: "bar",
+        data: { labels: months.map(m => m.m), datasets: [bar("Options", "options", c1), bar("Hedge", "hedge", c2), bar("Funding", "funding", c3), bar("Frais", "fees", c4),
+          { type: "line", label: "Net", data: months.map(m => m.net), showLine: false, stack: "net", order: 0, pointStyle: "rectRot", pointRadius: 6,
+            pointHoverRadius: 7, pointBackgroundColor: ink, pointBorderColor: css("--surface"), pointBorderWidth: 2, borderColor: ink, backgroundColor: ink }] },
+        options: { responsive: true, maintainAspectRatio: false, animation: anim, interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: false }, tooltip: tooltipOpts((v) => fU(v, { sign: true }), fmonth) },
+          scales: axes((v) => fU(v, { compact: true }), fmonth, { stacked: true, maxX: 12 }) } }));
+    },
+    { headers: ["Mois", "Options", "Hedge", "Funding", "Frais", "Net"], rows: months.map(m => [fmonth(m.m), fU(m.options), fU(m.hedge), fU(m.funding), fU(m.fees), fU(m.net)]) });
+
+  // 3. Capital immobilisé dans le temps
+  const capd = ((D.capital || {}).daily || []).filter(d => !cut || d.d >= cutD);
+  panelChart("cap-chart", "Capital", "Capital immobilisé dans le temps", "Marge initiale Deribit reconstituée jour par jour (book et hedge de chaque clôture)",
+    [{ name: "Marge standard", color: c1 }, { name: "Portfolio margin (est.)", color: c2 }],
+    (box) => {
+      if (capd.length < 2) return null;
+      const cv = canvasIn(box, "Marge initiale standard et portfolio dans le temps", { endFmt: (v) => fU(v, { compact: true }) });
+      CHARTS.push(new Chart(cv, { type: "line",
+        data: { datasets: [withGlow(lineDs("Marge standard", capd.map(d => ({ x: dayMs(d.d), y: d.sm })), c1, true, 2 * DAY), c1),
+                           withGlow(lineDs("Portfolio margin (est.)", capd.map(d => ({ x: dayMs(d.d), y: d.pm })), c2, true, 2 * DAY), c2)] },
+        options: lineOpts((v) => fU(v), fdate, (v) => fU(v, { compact: true })) }));
+    },
+    { headers: ["Jour", "Marge standard", "Portfolio (est.)"], rows: capd.slice().reverse().map(d => [d.d, fU(d.sm), fU(d.pm)]) });
+
+  // 4. Spot + strikes
+  const S = D.series || {}, spot = (S.spot || []).filter(p => !cut || p.t >= cut), strikes = S.strikes || [];
+  panelChart("mk-spot", "Marché", "Spot BTC", strikes.length ? "Pointillés : strikes des positions ouvertes" : "Index Deribit (points 4 h)", null,
+    (box) => {
+      if (spot.length < 2) return null;
+      const vals = spot.map(p => p.v), lo = Math.min(...vals, ...strikes), hi = Math.max(...vals);
+      const cv = canvasIn(box, "Spot BTC", { endFmt: (v) => fU(v), refLines: strikes.map(k => ({ value: k, dash: [4, 4], color: css("--ink-2"), label: "strike " + fN(k, 0) })) });
+      const ds = withGlow(lineDs("Spot", xy(spot, "t", "v"), c1, true), c1);
+      ds.fill = { target: "start", above: hexA(c1, 0.07) };
+      CHARTS.push(new Chart(cv, { type: "line", data: { datasets: [ds] },
+        options: lineOpts((v) => fU(v), fdt, (v) => fU(v, { compact: true }), { min: lo * 0.99, max: hi * 1.01 }) }));
+    },
+    { headers: ["Date", "Spot"], rows: spot.slice().reverse().map(p => [fdt(p.t), fU(p.v)]) });
+
+  // 5. DVOL vs HV (zone teintée = VRP)
+  const vol = (S.vol || []).filter(p => !cut || p.t >= cut);
+  panelChart("mk-vol", "Marché", "Vol implicite vs réalisée", "Zone bleue = DVOL au-dessus de la HV (prime vendable) · orange = sous la HV",
+    [{ name: "DVOL (implicite 30 j)", color: c1 }, { name: "HV blend 10/30 j", color: c2 }],
+    (box) => {
+      if (vol.length < 2) return null;
+      const cv = canvasIn(box, "DVOL et volatilité réalisée", { endFmt: (v) => fN(v, 1) });
+      const g = 13 * 3600 * 1000;   // le cron GitHub prend parfois plusieurs heures de retard
+      const dvol = withGlow(lineDs("DVOL", xy(vol, "t", "dvol"), c1, true, g), c1);
+      dvol.fill = { target: 1, above: hexA(c1, 0.14), below: hexA(c2, 0.16) };
+      CHARTS.push(new Chart(cv, { type: "line",
+        data: { datasets: [dvol, withGlow(lineDs("HV blend", xy(vol, "t", "hv"), c2, true, g), c2)] },
+        options: lineOpts((v) => fN(v, 1) + NB + "%", fdt, (v) => fN(v, 0) + NB + "%") }));
+    },
+    { headers: ["Date", "DVOL", "HV blend"], rows: vol.slice().reverse().map(p => [fdt(p.t), p.dvol != null ? fN(p.dvol, 1) : "—", p.hv != null ? fN(p.hv, 1) : "—"]) });
+
+  // 6. Funding annualisé
+  const fund = (S.funding || []).filter(p => !cut || p.t >= cut);
+  panelChart("mk-fund", "Marché", "Funding du perpétuel", "Annualisé, moyenne glissante 7 j — positif = le hedge short encaisse", null,
+    (box) => {
+      if (fund.length < 2) return null;
+      const cv = canvasIn(box, "Funding annualisé du BTC-PERPETUAL", { endFmt: (v) => fP(v, 1, true), refLines: [{ value: 0, color: css("--axis") }] });
+      const ds = withGlow(lineDs("Funding annualisé", xy(fund, "t", "v"), c1, true), c1);
+      ds.fill = { target: "origin", above: hexA(c1, 0.12), below: hexA(down, 0.12) };
+      CHARTS.push(new Chart(cv, { type: "line", data: { datasets: [ds] },
+        options: lineOpts((v) => fP(v, 2, true), fdt, (v) => fP(v, 0, true)) }));
+    },
+    { headers: ["Date", "Funding annualisé"], rows: fund.slice().reverse().map(p => [fdt(p.t), fP(p.v, 2, true)]) });
+}
+
+// ── Stats de performance ───────────────────────────────────────────────────
+function ring(frac, color) {
+  const r = 15, C = 2 * Math.PI * r, f = Math.max(0, Math.min(1, frac || 0));
+  return svg("svg", { viewBox: "0 0 40 40", class: "ring", "aria-hidden": "true" },
+    svg("circle", { cx: 20, cy: 20, r, class: "ring-t" }),
+    f > 0 ? svg("circle", { cx: 20, cy: 20, r, class: "ring-f", stroke: color, "stroke-dasharray": (C * f).toFixed(2) + " " + C.toFixed(2), transform: "rotate(-90 20 20)" }) : null);
+}
+function renderPerfStats() {
+  const p = D.performance, ev = p.events || {}, br = ev.by_reason || {}, vb = p.vs_backtest || {}, fs = p.totals.fees_split || {};
+  const acc = css("--accent");
+  const stat = (label, value, meta, lead) => h("div", { class: "stat" }, lead || null,
+    h("div", { class: "sx" }, h("div", { class: "k" }, label), h("div", { class: "v" }, value), meta ? h("div", { class: "m" }, meta) : null));
+  const cbr = br.cb_tier1_trim, exp = br.expiration || br.expired, roll = br.roll;
+  const ratio = vb.live_annual != null && vb.bt_annual ? vb.live_annual / vb.bt_annual : null;
+  mount("perf-stats",
+    stat("Prime conservée", p.kept_pct != null ? fP(p.kept_pct, 1) : "—", "de la prime des options, après hedge, funding et frais", ring((p.kept_pct || 0) / 100, acc)),
+    stat("Événements gagnants", ev.n ? fP(ev.wins / ev.n * 100, 0) : "—", (ev.wins || 0) + " / " + (ev.n || 0) + " clôtures (" + (ev.lots || 0) + " lots)", ring(ev.n ? ev.wins / ev.n : 0, acc)),
+    stat("Expirations", exp ? mny(exp.pnl) : "—", exp ? exp.n + " événements" + (roll ? " · roll " + fU(roll.pnl, { sign: true }) : "") : ""),
+    stat("Allègements CB", cbr ? mny(cbr.pnl) : "—", cbr ? cbr.n + " rachats partiels" : "aucun"),
+    stat("Frais estimés", mny(p.totals.fees), "options " + fU(-(fs.options || 0)) + " · perp " + fU(-(fs.perp || 0)) + " · livraison " + fU(-(fs.livraison || 0))),
+    stat("Live vs backtest", ratio != null ? fP(ratio * 100, 0) : "—",
+      vb.live_annual != null ? "live " + fU(vb.live_annual, { sign: true, compact: true }) + "/an · backtest " + fU(vb.bt_annual, { sign: true, compact: true }) + "/an (optimiste)" : ""));
+}
+
+// ── Rendement du cash mobilisé ─────────────────────────────────────────────
+function renderCapYield() {
+  const c = D.capital || {}, sm = c.sm, pm = c.pm;
+  const head = phead("Collatéral", "Rendement du cash mobilisé", "PnL net de frais annualisé, rapporté au capital à déposer (pic de marge initiale + pire drawdown)");
+  if (!sm) { mount("cap-yield", head, h("div", { class: "empty" }, "Pas encore d'historique de positions")); return; }
+  const modes = [["idle", "Cash dormant (USDC, BTC non couvert)", "aucune rémunération des soldes dans la doc Deribit"],
+                 ["tbill", "T-bills tokenisés (USYC / BUIDL)", "taux supposé " + fP((c.tbill_yield || 0) * 100, 1) + " · décote 2 % · accès souvent réservé aux investisseurs qualifiés"],
+                 ["btc_funding", "BTC + short perp (cash-and-carry)", "encaisse le funding réel de la période ; neutre en $"]];
+  const best = Math.max(...modes.flatMap(([k]) => [sm, pm].filter(Boolean).map(s => s.roc_pct[k])));
+  const cell = (s, k) => s ? h("td", { class: "r" + (s.roc_pct[k] === best ? " best-roc" : "") }, h("b", { class: "roc " + tone(s.roc_pct[k]) }, fP(s.roc_pct[k], 1)),
+    h("div", { class: "sub2" }, "carry +" + fU(s.carry_usd[k]))) : h("td", { class: "r muted" }, "—");
+  mount("cap-yield", head,
+    h("div", { class: "tscroll" }, h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Collatéral"), h("th", { class: "r" }, "Marge std"), h("th", { class: "r" }, "Portfolio (est.)"))),
+      h("tbody", {},
+        h("tr", {}, h("td", { class: "muted" }, "Capital à déposer"), h("td", { class: "r" }, fU(sm.capital_usd)), h("td", { class: "r" }, pm ? fU(pm.capital_usd) : "—")),
+        modes.map(([k, lab, note]) => h("tr", {}, h("td", { class: "lab" }, lab, h("div", { class: "sub2" }, note)), cell(sm, k), cell(pm, k)))))),
+    h("div", { class: "note" }, "Marge standard (défaut Deribit) : chaque position est margée séparément, sans netting — le short perp du hedge ",
+      "s'ajoute à la marge des puts. La portfolio margin stresse le book en bloc (±14 % × chocs de vol) et reconnaît le hedge ; ",
+      "elle est sélectionnable dans le compte. Autres collatéraux acceptés : stETH (décote 7,5 %, exposition ETH à couvrir), USDe (5 %). ",
+      "Estimation PM à confirmer via l'API privée (simulate_portfolio) une fois une clé en place."));
+}
+
+// ── Décisions + paramètres live ────────────────────────────────────────────
+function renderDecisions() {
+  const d = D.decisions, P = D.meta.params || {};
+  const kids = [phead("Routine de backtests", "Décisions en attente", "Routine du " + fdate(d.generated_at) + " · " + d.n_sweeps + " sweeps, 5 régimes",
+    h("a", { class: "lk", href: "backtest.html" }, "Détail →"))];
+  if (d.recommendations.length) {
+    kids.push(...d.recommendations.map(r => h("div", { class: "reco" },
+      h("div", { class: "reco-h" }, badge("info", "robuste " + r.wins + "/" + r.n), h("b", {}, r.param)),
+      h("div", { class: "reco-v" }, "actuel", h("span", { class: "chipv" }, frText(r.current)), h("span", { class: "arrow", "aria-hidden": "true" }, "→"),
+        "proposé", h("span", { class: "chipv prop" }, frText(r.proposed)),
+        h("span", {}, "· gain Calmar moyen " + (r.gain != null ? "+" + fN(r.gain, 2) : "—"))))));
+    kids.push(h("div", { class: "note" }, "À appliquer à la main dans greeks_hedge.py (+ miroir backtest.py) — le test de synchro vérifie la cohérence."));
+  } else {
+    kids.push(h("div", { class: "note" }, "Aucune : la configuration actuelle reste la meilleure sur l'ensemble des régimes."));
+  }
+  if (d.inert && d.inert.length) kids.push(h("div", { class: "inert" },
+    "Sans effet dans l'historique simulé (garde-fous qui ne se déclenchent qu'en conditions extrêmes, ou mal vus par le backtest) : " + d.inert.join(" · ")));
+  const prm = (k, v) => h("div", { class: "param" }, h("div", { class: "pk" }, k), h("div", { class: "pv" }, v));
+  kids.push(h("h4", { class: "mini" }, "Paramètres live"));
+  kids.push(h("div", { class: "params" },
+    prm("Seuil score", fN(P.ENTRY_SCORE_MIN, 2)), prm("Porte DVOL", "≥ " + fN(P.DVOL_MIN, 0)), prm("Cap", fN(P.MAX_PORTFOLIO_BTC, 1) + NB + "BTC"),
+    prm("Poids VRP / yield / skew", [P.SCORE_W_IVHV, P.SCORE_W_YIELD, P.SCORE_W_SKEW].map(x => fN(x, 2)).join(" / ")),
+    prm("Convexité sizing", fN(P.SIZE_CONVEXITY, 1)), prm("Plancher rang", fN(P.RANK_FLOOR, 1)), prm("Prime min", fU(P.MIN_PREMIUM_USD)),
+    prm("Allègement CB", MINUS + fN(P.CB_T1_MOVE_1D_PCT, 0) + " %/1 j · " + MINUS + fN(P.CB_T1_MOVE_3D_PCT, 0) + " %/3 j"),
+    prm("Garde après allègement", fN((P.CB_T1_KEEP || 0) * 100, 0) + NB + "% · reprise < " + fN(P.CB_T1_RESTORE_MOVE_PCT, 0) + NB + "%"),
+    prm("Fermeture CB", MINUS + fN(P.CB_MOVE_3D_PCT, 0) + " %/3 j · DVOL +" + fN(P.CB_DVOL_3D_PTS, 0))));
+  mount("decisions", kids);
+}
+
+// ── Journal ────────────────────────────────────────────────────────────────
+const REASON = { expiration: "Expiration", expired: "Expiration", cb_tier1_trim: "Allègement CB", circuit_breaker: "Fermeture CB", roll: "Roll" };
+let journalTab = "closed";
+function renderJournal() {
+  const j = D.journal;
+  const tabs = h("div", { class: "seg", role: "group", "aria-label": "Vue du journal" },
+    [["closed", "Clôtures"], ["hedge", "Hedge"]].map(([k, l]) => h("button", { type: "button", "aria-pressed": String(journalTab === k),
+      onclick: () => { journalTab = k; renderJournal(); } }, l)));
+  let body;
+  if (journalTab === "closed") {
+    body = j.closed.length ? h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, ["Date", "Instrument", "Raison", "BTC", "PnL"].map((x, k) => h("th", { class: k >= 3 ? "r" : "" }, x)))),
+      h("tbody", {}, j.closed.map(c => h("tr", {},
+        h("td", {}, fdt(c.ts)), h("td", {}, h("span", { class: "instr" }, c.instrument), c.lots > 1 ? h("span", { class: "tag" }, c.lots + " lots") : null),
+        h("td", {}, REASON[c.reason] || c.reason), h("td", { class: "r" }, fN(c.contracts, 3)), h("td", { class: "r" }, mny(c.pnl, { d: 2 }))))))
+      : h("div", { class: "empty" }, "Aucune clôture sur 60 jours");
+  } else {
+    body = j.hedge.length ? h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, ["Date", "Sens", "Qté", "Prix", "Hedge après", "Réalisé"].map((x, k) => h("th", { class: k >= 2 ? "r" : "" }, x)))),
+      h("tbody", {}, j.hedge.map(e => h("tr", {},
+        h("td", {}, fdt(e.ts)), h("td", {}, e.side === "BUY" ? "▲ Achat" : "▼ Vente"), h("td", { class: "r" }, fN(Math.abs(e.qty), 4)),
+        h("td", { class: "r" }, fU(e.price)), h("td", { class: "r" }, fS(e.qty_after, 4)),
+        h("td", { class: "r" }, e.realized != null ? mny(e.realized, { d: 2 }) : "—")))))
+      : h("div", { class: "empty" }, "Aucun rebalancement");
+  }
+  mount("journal", phead("Journal", "Clôtures & rebalancements", "60 derniers jours · lots d'un même événement regroupés", tabs),
+    h("div", { class: "tscroll jscroll" }, body));
+}
+
+// ── Réconciliation (mode réel) ─────────────────────────────────────────────
+function renderReconcile() {
+  const r = D.reconcile;
+  if (!r) { mount("reconcile"); return; }
+  const ok = !r.n_mismatched && r.hedge && r.hedge.ok;
+  mount("reconcile", h("section", { class: "panel mt" },
+    phead("Réconciliation", "Deribit (" + r.env + ") : bot vs compte réel", "Contrôle du " + frText(r.generated_at),
+      badge(ok ? "good" : "critical", ok ? "synchro" : (r.n_mismatched || 0) + " écart(s)")),
+    h("div", { class: "tscroll" }, h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, ["Instrument", "Bot", "Réel", "Écart", "Statut"].map((x, k) => h("th", { class: k && k < 4 ? "r" : "" }, x)))),
+      h("tbody", {}, (r.positions || []).map(p => h("tr", {}, h("td", {}, h("span", { class: "instr" }, p.instrument)), h("td", { class: "r" }, fN(p.internal_qty, 4)),
+        h("td", { class: "r" }, fN(p.real_qty, 4)), h("td", { class: "r" }, fS(p.diff, 4)),
+        h("td", {}, badge(p.status === "ok" ? "good" : "critical", p.status)))))))));
+}
+
+function renderFoot() {
+  const m = D.meta;
+  mount("foot",
+    h("div", {}, h("div", {}, "Généré " + fdt(m.generated_at) + TZ + " · mode " + m.mode + " — aucun ordre réel"),
+      h("div", {}, "Sources : positions.json · scan_entry.json · pnl_history.json · funding_history.jsonl · backtest_routine.json")),
+    h("div", { class: "fl" },
+      h("a", { class: "lk", href: "index.html" }, "Dashboard v1"), h("a", { class: "lk", href: "v2.html" }, "Dashboard v2"),
+      h("a", { class: "lk", href: "backtest.html" }, "Backtests"), h("a", { class: "lk", href: m.repo + "/actions", target: "_blank", rel: "noopener" }, "GitHub Actions ↗"),
+      h("a", { class: "lk", href: m.repo, target: "_blank", rel: "noopener" }, "Dépôt ↗")));
+}
+
+// ── Apparition des cartes + armement des jauges + section active ──────────
+function reveal() {
+  const els = Array.from(document.querySelectorAll(".ann, .hero, .tile, .panel, .stat"));
+  const arm = (el) => { el.classList.add("in"); el.querySelectorAll("[data-arm]").forEach(g => { if (g._arm) { g._arm(); g._arm = null; } }); };
+  if (REDUCED || !("IntersectionObserver" in window)) { els.forEach(arm); return; }
+  els.forEach(el => el.classList.add("rv"));
+  const io = new IntersectionObserver((ents) => {
+    let k = 0;
+    ents.forEach(e => {
+      if (!e.isIntersecting) return;
+      e.target.style.transitionDelay = (k++ * 60) + "ms";
+      const tgt = e.target;
+      requestAnimationFrame(() => arm(tgt));
+      io.unobserve(tgt);
+    });
+  }, { rootMargin: "0px 0px -4% 0px", threshold: 0.02 });
+  els.forEach(el => io.observe(el));
+}
+function scrollspy() {
+  if (!("IntersectionObserver" in window)) return;
+  const links = {};
+  document.querySelectorAll(".anchors a").forEach(a => { links[a.getAttribute("data-sec")] = a; });
+  const io = new IntersectionObserver((ents) => {
+    ents.forEach(e => {
+      if (!e.isIntersecting) return;
+      Object.values(links).forEach(a => a.classList.remove("on"));
+      const a = links[e.target.id];
+      if (a) { a.classList.add("on"); if (a.scrollIntoView && a.parentNode.scrollWidth > a.parentNode.clientWidth) a.parentNode.scrollLeft = a.offsetLeft - 24; }
+    });
+  }, { rootMargin: "-38% 0px -58% 0px" });
+  SECTIONS.forEach(([id]) => { const el = document.getElementById(id); if (el) io.observe(el); });
+}
+
+run(renderBar, "bar"); run(renderVerdict, "verdict"); run(renderHero, "hero"); run(renderKpis, "kpis");
+run(renderRisk, "g-book"); run(renderBook, "book"); run(renderStress, "stress"); run(renderCapNow, "capnow");
+run(renderEntry, "entry"); run(renderBest, "best"); run(renderScanner, "scanner");
+run(renderRange, "range"); run(renderPerfStats, "perf-stats"); run(renderCapYield, "cap-yield");
+run(renderDecisions, "decisions"); run(renderJournal, "journal"); run(renderReconcile, "reconcile"); run(renderFoot, "foot");
+run(renderCharts);   // en dernier : les rangées de la grille ont leur hauteur finale quand Chart.js mesure les conteneurs
+run(reveal); run(scrollspy);
+})();
+</script>
+</body>
+</html>

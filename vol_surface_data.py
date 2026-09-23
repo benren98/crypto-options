@@ -11,6 +11,7 @@ Interpolation : échéance la plus proche en DTE, puis interpolation linéaire d
 l'IV en moneyness (strike/spot) entre les strikes enregistrés (clampée aux bords).
 """
 import json, os
+import numpy as np
 from datetime import date as _date
 
 LOG_FILE = "vol_surface.jsonl"
@@ -142,3 +143,26 @@ if __name__ == "__main__":
         for mny in (0.80, 0.85, 0.90, 0.95, 1.0):
             r = skew_ratio(d, 7, mny)
             print(f"  mny {mny:.2f} → IV {iv_for(d, 7, mny)}  (skew ×{round(r,3) if r else None})")
+
+
+_CURVES = {}
+
+def iv_curve(d, dte, tol=None):
+    """Smile enregistré (moneyness triées, mark IV %) de l'échéance la plus proche de `dte`, si
+    elle est à moins de `tol` jours (défaut : max(2 j, 35 % du DTE)) — sinon None, pour ne pas
+    appliquer à une option à 1,5 j le smile d'une échéance à 4 j. Mémoïsé (vectorisable np.interp)."""
+    iso = _to_iso(d)
+    snap = _load().get(iso)
+    if snap is None:
+        return None
+    exp = _expiry_for(snap, dte)
+    if exp is None:
+        return None
+    if abs(exp.get("dte", 1e9) - dte) > (max(2.0, 0.35 * dte) if tol is None else tol):
+        return None
+    key = (iso, exp.get("expiry"))
+    c = _CURVES.get(key)
+    if c is None:
+        pts = sorted((s["moneyness"], s["mark_iv"]) for s in exp["strikes"] if s.get("mark_iv") is not None)
+        c = _CURVES[key] = (np.array([x for x, _ in pts]), np.array([y for _, y in pts])) if pts else False
+    return c or None
