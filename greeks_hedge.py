@@ -49,16 +49,15 @@ HEDGE_IV_REF         = 70.0      # IV de référence BTC "normale" — calibre l
 # Plus la vol est élevée → bandes plus larges → moins de rebalancements inutiles
 # Politique de hedge (miroir backtest.py, sweepée par la routine) — valeurs = comportement historique
 HEDGE_THRESHOLD_MODE = "absolute"  # "absolute" : bande en BTC fixe · "notional" : bande × Σ contrats
-HEDGE_RATIO          = 0.7       # fraction du delta options couverte — 1.0 → 0.7 le 2026-09-23 :
-                                 # routine ✅ robuste (3/5 régimes) et gagnant dans les 5 folds en test
-                                 # direct (Calmar 3.98 → 4.71, rendement/capital 17.8 → 22.4 %/an,
-                                 # coût du hedge −18.6 k → −7.4 k$ sur 4 ans ; MaxDD 2.6 → 2.8 k$)
+HEDGE_RATIO          = 1.0       # fraction du delta options couverte — 0.7 → 1.0 le 2026-09-24 : sur le
+                                 # backtest fidèle (config B, coûts inclus) le hedge complet réduit le
+                                 # MaxDD sans coût de PnL (100 % · 4 h : Calmar 11.3 vs 5.7 à 70 % · 1 h,
+                                 # meilleur pire-fold ; tient avec perp 7 bp et rachats CB +10 pts)
 HEDGE_FLATTEN_DELTA  = 0.0       # si |delta options| < X BTC → hedge remis à plat (0 = off)
-HEDGE_EVERY_H        = 1         # au plus un rebalancement « normal » toutes les N heures (1 = chaque
-                                 # run). Le scan, les entrées et le circuit breaker tournent à chaque
-                                 # run quelle que soit cette cadence. Politique 24 h + rehedge si le
-                                 # book change + bande d'urgence : évaluée par la routine (sweep
-                                 # « Hedge — politique »), à n'adopter que si elle est ✅ robuste.
+HEDGE_EVERY_H        = 4         # au plus un rebalancement « normal » toutes les N heures (1 = chaque
+                                 # run) ; 1 → 4 le 2026-09-24. Le scan, les entrées et le circuit breaker
+                                 # tournent à chaque run, et tout changement du book (entrée, expiration,
+                                 # roll, CB) rehedge immédiatement (HEDGE_CADENCE_EXEMPT).
 HEDGE_CADENCE_EXEMPT = True      # après un changement du book (entrée, expiration, roll, CB), la
                                  # cadence est ignorée : rehedge immédiat si le seuil est dépassé
 HEDGE_URGENT_MULT    = 0.0       # bande d'urgence (cadence > 1 h seulement) : si la dérive dépasse
@@ -105,10 +104,13 @@ DVOL_MIN                 = 35.0  # porte d'entrée : pas d'entrée si DVOL < DVO
 
 # Circuit breaker — palier dur (fermeture totale), calibré par backtest 2023-2026
 CB_MOVE_3D_PCT           = 10.0  # ferme tout si move spot 3j < −10% (baisse seule — un pump est inoffensif pour des short puts)
-CB_DVOL_3D_PTS           = 12.0  # ou si DVOL a pris +12 pts en 3j
+CB_DVOL_3D_PTS           = 100.0 # jambe DVOL de la fermeture désactivée le 2026-09-24 (était +12 pts en 3 j :
+                                 # déclenchait surtout pendant des hausses, routine ✅ 3/5)
 CB_REENTRY_MOVE_PCT      = 4.0   # re-entrée (depuis fermeture) : |move 3j| < 4% ET HV5 < HV10
 # Circuit breaker — palier d'allègement gradué (backtest 4 ans : DD −20% BTC / −50% ETH à PnL ~neutre)
-GRADUATED_CB             = True  # active le palier intermédiaire avant la fermeture totale
+GRADUATED_CB             = False # palier d'allègement désactivé le 2026-09-24 (routine ✅ 5/5) : racheter
+                                 # 70 % des puts en stress coûte ~5 pts de vol au-dessus du smile et
+                                 # verrouille la perte ; seule la fermeture à −10 % en 3 j reste active
 CB_T1_MOVE_1D_PCT        = 5.0   # allège le book si chute spot >5% en 1 jour (crisis-alpha)
 CB_T1_MOVE_3D_PCT        = 6.0   # ou >6% en 3 jours
 CB_T1_KEEP               = 0.30  # fraction du book conservée à l'allègement (on rachète 70%)
@@ -123,7 +125,8 @@ CB_CLOSE_ACTION          = "buyback"   # palier dur (fermeture)
 CB_T1_HEDGE_RATIO        = 1.0         # ratio de hedge en mode "hedge" pendant l'alerte
 ENTRY_IV_HV_MIN          = 1.10  # ratio IV/HV minimum pour entrée opportuniste
 ENTRY_SCORE_REENTRY_BOOST= 0.05  # amélioration score nécessaire pour re-entrer un instrument déjà tenu
-DELTA_MIN_SPACING        = 0.08  # espacement min |delta| entre positions sur la même expiry
+DELTA_MIN_SPACING        = 0.12  # espacement min |delta| entre positions sur la même expiry (0.08 → 0.12
+                                 # le 2026-09-24, routine ✅ 5/5)
 GAMMA_PENALTY_START      = 5.0   # gamma_pts en dessous duquel aucune pénalité
 GAMMA_SCORE_CAP          = 10.0  # gamma_pts au-delà duquel le score est réduit à 0
 RANK_FLOOR               = 0.7   # plancher du multiplicateur de rang DVOL (sizing) — 0.5→0.7
@@ -132,7 +135,7 @@ RANK_FLOOR               = 0.7   # plancher du multiplicateur de rang DVOL (sizi
                                   # pénalité linéaire entre GAMMA_PENALTY_START et GAMMA_SCORE_CAP
                                   # ex: gamma=5 → ×1.00 ; gamma=7.5 → ×0.50 ; gamma≥10 → éliminé
 SCAN_TTE_MIN       = 1.0  # TTE min pour le scan (roll + opportuniste)
-SCAN_TTE_MAX       = 30.0 # TTE max pour le scan
+SCAN_TTE_MAX       = 14.0 # TTE max pour le scan (30 → 14 j le 2026-09-24 : ≤ 14 j bat 30 j dans les 5 folds)
 MAX_ENTRIES_PER_DAY = 0   # nouvelles positions max par jour UTC (0 = illimité ; le process tourne
                           # toutes les heures et peut sinon empiler plusieurs entrées le même jour)
 HV_W5              = 0.0  # pondération de l'HV de référence du score (5 j / 10 j / 30 j)

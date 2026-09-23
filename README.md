@@ -380,6 +380,12 @@ Production config, BTC, 4 years:
 | + real timestamps: daily close at 00:00 UTC (the perp 1D candle closes at 08:00 — 8 h of look-ahead), settlement at 08:00, hourly DVOL for the CB DVOL leg, the entry gate and pricing | 36,844 $ | 3,203 $ | 2.83 | 68 % |
 | + CB buybacks at the real ask: `BUYBACK_IV_PREMIUM` = +5 vol pts above the smile reproduces to the dollar the 29 real buybacks of June 18 and 24, 2026 | **15,282 $** | **5,802 $** | **0.65** | 46 % |
 | Routine recommendations applied together (lightening off, keep 70 %, DVOL leg off, delta spacing 0.12) | 41,541 $ | 2,274 $ | 4.49 | — |
+| + expiries ≤ 14 days (config "B") | 63,260 $ | 2,720 $ | 5.72 | — |
+| + hedge 100 % with a 4 h cadence and immediate rehedge on any book change — **adopted in live on 2026-09-24** | **66,286 $** | **1,439 $** | **11.32** | — |
+
+Adopted config, robustness to costs (Calmar): perp 7 bp → 10.76 · CB buybacks +10 vol pts → 8.71 ·
+both → 7.79 (vs 5.30 / 3.93 / 3.67 for config B with the former 70 % · 1 h hedge). Transaction
+costs over 4 years: option fees ~12 k$, spread and CB buyback premium ~13 k$, perp fees ~3 k$.
 
 **The circuit breaker is the main issue.** Buying back short puts in a sell-off pays the
 volatility at its peak and locks the loss: with a realistic buyback cost the graduated CB costs

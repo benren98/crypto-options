@@ -46,11 +46,11 @@ SCORE_W_IVHV      = 0.30
 SCORE_W_YIELD     = 0.25
 SCORE_W_SKEW      = 0.45
 ENTRY_SCORE_REENTRY_BOOST = 0.05  # marge au-dessus du score d'entrée pour recharger un instrument tenu
-DELTA_MIN_SPACING         = 0.08  # même échéance ET |delta − delta_tenu| < seuil → traité comme une ré-entrée
+DELTA_MIN_SPACING         = 0.12  # même échéance ET |delta − delta_tenu| < seuil → traité comme une ré-entrée
                                   # (aligné sur le live depuis que la ré-entrée compare les dates d'échéance)
 SCAN_DELTA_MIN            = -0.30 # plafond d'exposition : pas plus proche de l'ATM que −0.30 (miroir live)
 SCAN_TTE_MIN              = 1.0   # échéances scannées : TTE réel entre MIN et MAX jours (miroir live)
-SCAN_TTE_MAX              = 30.0
+SCAN_TTE_MAX              = 14.0
 MAX_ENTRIES_PER_DAY       = 0     # nouvelles positions max par jour UTC (0 = illimité, miroir live)
 ROLL_TRIGGER              = 1.0   # roll si TTE ≤ ROLL_TRIGGER j ET gamma > GAMMA_ROLL_THRESHOLD (miroir live)
 GAMMA_ROLL_THRESHOLD      = 6.0
@@ -83,9 +83,9 @@ FEE_MULT          = 1.0      # multiplicateur de stress (routine : hypothèse te
 HEDGE_THRESHOLD_BASE_PCT = 5.0        # bande = BASE × √(IV_ref/HEDGE_IV_REF), bornée [2 ; 8] %
 HEDGE_IV_REF             = 70.0       # IV_ref = IV max des positions (comme le live)
 HEDGE_THRESHOLD_MODE     = "absolute" # "absolute" : bande en BTC fixe (live) · "notional" : × Σ contrats
-HEDGE_RATIO              = 0.7        # fraction du delta couverte — 0.7 depuis le 2026-09-23 (miroir live)
+HEDGE_RATIO              = 1.0        # fraction du delta couverte — 1.0 depuis le 2026-09-24 (miroir live)
 HEDGE_FLATTEN_DELTA      = 0.0        # si |delta options| < X BTC → hedge remis à plat (0 = off)
-HEDGE_EVERY_H            = 1          # rebalance au plus toutes les N heures (1 = live actuel, 24 = 1×/jour)
+HEDGE_EVERY_H            = 4          # rebalance « normal » au plus toutes les N heures (4 = live depuis le 2026-09-24)
 HEDGE_CADENCE_EXEMPT     = True       # après un changement du book (entrée, expiration, allègement, fermeture)
                                       # le premier contrôle ignore la cadence (rehedge immédiat si seuil dépassé)
 HEDGE_URGENT_MULT        = 0.0        # cadence > 1 h : rehedge immédiat si dérive > MULT × bande (0 = off)
@@ -452,10 +452,10 @@ def rank_mult_bell(iv_rank: float) -> float:
 
 # ── Circuit breaker (aligné sur greeks_hedge.py live : 10% / +12pts, baisse seule) ─
 CB_MOVE_3D_PCT   = 10.0   # palier dur : ferme tout si move spot 3j < −10% (baisse seule)
-CB_DVOL_3D_PTS   = 12.0   # ou DVOL +12 pts en 3j
+CB_DVOL_3D_PTS   = 100.0  # jambe DVOL désactivée (miroir live, 2026-09-24)
 CB_REENTRY_MOVE  = 4.0    # re-entrée (depuis fermeture) : |move 3j| < 4% et HV5 < HV10
 # Palier d'allègement gradué (miroir greeks_hedge : move1=5 OU move3=6 → trim à 30%, reprise si move3<3)
-GRADUATED_CB     = True
+GRADUATED_CB     = False
 CB_T1_MOVE_1D    = 5.0
 CB_T1_MOVE_3D    = 6.0
 CB_T1_KEEP       = 0.30
