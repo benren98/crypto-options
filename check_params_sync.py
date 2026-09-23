@@ -46,6 +46,7 @@ MIRROR = {
     "HEDGE_RATIO":               "HEDGE_RATIO",
     "HEDGE_FLATTEN_DELTA":       "HEDGE_FLATTEN_DELTA",
     "HEDGE_EVERY_H":             "HEDGE_EVERY_H",
+    "HEDGE_CADENCE_EXEMPT":      "HEDGE_CADENCE_EXEMPT",
     # Frais Deribit
     "FEE_OPTION_RATE":           "FEE_OPTION_RATE",
     "FEE_OPTION_CAP":            "FEE_OPTION_CAP",

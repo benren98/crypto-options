@@ -69,9 +69,11 @@ FEE_MULT          = 1.0      # multiplicateur de stress (routine : hypothèse te
 HEDGE_THRESHOLD_BASE_PCT = 5.0        # bande = BASE × √(IV_ref/HEDGE_IV_REF), bornée [2 ; 8] %
 HEDGE_IV_REF             = 70.0       # IV_ref = IV max des positions (comme le live)
 HEDGE_THRESHOLD_MODE     = "absolute" # "absolute" : bande en BTC fixe (live) · "notional" : × Σ contrats
-HEDGE_RATIO              = 1.0        # fraction du delta couverte (1 = hedge complet)
+HEDGE_RATIO              = 0.7        # fraction du delta couverte — 0.7 depuis le 2026-09-23 (miroir live)
 HEDGE_FLATTEN_DELTA      = 0.0        # si |delta options| < X BTC → hedge remis à plat (0 = off)
 HEDGE_EVERY_H            = 1          # rebalance au plus toutes les N heures (1 = live actuel, 24 = 1×/jour)
+HEDGE_CADENCE_EXEMPT     = True       # après un changement du book (entrée, expiration, allègement, fermeture)
+                                      # le premier contrôle ignore la cadence (rehedge immédiat si seuil dépassé)
 HEDGE_INTRADAY           = True       # hedge rejoué heure par heure (prix index horaires de funding_history)
 
 # ── Capital immobilisé (margin.py) ────────────────────────────────────────────
@@ -390,17 +392,22 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
         hedge_qty = target
         n_rebal += 1
 
+    book_changed = False   # le book a changé depuis le dernier contrôle de hedge
+
     def hedge_step(net_delta, S, ivs, contracts, force_cadence=False):
         """Politique de hedge (miroir live) : cible = −delta × ratio, mise à plat du résiduel,
-        bande IV-dépendante, cadence minimale entre deux rebalancements."""
-        nonlocal last_rebal_h
+        bande IV-dépendante, cadence minimale entre deux rebalancements (sauf juste après un
+        changement du book si HEDGE_CADENCE_EXEMPT)."""
+        nonlocal last_rebal_h, book_changed
         target = -net_delta * HEDGE_RATIO
         flatten = HEDGE_FLATTEN_DELTA > 0 and abs(net_delta) < HEDGE_FLATTEN_DELTA
         if flatten:
             target = 0.0
         thr = hedge_threshold_btc(max(ivs) if ivs else HEDGE_IV_REF, contracts)
         due = abs(target - hedge_qty) > thr or (flatten and abs(hedge_qty) > 1e-9)
-        if due and (force_cadence or hour_idx - last_rebal_h >= HEDGE_EVERY_H):
+        exempt = HEDGE_CADENCE_EXEMPT and book_changed
+        book_changed = False
+        if due and (force_cadence or exempt or hour_idx - last_rebal_h >= HEDGE_EVERY_H):
             rebalance(target, S)
             last_rebal_h = hour_idx
 
@@ -476,6 +483,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                     p['entry_premium_usd'] *= CB_T1_KEEP
                     p['contracts'] *= CB_T1_KEEP
                 cb_reduced = True
+                book_changed = True
             elif cb_reduced and move_3d < CB_T1_RESTORE:
                 cb_reduced = False
                 t1_cooldown = int(CB_T1_COOLDOWN_D)   # anti-whipsaw : pas de nouveau trim pendant N jours
@@ -500,6 +508,8 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                     n_expired_itm += 1
             else:
                 still.append(p)
+        if len(still) != len(positions):
+            book_changed = True
         positions = still
 
         # ── 2. Mark-to-model + delta net ──────────────────────────────────────
@@ -605,6 +615,7 @@ def run(years: float, always_one: bool = False, rank_mult=rank_mult_linear,
                         'delta_now': best['delta'], 'iv_now': best['iv'], 'mark_usd': best['price'],
                     })
                     n_trades += 1
+                    book_changed = True
 
         # ── 5. Equity = cash + prime des positions ouvertes − valeur de rachat
         open_prem = sum(p['entry_premium_usd'] for p in positions)

@@ -763,12 +763,13 @@ def main():
     ap.add_argument("--data-dir", default=str(HERE))
     ap.add_argument("--out", default=str(HERE / "docs" / "v2.html"))
     ap.add_argument("--now", default=None, help="horodatage de référence (tests)")
+    ap.add_argument("--template", default=str(TEMPLATE), help="template HTML à rendre (variantes de design)")
     args = ap.parse_args()
     now = parse_ts(args.now) if args.now else datetime.now(timezone.utc)
     model = Model(Path(args.data_dir), now).build()
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(model, TEMPLATE), encoding="utf-8")
+    out.write_text(render(model, Path(args.template)), encoding="utf-8")
     v = model["verdict"]
     print(f"{out.name} généré ({out.stat().st_size / 1024:.0f} KB) — {v['headline']} · {v['book']}")
 

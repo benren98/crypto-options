@@ -49,9 +49,16 @@ HEDGE_IV_REF         = 70.0      # IV de référence BTC "normale" — calibre l
 # Plus la vol est élevée → bandes plus larges → moins de rebalancements inutiles
 # Politique de hedge (miroir backtest.py, sweepée par la routine) — valeurs = comportement historique
 HEDGE_THRESHOLD_MODE = "absolute"  # "absolute" : bande en BTC fixe · "notional" : bande × Σ contrats
-HEDGE_RATIO          = 1.0       # fraction du delta options couverte (1 = hedge complet)
+HEDGE_RATIO          = 0.7       # fraction du delta options couverte — 1.0 → 0.7 le 2026-09-23 :
+                                 # routine ✅ robuste (3/5 régimes) et gagnant dans les 5 folds en test
+                                 # direct (Calmar 3.98 → 4.71, rendement/capital 17.8 → 22.4 %/an,
+                                 # coût du hedge −18.6 k → −7.4 k$ sur 4 ans ; MaxDD 2.6 → 2.8 k$)
 HEDGE_FLATTEN_DELTA  = 0.0       # si |delta options| < X BTC → hedge remis à plat (0 = off)
 HEDGE_EVERY_H        = 1         # au plus un rebalancement toutes les N heures (1 = chaque run)
+                                 # 24 h testé le 2026-09-23 : ne se cumule pas avec le ratio 70 %
+                                 # (Calmar retombe à 3.96, MaxDD +30 %) → gardé à 1 h
+HEDGE_CADENCE_EXEMPT = True      # après un changement du book (entrée, expiration, roll, CB), la
+                                 # cadence est ignorée : rehedge immédiat si le seuil est dépassé
 
 # Frais Deribit — grille Standard vérifiée le 2026-09-23 (support.deribit.com, page Fees).
 # Le bot est en paper : ces frais ne sont pas débités, ils servent au backtest (miroir) et
@@ -1009,7 +1016,8 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     print(f"  DVOL 3j : {cb['dvol_3d_chg']:+} pts  (déclenche si > +{CB_DVOL_3D_PTS} pts)"
           if cb["dvol_3d_chg"] is not None else "  DVOL 3j : n/a")
     print(f"  HV5/HV10: {cb['hv_5d']}% / {ctx['hv_10d']}%  |  Etat : {'RISK-OFF' if state.get('risk_off') else 'normal'}")
-    if apply_circuit_breaker(state, spot, cb):
+    cb_changed = apply_circuit_breaker(state, spot, cb)
+    if cb_changed:
         save_positions(state)
     risk_off = bool(state.get("risk_off", False))
 
@@ -1190,7 +1198,10 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
 
     # Cadence minimale entre deux rebalancements (HEDGE_EVERY_H, 1 = chaque run).
     # Le circuit breaker, lui, remet le hedge à plat sans attendre (apply_circuit_breaker).
-    if hedge["needs_rebalance"] and HEDGE_EVERY_H > 1:
+    # Exception : si le book a changé ce run (entrée, expiration, roll, allègement), on rehedge
+    # tout de suite (HEDGE_CADENCE_EXEMPT) — la cadence ne vise que la dérive normale du delta.
+    book_changed = bool(expired or rolled or _entries_this_run or cb_changed)
+    if hedge["needs_rebalance"] and HEDGE_EVERY_H > 1 and not (HEDGE_CADENCE_EXEMPT and book_changed):
         _hh = hedge_data.get("history") or []
         try:
             _last = pd.to_datetime(_hh[-1]["ts"].replace(" UTC", ""), utc=True) if _hh else None

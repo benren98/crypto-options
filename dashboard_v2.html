@@ -474,19 +474,21 @@ function renderScanner() {
       segs.map((v, i) => h("span", { style: "width:" + (v / scale * 100).toFixed(1) + "%;background:" + c[i] })),
       h("span", { class: "thr", style: "left:" + (thr / scale * 100).toFixed(1) + "%" }));
     const [lvl, txt] = STATUS[r.status] || ["idle", r.status];
+    // Score en premier : c'est la colonne qu'on lit d'abord (écart au seuil visible d'un coup d'œil)
     return h("tr", {},
+      h("td", { class: "r num" }, h("b", { class: r.score >= thr ? "pos" : "", style: "font-size:15px" }, num(r.score, 3)),
+        h("div", { class: "muted small" }, (r.score >= thr ? "+" : MINUS) + num(Math.abs(r.score - thr), 3) + " vs seuil")),
+      h("td", {}, bar),
       h("td", {}, h("span", { class: "instr" }, r.instrument)),
       h("td", {}, badge(lvl, txt), r.held_score != null ? h("span", { class: "muted small" }, "  tenu à " + num(r.held_score, 3)) : null),
       h("td", { class: "r num" }, num(r.tte_days, 1) + " j"),
       h("td", { class: "r num" }, pct(r.dist_pct, 1, true)),
       h("td", { class: "r num" }, usd(r.premium_usd)),
       h("td", { class: "r num" }, num(r.iv_hv, 2) + "×"),
-      h("td", { class: "r num" }, sgn(r.skew_pct, 1, " %")),
-      h("td", {}, bar),
-      h("td", { class: "r num" }, h("b", { class: r.score >= thr ? "pos" : "" }, num(r.score, 3))));
+      h("td", { class: "r num" }, sgn(r.skew_pct, 1, " %")));
   }));
   mount("scanner", head, lg, h("div", { class: "tscroll" }, h("table", { class: "t" },
-    h("thead", {}, h("tr", {}, ["Instrument", "Statut", "TTE", "Distance", "Prime", "IV/HV", "Skew", "Contributions", "Score"].map((x, k) => h("th", { class: [2, 3, 4, 5, 6, 8].includes(k) ? "r" : "" }, x)))), tb)));
+    h("thead", {}, h("tr", {}, ["Score", "Contributions", "Instrument", "Statut", "TTE", "Distance", "Prime", "IV/HV", "Skew"].map((x, k) => h("th", { class: [0, 4, 5, 6, 7, 8].includes(k) ? "r" : "" }, x)))), tb)));
 }
 
 // ── Décisions + paramètres ─────────────────────────────────────────────────
