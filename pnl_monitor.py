@@ -905,18 +905,60 @@ def load_position() -> dict | None:
     return positions[0] if positions else None
 
 
+PNL_HISTORY_MAX = 3000   # ≈ 4 mois de snapshots horaires (était 500 ≈ 3 semaines)
+
+
+def _append_history_point(point: dict):
+    history_file = Path(__file__).parent / "pnl_history.json"
+    history: list = []
+    if history_file.exists():
+        try:
+            history = json.loads(history_file.read_text())
+        except Exception:
+            history = []
+    history.append(point)
+    history = history[-PNL_HISTORY_MAX:]
+    history_file.write_text(json.dumps(history, indent=2))
+    print(f"  pnl_history.json : {len(history)} points")
+
+
+def _append_flat_market_point(state: dict):
+    """Book à plat : on enregistre quand même le contexte marché (spot, DVOL, HV)
+    pour que les graphiques du dashboard ne se figent pas. PnL total = réalisé hedge
+    (même convention que les snapshots avec positions : latent options = 0)."""
+    try:
+        spot = fetch_spot()
+        _dvol, _hv5, _hv10, _hv30 = fetch_dvol_hv("BTC")
+    except Exception as e:
+        print(f"  [flat] contexte marché indisponible : {e}")
+        return
+    realized_hedge = float(state.get("hedge", {}).get("realized_pnl_usd", 0.0))
+    _append_history_point({
+        "ts": now_str(), "spot": round(spot, 2), "tte_days": 0.0,
+        "delta_pct": 0.0, "net_delta_pct": 0.0, "gamma_pts": 0.0, "iv_pct": None,
+        "dvol": round(_dvol, 2), "hv_5d": round(_hv5, 2),
+        "hv_10d": round(_hv10, 2), "hv_30d": round(_hv30, 2),
+        "pnl_option": 0.0, "pnl_hedge": round(realized_hedge, 2),
+        "pnl_total": round(realized_hedge, 2), "theta_daily": 0.0, "n_positions": 0,
+    })
+    # positions_detail vide : plus aucun lot à marquer
+    (Path(__file__).parent / "positions_detail.json").write_text("[]")
+
+
 def run_once(plot: bool = False, report: bool = False):
     state = load_state()
     positions = state.get("positions", [])
     if not positions:
-        print("Aucune position ouverte dans positions.json")
+        print("Aucune position ouverte — snapshot marché seul.")
+        _append_flat_market_point(state)
         return
 
     print(f"Calcul snapshot portfolio ({len(positions)} position(s))...")
     snap = compute_portfolio_snapshot(state)
     if not snap:
-        print("Toutes les positions sont expirées — pas de snapshot ce run "
+        print("Toutes les positions sont expirées — snapshot marché seul "
               "(clôture par greeks_hedge au step suivant).")
+        _append_flat_market_point(state)
         return
 
     # Affichage console (position principale)
@@ -935,15 +977,6 @@ def run_once(plot: bool = False, report: bool = False):
     tag = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     pd.DataFrame([{k: v for k, v in snap.items() if k != "positions_detail"}]).to_csv(
         OUTPUT_DIR / f"pnl_snap_{tag}.csv", index=False)
-
-    # pnl_history.json
-    history_file = Path(__file__).parent / "pnl_history.json"
-    history: list = []
-    if history_file.exists():
-        try:
-            history = json.loads(history_file.read_text())
-        except Exception:
-            history = []
 
     # Delta % et gamma pts = moyennes pondérées (÷ total_contracts), pas des sommes
     total_contracts = sum(float(p.get("contracts", 1)) for p in positions) or 1.0
@@ -971,10 +1004,7 @@ def run_once(plot: bool = False, report: bool = False):
         "theta_daily":   snap.get("theta_daily_now_usd"),
         "n_positions":   len(positions),
     }
-    history.append(hist_point)
-    history = history[-500:]
-    history_file.write_text(json.dumps(history, indent=2))
-    print(f"  pnl_history.json : {len(history)} points")
+    _append_history_point(hist_point)
 
     # Sauvegarder positions_detail.json pour generate_html.py (données live par position)
     pd_file = Path(__file__).parent / "positions_detail.json"

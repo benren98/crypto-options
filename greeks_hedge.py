@@ -79,6 +79,9 @@ SCORE_W_SKEW             = 0.45  # poids skew vs ATM (relevé, mais pas dominant
 SKEW_NORM                = 0.60  # normalisation s_skew = clamp(skew/SKEW_NORM) — entre-deux (dé-sature
                                  # partiellement vs 0.20 ; le vrai skew Deribit va jusqu'à ~80%)
 IVHV_NORM                = 1.50  # normalisation s_iv_hv = clamp((bid_iv/HV−1)/IVHV_NORM, 0,1) — entre-deux
+YIELD_NORM               = 0.30  # normalisation s_yield = min(1, yield_ann × z / YIELD_NORM)
+DVOL_MIN                 = 35.0  # porte d'entrée : pas d'entrée si DVOL < DVOL_MIN (signal_ok)
+                                 # sweep routine 2026-09-21 : 35 reste le meilleur (pas robuste plus bas)
 
 # Circuit breaker — palier dur (fermeture totale), calibré par backtest 2023-2026
 CB_MOVE_3D_PCT           = 10.0  # ferme tout si move spot 3j < −10% (baisse seule — un pump est inoffensif pour des short puts)
@@ -383,59 +386,6 @@ def open_position(instrument: dict, entry_price: float,
             "note":        f"hedge initial (perp mark ${perp_price:.2f} vs index ${spot:.2f})",
         }],
     }
-
-
-def should_roll(position: dict, spot: float) -> tuple[bool, float, float, str]:
-    """
-    Vérifie si la position doit être rollée.
-
-    Logique :
-    - Si TTE > ROLL_TRIGGER : pas encore dans la fenêtre -> pas de roll
-    - Si TTE <= ROLL_TRIGGER :
-        - Si gamma_pts < GAMMA_ROLL_THRESHOLD -> roll (gamma s'est effondré)
-        - Si l'instrument est expiré (introuvable) -> roll immédiat
-        - Sinon -> attendre (gamma encore élevé, OTM saine)
-
-    Retourne : (roll_now, tte_days, gamma_pts_per_1pct, reason)
-    """
-    try:
-        t    = fetch_ticker_full(position["instrument_name"])
-        inst = get("get_instruments", {
-            "currency": CURRENCY, "kind": "option", "expired": "false"
-        })
-        exp_ms = next(
-            (i["expiration_timestamp"] for i in inst
-             if i["instrument_name"] == position["instrument_name"]),
-            None
-        )
-        if exp_ms is None:
-            return True, 0.0, 0.0, "instrument expiré"
-
-        tte = (exp_ms - now_ms()) / 86_400_000
-
-        # Pas encore dans la fenêtre — on calcule quand même gamma pour l'affichage
-        greeks_pre  = t.get("greeks") or {}
-        gamma_pre   = abs(greeks_pre.get("gamma", position.get("gamma_at_entry", 7e-5)))
-        gamma_pts_pre = gamma_pre * spot * 0.01 * 100
-        if tte > ROLL_TRIGGER:
-            return False, tte, gamma_pts_pre, f"TTE {tte:.2f}j > seuil {ROLL_TRIGGER}j"
-
-        # Dans la fenêtre : calculer gamma_pts
-        greeks  = t.get("greeks") or {}
-        gamma   = abs(greeks.get("gamma", position.get("gamma_at_entry", 7e-5)))
-        gamma_pts = gamma * spot * 0.01 * 100   # pts de delta (%) perdus par 1% move
-
-        if gamma_pts > GAMMA_ROLL_THRESHOLD:
-            reason = (f"TTE {tte:.2f}j ≤ {ROLL_TRIGGER}j "
-                      f"ET gamma {gamma_pts:.2f}pts > seuil {GAMMA_ROLL_THRESHOLD}pts — ATM danger")
-            return True, tte, gamma_pts, reason
-        else:
-            reason = (f"TTE {tte:.2f}j ≤ {ROLL_TRIGGER}j "
-                      f"mais gamma {gamma_pts:.2f}pts ≤ seuil {GAMMA_ROLL_THRESHOLD}pts — OTM OK, HOLD")
-            return False, tte, gamma_pts, reason
-
-    except Exception as e:
-        return True, 0.0, 0.0, f"erreur: {e}"
 
 
 # ── Greeks & Hedge Calculator ─────────────────────────────────────────────────
@@ -911,6 +861,70 @@ def expire_positions(state: dict, spot: float) -> list[str]:
     return expired_names
 
 
+def roll_positions(state: dict, spot: float) -> list[str]:
+    """
+    Roll de chaque lot dont TTE <= ROLL_TRIGGER ET gamma > GAMMA_ROLL_THRESHOLD
+    (option qui se rapproche de l'ATM juste avant l'échéance).
+    Chaque lot clôturé reçoit sa propre entrée d'historique (contrats du lot).
+    Un seul appel ticker par instrument. Retourne la liste des instruments rollés.
+    """
+    now = datetime.now(timezone.utc)
+    near = {}
+    for pos in state.get("positions", []):
+        try:
+            expiry = pd.to_datetime(pos["expiry_dt"], utc=True).to_pydatetime()
+        except Exception:
+            continue
+        tte = (expiry - now).total_seconds() / 86400
+        if 0 < tte <= ROLL_TRIGGER:
+            near.setdefault(pos["instrument_name"], []).append((pos, tte))
+    if not near:
+        return []
+
+    print_section("ROLL CHECK")
+    rolled, to_close = [], []
+    for name, lots in near.items():
+        try:
+            t = fetch_ticker_full(name)
+        except Exception as e:
+            print(f"  {name}: ticker indisponible ({e}) — pas de roll ce run")
+            continue
+        gamma     = abs((t.get("greeks") or {}).get("gamma") or 0.0)
+        gamma_pts = gamma * spot * 0.01 * 100
+        tte       = lots[0][1]
+        decision  = gamma_pts > GAMMA_ROLL_THRESHOLD
+        print(f"  {name}: TTE {tte:.2f}j · gamma {gamma_pts:.2f} pts "
+              f"(seuil {GAMMA_ROLL_THRESHOLD}) → {'🔴 ROLL' if decision else '🟢 HOLD'}")
+        if not decision:
+            continue
+        exit_p = t.get("mark_price", lots[0][0]["entry_price"])
+        reason = (f"TTE {tte:.2f}j ≤ {ROLL_TRIGGER}j ET gamma {gamma_pts:.2f}pts "
+                  f"> seuil {GAMMA_ROLL_THRESHOLD}pts — ATM danger")
+        for pos, _ in lots:
+            n = float(pos.get("contracts", 1))
+            entry_spot = float(pos.get("entry_spot", spot))
+            pnl_usd = round((pos["entry_price"] * entry_spot - exit_p * spot) * n, 2)
+            state.setdefault("history", []).append({
+                **pos,
+                "exit_price":    exit_p,
+                "exit_spot":     spot,
+                "exit_ts":       now_dt(),
+                "exit_reason":   "roll",
+                "tte_at_exit":   round(tte, 3),
+                "gamma_at_exit": round(gamma_pts, 4),
+                "roll_reason":   reason,
+                "pnl_btc":       round((pos["entry_price"] - exit_p) * n, 6),
+                "pnl_usd":       pnl_usd,
+            })
+            to_close.append(id(pos))
+            print(f"    [ROLL] lot {n} contrats — PnL {pnl_usd:+.2f}$")
+        rolled.append(name)
+
+    if to_close:
+        state["positions"] = [p for p in state.get("positions", []) if id(p) not in to_close]
+    return rolled
+
+
 def run_once(currency: str = CURRENCY, verbose: bool = True):
     global pos_greeks_cache
 
@@ -931,45 +945,13 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         # Recalculer l'état "open" après expiration
         state["open"] = state["positions"][0] if state.get("positions") else None
 
-    # ── Vérifier si roll nécessaire ───────────────────────────────────────────
-    if state["open"] is not None:
-        roll_needed, tte_current, gamma_pts_now, roll_reason = should_roll(state["open"], spot)
-
-        print_section("ROLL CHECK")
-        print(f"  TTE actuel     : {tte_current:.3f}j  (seuil entrée fenêtre : {ROLL_TRIGGER}j)")
-        print(f"  Gamma actuel   : {gamma_pts_now:.2f} pts Δ/1%  (seuil roll : {GAMMA_ROLL_THRESHOLD} pts)")
-        print(f"  Décision       : {'🔴 ROLL' if roll_needed else '🟢 HOLD'}  — {roll_reason}")
-
-        if roll_needed:
-            print_section("ROLL TRIGGERED")
-            pos    = state["open"]
-            t      = fetch_ticker_full(pos["instrument_name"])
-            exit_p = t.get("mark_price", pos["entry_price"])
-            n      = float(pos.get("contracts", 1))   # contrats réels du lot (pas CONTRACTS global)
-
-            # Clôture de la position existante
-            closed = {**pos,
-                      "exit_price":   exit_p,
-                      "exit_spot":    spot,
-                      "exit_ts":      now_dt(),
-                      "exit_reason":  "roll",
-                      "tte_at_exit":  round(tte_current, 3),
-                      "gamma_at_exit":round(gamma_pts_now, 4),
-                      "roll_reason":  roll_reason,
-                      "pnl_btc":      round((pos["entry_price"] - exit_p) * n, 6),
-                      "pnl_usd":      round((pos["entry_price"] - exit_p) * n * spot, 2)}
-            state["history"].append(closed)
-            state["open"] = None
-            # Supprimer aussi de state["positions"] (même référence ou même instrument+strike)
-            state["positions"] = [p for p in state.get("positions", [])
-                                  if p is not pos and not (
-                                      p.get("instrument_name") == pos.get("instrument_name")
-                                      and p.get("strike") == pos.get("strike")
-                                      and p.get("expiry_dt") == pos.get("expiry_dt")
-                                  )]
-            print(f"  Position fermee : {pos['instrument_name']}  ({n} contrats)")
-            print(f"  PnL realise     : {closed['pnl_btc']:+.6f} BTC  "
-                  f"({'+' if closed['pnl_usd']>=0 else ''}{closed['pnl_usd']:.2f} USD)")
+    # ── Vérifier si roll nécessaire (TOUTES les positions, lot par lot) ────────
+    # Avant : seule positions[0] était vérifiée, et un roll retirait tous les lots
+    # du même instrument en n'historisant qu'un seul lot (PnL des autres perdu).
+    rolled = roll_positions(state, spot)
+    if rolled:
+        # Compat legacy : un roll déclenche le bloc de re-sélection ci-dessous
+        state["open"] = None
 
     # ── Marché : contexte de vol (une seule fois) ─────────────────────────────
     ctx = get_market_context(currency)
@@ -990,7 +972,8 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     must_open = ALWAYS_IN_POSITION and len(open_positions_now) == 0 and not risk_off   # garantie "toujours ≥1" si activée
 
     if (state["open"] is None or must_open) and not risk_off and not state.get("cb_reduced", False):
-        reason = "portfolio vide -- ouverture obligatoire" if must_open else "roll declenche"
+        reason = ("portfolio vide -- ouverture obligatoire" if must_open
+                  else "roll declenche" if rolled else "book vide")
         print_section(f"SELECTION CANDIDAT ({reason.upper()})")
         print(f"  HV 10j: {ctx['hv_10d']:.1f}%  |  IV: {ctx['curr_iv']:.1f}%  "
               f"|  IV/HV: {ctx['iv_hv_ratio']:.2f}x  |  Regime: {ctx['regime']}")
@@ -1144,7 +1127,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         "pos_vega":  sum(g["pos_vega"]  for g in all_greeks),
         "pos_theta": sum(g["pos_theta"] for g in all_greeks),
         "mark_iv_pct": max((g.get("mark_iv_pct") or 50 for g in all_greeks), default=50),
-        "tte_days":  min((g["tte_days"] for g in all_greeks), default=0.0),
+        "tte_days":  min((g["tte_days"] for g in all_greeks), default=float("inf")),  # book vide : pas d'alerte roll
         "spot":      spot,
     }
     pos_greeks = combined_greeks
@@ -1576,7 +1559,7 @@ def fetch_scored_candidates(currency: str, spot: float,
         yield_a = bid / tte_yr if bid > 0 else mark / tte_yr
         otm_frac = abs(r["moneyness"]) / 100
         z_score  = otm_frac / max(hv_ref / 100 * math.sqrt(tte_yr), 1e-9)
-        s_yield  = min(1.0, (yield_a * z_score) / 0.30)
+        s_yield  = min(1.0, (yield_a * z_score) / YIELD_NORM)
 
         score_raw = SCORE_W_IVHV * s_iv_hv + SCORE_W_YIELD * s_yield + SCORE_W_SKEW * s_skew
         # Pénalité gamma : linéaire entre GAMMA_PENALTY_START (×1.0) et GAMMA_SCORE_CAP (×0.0)
@@ -1682,7 +1665,7 @@ def get_market_context(currency: str = CURRENCY) -> dict:
         "iv_hv_ratio": iv_hv_ratio,
         "regime":      regime,
         "rec_delta":   rec_delta,
-        "signal_ok":   curr_iv >= 35,
+        "signal_ok":   curr_iv >= DVOL_MIN,
     }
 
 
