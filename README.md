@@ -367,9 +367,39 @@ perp 3.5 bps taker, delivery 1.5 bps capped at 12.5 % of value). Over 4 years fe
 the 12.5 % cap. Live paper since June 2026 (fees estimated in dashboard v2): +940 $ before
 fees, +233 $ after — the live window is a strong rally (short-perp hedge losses) in low vol.
 
-Remaining known limits: entries are simulated once a day at the close; the vol model is
-static (the DVOL has not yet covered 15 pts of range, so stress behaviour is extrapolated);
-the numbers of the rejected-approaches table below were measured under the older model.
+### Second audit (same day): the backtest replays every live run
+
+Three audit agents compared every element of the backtest and of the routine with the live bot.
+Production config, BTC, 4 years:
+
+| Step | PnL | MaxDD | Calmar | Premium kept |
+|---|---|---|---|---|
+| Hedge ratio 1.0 → 0.7 (routine ✅) | 53,188 $ | 2,773 $ | 4.71 | 76 % |
+| + circuit breaker evaluated every hour like the live bot (was: daily close only; 124 trims in 4 y instead of 32) | 41,624 $ | 2,032 $ | 5.04 | 71 % |
+| + each hourly run replayed: rolls → CB → entries (2 passes when the book is empty, real Deribit expiry calendar, full strike grid, HV estimator of the live bot, no entry while the CB is reduced) → hedge; half-spread 0.7 vol pt measured (was 1.5), widening with DVOL | 47,558 $ | 3,111 $ | 3.80 | 72 % |
+| + real timestamps: daily close at 00:00 UTC (the perp 1D candle closes at 08:00 — 8 h of look-ahead), settlement at 08:00, hourly DVOL for the CB DVOL leg, the entry gate and pricing | 36,844 $ | 3,203 $ | 2.83 | 68 % |
+| + CB buybacks at the real ask: `BUYBACK_IV_PREMIUM` = +5 vol pts above the smile reproduces to the dollar the 29 real buybacks of June 18 and 24, 2026 | **15,282 $** | **5,802 $** | **0.65** | 46 % |
+| Routine recommendations applied together (lightening off, keep 70 %, DVOL leg off, delta spacing 0.12) | 41,541 $ | 2,274 $ | 4.49 | — |
+
+**The circuit breaker is the main issue.** Buying back short puts in a sell-off pays the
+volatility at its peak and locks the loss: with a realistic buyback cost the graduated CB costs
+more than it protects (Calmar 0.65 vs 0.89 without CB). A CB that keeps the puts and raises the
+perp hedge instead (`CB_T1_ACTION` / `CB_CLOSE_ACTION = "hedge"`, implemented in live, off by
+default) reaches Calmar ≈ 3 and does not depend on the buyback-cost assumption. Checking the CB
+more often does not help with the current rules (5-min checks sold the Oct 10 2025 wick at the
+bottom; hourly checks trim on intraday noise).
+
+Live cadence: the `0 * * * *` cron ran only every ~3 h (median, Sept 2026, up to 12 h gaps).
+The workflow now uses `17,47 * * * *` plus a 40-min guard; an external trigger (cron-job.org →
+`workflow_dispatch`) is recommended because GitHub still drops most scheduled slots.
+
+Also fixed in live: crash when the book is empty and no candidate passes; expired ITM puts were
+booked as a full gain (now settled at the Deribit delivery price); premium valued at entry spot;
+ATM of the skew interpolated at spot.
+
+Remaining known limits: marks and the DVOL level used for pricing come from daily closes and
+the recorded smiles (≥ 4-day expiries only); `BUYBACK_IV_PREMIUM` is calibrated on two calm-regime
+events; the numbers of the rejected-approaches table below were measured under older models.
 
 ## Capital & Collateral (margin.py)
 
