@@ -217,18 +217,11 @@ jobs:
       - name: Régénérer la page backtests (écarts de vol du jour ; sweeps = dernière routine)
         run: python generate_backtest_html.py || echo "::warning::generate_backtest_html.py a échoué"
 
-      - name: Propositions de design du dashboard (Cockpit, Éditorial, Bento) + sélecteur de design
-        run: |
-          for n in cockpit editorial bento; do
-            python generate_dashboard.py --template "designs/$n/template.html" --out "docs/design-$n.html"               || echo "::warning::design $n a échoué"
-          done
-          python inject_switcher.py || echo "::warning::inject_switcher.py a échoué"
-
       - name: Commit pnl_summary.json dans le repo
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          for f in pnl_summary.json positions.json pnl_history.json positions_detail.json scan_entry.json reconcile.json docs/index.html docs/v2.html docs/backtest.html docs/design-cockpit.html docs/design-editorial.html docs/design-bento.html orderbook_log.jsonl vol_surface.jsonl vol_model_fit.json funding_history.jsonl; do
+          for f in pnl_summary.json positions.json pnl_history.json positions_detail.json scan_entry.json reconcile.json docs/index.html docs/v2.html docs/backtest.html orderbook_log.jsonl vol_surface.jsonl vol_model_fit.json funding_history.jsonl; do
             if [ -e "$f" ]; then git add "$f"; fi
           done
           git diff --cached --quiet || git commit -m "chore: pnl snapshot $(date -u '+%Y-%m-%d %H:%M UTC')"

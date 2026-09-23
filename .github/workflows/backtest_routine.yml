@@ -39,9 +39,7 @@ jobs:
         run: python backtest_routine.py --years 4
 
       - name: Générer le dashboard backtests
-        run: |
-          python generate_backtest_html.py
-          python inject_switcher.py || echo "::warning::inject_switcher.py a échoué"
+        run: python generate_backtest_html.py
 
       - name: Commit des résultats
         run: |
