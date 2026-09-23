@@ -1,3 +1,4 @@
+import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))  # racine du projet
 """Compare anciens vs nouveaux paramètres, avec le solveur strike_for_delta corrigé."""
 import io, contextlib
 import backtest as bt

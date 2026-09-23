@@ -1,3 +1,4 @@
+import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))  # racine du projet
 """Rendement sur capital mobilisé (cas équilibré = 20% du notionnel puts)."""
 import io, contextlib
 import backtest as bt

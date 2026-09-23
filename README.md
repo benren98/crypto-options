@@ -7,15 +7,33 @@ Portfolio monitoring and management system for short BTC puts on Deribit, delta-
 ## Architecture
 
 ```
-greeks_hedge.py       — core engine: scan, entries, roll, hedge
-pnl_monitor.py        — per-position PnL computation and CSV snapshots
-generate_html.py      — dashboard HTML generation
-positions.json        — portfolio state (source of truth: GitHub Gist)
-positions_detail.json — live per-position data (pnl_monitor → generate_html)
-scan_entry.json       — top 7 opportunities from last scan (greeks_hedge → generate_html)
+Bot (hourly, pnl_monitor.yml)
+  greeks_hedge.py        — core engine: expiry/roll, circuit breaker, scan (whole option chain in
+                           2 API calls), entries, delta-hedge policy, Gist sync
+  pnl_monitor.py         — per-position PnL snapshots (+ market-only point when the book is flat)
+  deribit_reconcile.py   — real Deribit account vs bot (no-op without API keys)
+  funding_logger.py      — BTC-PERPETUAL funding history (4y backfill + hourly top-up)
+  vol_surface_logger.py  — daily real vol-surface snapshot → vol_surface.jsonl
+  orderbook_logger.py    — order-book / OI / volume snapshots of the top candidates
+  fit_vol_model.py       — fits the skew + ATM-level model on the real surfaces
+  generate_dashboard.py  — dashboard v2 (docs/v2.html) from dashboard_v2.html
+  generate_html.py       — legacy dashboard v1 (docs/index.html)
+
+Research (weekly, backtest_routine.yml)
+  backtest.py            — model backtest mirroring the live rules, fees and hourly hedge
+  backtest_routine.py    — anti-overfit sweeps (5 folds) → backtest_routine.json
+  generate_backtest_html.py — docs/backtest.html (backtests + model-vs-market vol analysis)
+  check_params_sync.py   — asserts backtest.py mirrors greeks_hedge.py (35 params)
+
+dashboard_assets/        — CSS/JS shared by both dashboard pages
+research/                — one-off exploration scripts (see research/README.md)
+tools/                   — manual helpers (push_gist.py reads .env)
+
+State: positions.json (source of truth: GitHub Gist), positions_detail.json, scan_entry.json,
+pnl_history.json, funding_history.jsonl, vol_surface.jsonl, vol_model_fit.json
 ```
 
-Pipeline order: fetch Gist → pnl_monitor → greeks_hedge → generate_html → commit → push Gist.
+Pipeline order: fetch Gist → pnl_monitor → greeks_hedge → loggers → fit → dashboards → commit → push Gist.
 
 ---
 
@@ -56,7 +74,7 @@ score     = score_raw × gamma_factor
 > — under the real steep skew it corner-solutioned onto the deepest OTM put clearing the premium
 > floor (delta −0.05, ~6%/yr yield, premium at the floor) instead of balanced trades; see the
 > rejected-approaches log. The entry threshold sits at 0.50 (inert across 0.45–0.70 under real
-> skew). See `backtest_scoring.py`, `backtest_fitted_preview.py`, `backtest_threshold.py`.
+> skew). See `research/backtest_scoring.py`, `research/backtest_fitted_preview.py`, `research/backtest_threshold.py`.
 
 All three components are option-specific (the DVOL rank, identical for every candidate in a scan, was moved out of the score and into the sizing multiplier — see Sizing).
 
@@ -95,7 +113,7 @@ Examples: gamma = 5 pts → ×1.00 · gamma = 7.5 pts → ×0.50 · gamma ≥ 10
 
 ### Score calibration — empirical basis (data as of 2026-06-12)
 
-Each component's normalisation constant was calibrated against live Deribit data so the component actually spans its 0–1 range in the regimes we trade. Reference snapshots below — re-run the analysis scripts (`yield_range.py`, `ivhv_range.py`, `dvol_range.py`, `hv_range.py`) to recalibrate later.
+Each component's normalisation constant was calibrated against live Deribit data so the component actually spans its 0–1 range in the regimes we trade. Reference snapshots below — re-run the analysis scripts (`research/yield_range.py`, `research/ivhv_range.py`, `research/dvol_range.py`, `research/hv_range.py`) to recalibrate later.
 
 **s_iv_hv — no explicit normalisation (cap at ratio 2.0×).** DVOL / HV_blend daily over 30 days (May–June 2026):
 
@@ -169,7 +187,7 @@ Portfolio cap: **5 BTC notional total** (1 Deribit contract = 1 BTC).
 
 Marginal setups near the 0.50 entry threshold — which cluster on the fragile days preceding gap-downs — get cut by ~29%, while high-conviction scores are barely touched. On the 4-year backtest (BTC, circuit breaker on) this lowers **max drawdown by 28% (9.8k → 7.1k$)** while *raising* PnL slightly (38.5k → 39.3k$): the trimmed capital was sitting on low-edge trades. Calmar improves 1.48 → 2.08, Sharpe 1.63 → 1.84.
 
-`^2.0` was tested and overshoots — it starves capital deployment (avg notional 3.4 vs 3.7 BTC) and cuts PnL. `1.5` is the sweet spot. A per-portfolio **aggregate gamma budget** was also evaluated: it is gamma-specific (binds before the notional cap) and adds ~+2k$ PnL, but does *not* reduce drawdown further — the entire DD reduction comes from convexity — so it was left out to keep sizing to a single lever. Reducing the notional cap in high-DVOL regimes was tested and is counterproductive (high DVOL = richest premium; the circuit breaker already handles the gap risk). See `backtest_sizing.py` and `diag_gamma.py`.
+`^2.0` was tested and overshoots — it starves capital deployment (avg notional 3.4 vs 3.7 BTC) and cuts PnL. `1.5` is the sweet spot. A per-portfolio **aggregate gamma budget** was also evaluated: it is gamma-specific (binds before the notional cap) and adds ~+2k$ PnL, but does *not* reduce drawdown further — the entire DD reduction comes from convexity — so it was left out to keep sizing to a single lever. Reducing the notional cap in high-DVOL regimes was tested and is counterproductive (high DVOL = richest premium; the circuit breaker already handles the gap risk). See `research/backtest_sizing.py` and `research/diag_gamma.py`.
 
 ### Circuit breaker (two-tier graduated)
 
@@ -185,7 +203,7 @@ Recovery (full size restored):
 ```
 |spot move over 3 days| < 3%
 ```
-The 1-day leg is crisis-alpha: trimming right after a sharp single-day crash and re-entering at higher vol is *PnL-positive* on both BTC (+7.5%) and ETH (+11%), and on ETH it halves the drawdown. Adding the 3-day leg deepens the drawdown protection (−20% BTC / −50% ETH MaxDD) for a light PnL cost (−8.6% BTC). The trigger was selected by a broad sweep (`backtest_cb2.py`): DVOL-based tier-1 triggers were rejected (they trim during the richest selling moments).
+The 1-day leg is crisis-alpha: trimming right after a sharp single-day crash and re-entering at higher vol is *PnL-positive* on both BTC (+7.5%) and ETH (+11%), and on ETH it halves the drawdown. Adding the 3-day leg deepens the drawdown protection (−20% BTC / −50% ETH MaxDD) for a light PnL cost (−8.6% BTC). The trigger was selected by a broad sweep (`research/backtest_cb2.py`): DVOL-based tier-1 triggers were rejected (they trim during the richest selling moments).
 
 **Tier 2 — full close** (hard backstop):
 ```
@@ -199,7 +217,7 @@ HV_5d < HV_10d   AND   |spot move over 3 days| < 4%
 ```
 The short realized vol turning back below the 10-day says the stress peak is behind; entries resume into still-elevated implieds (the richest premiums the strategy ever sells).
 
-Constants: tier 1 `CB_T1_MOVE_1D_PCT = 5.0`, `CB_T1_MOVE_3D_PCT = 6.0`, `CB_T1_KEEP = 0.30`, `CB_T1_RESTORE_MOVE_PCT = 3.0`; tier 2 `CB_MOVE_3D_PCT = 10.0`, `CB_DVOL_3D_PTS = 12.0`, `CB_REENTRY_MOVE_PCT = 4.0`. Set `GRADUATED_CB = False` to revert to the binary breaker. Backtests: `backtest_cb.py` (graduated calibration), `backtest_cb2.py` (trigger sweep), `cb_robustness.py` (ETH + per-year).
+Constants: tier 1 `CB_T1_MOVE_1D_PCT = 5.0`, `CB_T1_MOVE_3D_PCT = 6.0`, `CB_T1_KEEP = 0.30`, `CB_T1_RESTORE_MOVE_PCT = 3.0`; tier 2 `CB_MOVE_3D_PCT = 10.0`, `CB_DVOL_3D_PTS = 12.0`, `CB_REENTRY_MOVE_PCT = 4.0`. Set `GRADUATED_CB = False` to revert to the binary breaker. Backtests: `research/backtest_cb.py` (graduated calibration), `research/backtest_cb2.py` (trigger sweep), `research/cb_robustness.py` (ETH + per-year).
 
 The dashboard shows the breaker state in the header (armed + margin vs thresholds, or RISK-OFF since timestamp) and draws the trigger levels on the spot chart (±10% vs 3 days ago) and the vol chart (DVOL 3d + 12 pts).
 
@@ -336,39 +354,39 @@ A log of levers that were backtested and **did not work**, kept so they aren't r
 
 | Lever | Result | Why rejected | Script |
 |---|---|---|---|
-| **Trend / momentum sizing overlay** (cut size in down-trends) | Best variant Calmar 2.11 vs 2.23 baseline | Gaps start from *calm/uptrend* states (4 Aug 2024 gapped from normal), so a trend filter can't anticipate them; fires on false alarms that recover → bleeds PnL | `backtest_trend.py` |
-| **Gamma / delta / TTE sweep** (earlier gamma penalty, cap delta, drop 3j) | Identical to baseline | The score already never selects gamma-heavy options (chosen options run g_pts ≈ 1–2, far below any penalty start) | `backtest_a3.py` |
-| **Aggregate gamma budget** (cap portfolio dollar-gamma) | +2k PnL, **zero** DD benefit | Gamma-specific (binds before the notional cap) but only shifts PnL; the entire DD reduction comes from convexity | `backtest_sizing.py`, `diag_gamma.py` |
-| **Permanent put spread** (buy a further-OTM put every trade) | PnL 39k → 7k | ~40k$ of premium drag over 4y to save a few k on the worst days; can't replace the CB; the put skew makes the protective leg expensive (paying VRP in reverse) | `backtest_putspread.py` |
-| **Tactical hedge in the danger zone** (buy protection only near the CB) | Worst day −22% but **MaxDD worse** | Danger zone fires on false alarms → buy/sell whipsaw, net hedge PnL negative; only the tightest trigger was PnL-neutral and even then MaxDD rose | `backtest_tactical.py` |
-| **Vol-target sizing** (size ∝ vol_target / HV) | Calmar 1.07–1.16 | Sizes *up* when realized vol is low — exactly the cheap-gamma setup that precedes gaps | `backtest_sizing.py` |
-| **Reduce the notional cap in high-DVOL regimes** | PnL 19–26k, DD not improved | High DVOL = the richest premium; cutting size there throws away the best carry, and the CB already covers the gap | `backtest_sizing.py` |
-| **DD-throttle** (cut size after losses) | PnL −20%+ | Pro-cyclical: sells low and misses the rebound | `backtest_sizing.py` |
-| **`score^2.0` convexity** | Starves deployment (notional 3.4 vs 3.7), cuts PnL | Overshoots; `^1.5` is the sweet spot | `backtest_sizing.py` |
+| **Trend / momentum sizing overlay** (cut size in down-trends) | Best variant Calmar 2.11 vs 2.23 baseline | Gaps start from *calm/uptrend* states (4 Aug 2024 gapped from normal), so a trend filter can't anticipate them; fires on false alarms that recover → bleeds PnL | `research/backtest_trend.py` |
+| **Gamma / delta / TTE sweep** (earlier gamma penalty, cap delta, drop 3j) | Identical to baseline | The score already never selects gamma-heavy options (chosen options run g_pts ≈ 1–2, far below any penalty start) | `research/backtest_a3.py` |
+| **Aggregate gamma budget** (cap portfolio dollar-gamma) | +2k PnL, **zero** DD benefit | Gamma-specific (binds before the notional cap) but only shifts PnL; the entire DD reduction comes from convexity | `research/backtest_sizing.py`, `research/diag_gamma.py` |
+| **Permanent put spread** (buy a further-OTM put every trade) | PnL 39k → 7k | ~40k$ of premium drag over 4y to save a few k on the worst days; can't replace the CB; the put skew makes the protective leg expensive (paying VRP in reverse) | `research/backtest_putspread.py` |
+| **Tactical hedge in the danger zone** (buy protection only near the CB) | Worst day −22% but **MaxDD worse** | Danger zone fires on false alarms → buy/sell whipsaw, net hedge PnL negative; only the tightest trigger was PnL-neutral and even then MaxDD rose | `research/backtest_tactical.py` |
+| **Vol-target sizing** (size ∝ vol_target / HV) | Calmar 1.07–1.16 | Sizes *up* when realized vol is low — exactly the cheap-gamma setup that precedes gaps | `research/backtest_sizing.py` |
+| **Reduce the notional cap in high-DVOL regimes** | PnL 19–26k, DD not improved | High DVOL = the richest premium; cutting size there throws away the best carry, and the CB already covers the gap | `research/backtest_sizing.py` |
+| **DD-throttle** (cut size after losses) | PnL −20%+ | Pro-cyclical: sells low and misses the rebound | `research/backtest_sizing.py` |
+| **`score^2.0` convexity** | Starves deployment (notional 3.4 vs 3.7), cuts PnL | Overshoots; `^1.5` is the sweet spot | `research/backtest_sizing.py` |
 
 ### Scoring / selection attempts that failed
 
 | Lever | Result | Why rejected |
 |---|---|---|
-| **Yield-weighted score** (raise the yield weight) | MaxDD ballooned to **18.7k**, worst day −14k | Yield chases near-the-money high-premium options that blow up on gaps — it is the most dangerous component, hence *reduced* to 0.25 | `backtest_scoring.py` |
-| **Raise entry threshold alone** (0.45 → 0.50 without the skew reweighting) | Worse PnL and DD | The 0.50 bar only works bundled with the skew-weighted score; in isolation it starves entries | `backtest_scoring.py` |
-| **DVOL-based tier-1 CB trigger** (trim on a DVOL spike) | MaxDD 7.5–8.7k | Trims during the richest selling moments; move-based triggers win | `backtest_cb2.py` |
-| **Skew-dominant score** (`0.20/0.15/0.65` weights + `SKEW_NORM 0.60`) | corner solution | Under the real steep skew, `s_ivhv` *and* `s_skew` both rise with OTM, so a 0.65 skew weight + de-saturated norm pushed the pick to the **deepest OTM put clearing the premium floor** (delta −0.05, ~6%/yr yield, premium at the floor) instead of balanced trades (delta −0.10/−0.15, 14–20% yield). The 1-day-fit backtest "liked" it (Calmar 7.9, but the haircut under-models far-OTM spreads); reverted to `0.30/0.25/0.45` + `SKEW_NORM 0.20` | `scan_preview.py`, `backtest_fitted_preview.py` |
+| **Yield-weighted score** (raise the yield weight) | MaxDD ballooned to **18.7k**, worst day −14k | Yield chases near-the-money high-premium options that blow up on gaps — it is the most dangerous component, hence *reduced* to 0.25 | `research/backtest_scoring.py` |
+| **Raise entry threshold alone** (0.45 → 0.50 without the skew reweighting) | Worse PnL and DD | The 0.50 bar only works bundled with the skew-weighted score; in isolation it starves entries | `research/backtest_scoring.py` |
+| **DVOL-based tier-1 CB trigger** (trim on a DVOL spike) | MaxDD 7.5–8.7k | Trims during the richest selling moments; move-based triggers win | `research/backtest_cb2.py` |
+| **Skew-dominant score** (`0.20/0.15/0.65` weights + `SKEW_NORM 0.60`) | corner solution | Under the real steep skew, `s_ivhv` *and* `s_skew` both rise with OTM, so a 0.65 skew weight + de-saturated norm pushed the pick to the **deepest OTM put clearing the premium floor** (delta −0.05, ~6%/yr yield, premium at the floor) instead of balanced trades (delta −0.10/−0.15, 14–20% yield). The 1-day-fit backtest "liked" it (Calmar 7.9, but the haircut under-models far-OTM spreads); reverted to `0.30/0.25/0.45` + `SKEW_NORM 0.20` | `research/scan_preview.py`, `research/backtest_fitted_preview.py` |
 
 ### Premium / tenor attempts that failed
 
 | Lever | Result | Why rejected |
 |---|---|---|
-| **Lower `MIN_PREMIUM_USD` to 30$ / 10$** | Identical to 50$ | Non-binding: the score never picks an option in that premium band anyway | `backtest_premium.py` |
-| **Adjust or disable the gamma penalty** (to admit short tenors) | Completely inert — identical even fully off | The penalty was never the binding constraint; the score itself excludes short tenors | `backtest_gamma.py` |
-| **Short tenors for theta** (force 3–7j DTE) | 3j-only Calmar **0.41**, 7j-only 1.68 vs 21j-only 3.93 | High theta does *not* compensate the gamma/gap risk — the delta hedge can't keep up on big moves; the score correctly sells 21j | `backtest_gamma.py` |
+| **Lower `MIN_PREMIUM_USD` to 30$ / 10$** | Identical to 50$ | Non-binding: the score never picks an option in that premium band anyway | `research/backtest_premium.py` |
+| **Adjust or disable the gamma penalty** (to admit short tenors) | Completely inert — identical even fully off | The penalty was never the binding constraint; the score itself excludes short tenors | `research/backtest_gamma.py` |
+| **Short tenors for theta** (force 3–7j DTE) | 3j-only Calmar **0.41**, 7j-only 1.68 vs 21j-only 3.93 | High theta does *not* compensate the gamma/gap risk — the delta hedge can't keep up on big moves; the score correctly sells 21j | `research/backtest_gamma.py` |
 
 ### Other underlyings
 
 | Lever | Result | Why rejected |
 |---|---|---|
-| **ETH-only** | PnL ~12× lower than BTC, more CB triggers | ETH DVOL is noisier with more downside whipsaws over this period | `backtest_eth.py` |
-| **BTC + ETH mixed** (best score across both) | Better Sharpe but PnL halved | The mix picks ETH too often and dilutes profitability | `backtest_multi.py` |
+| **ETH-only** | PnL ~12× lower than BTC, more CB triggers | ETH DVOL is noisier with more downside whipsaws over this period | `research/backtest_eth.py` |
+| **BTC + ETH mixed** (best score across both) | Better Sharpe but PnL halved | The mix picks ETH too often and dilutes profitability | `research/backtest_multi.py` |
 
 > Note: several of these (vol-target, cap-reduction-in-stress, DVOL-trim, short-tenor theta) share one root cause — **high volatility is when this strategy earns the most**, so any lever that reduces exposure *because* vol is high fights the edge. Gap protection belongs in the event-triggered circuit breaker (near-zero carry cost), not in always-on de-risking.
 
@@ -440,7 +458,7 @@ rejected: the first 60% is dominated by the exceptionally good 2024, so it confl
   `0.20/0.15/0.65` weights and most aggressive optima — they only win the 2024-heavy folds.)
 - **Plateau check** — the optimum must have neighbouring values that are also strong, not an isolated spike.
 - **Reading discipline** (shown on the dashboard): change 1–2 params at a time, confirm on ETH
-  (`backtest_eth.py`), never stack all individual optima. A bootstrap confidence band is a future add.
+  (`research/backtest_eth.py`), never stack all individual optima. A bootstrap confidence band is a future add.
 
 ---
 

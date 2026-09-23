@@ -1,3 +1,4 @@
+import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))  # racine du projet
 """Compare la stratégie avec et sans circuit breaker."""
 import io, contextlib
 from backtest import run

@@ -1,3 +1,4 @@
+import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))  # racine du projet
 """Backtest final : stratégie complète avec circuit breaker calibré (10% / +12pts)."""
 import backtest
 from backtest import run

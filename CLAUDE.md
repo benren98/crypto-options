@@ -29,14 +29,19 @@ sizing → hedge → régénère le dashboard (`docs/index.html`, GitHub Pages).
   `GIST_ID`).
 
 ## Lancer les choses
-- Backtest BTC (config prod) : `python backtest.py` — miroir des params live de `greeks_hedge.py`.
-- Routine de sweeps (anti-overfit, hebdo en Actions) : `python backtest_routine.py`
-  → `backtest_routine.json` + dashboard backtests.
+- Backtest BTC (config prod par défaut : circuit breaker ON, pas de « toujours ≥1 position ») :
+  `python backtest.py` — miroir des params live de `greeks_hedge.py`, 4 ans réels (DVOL paginé),
+  frais Deribit, funding réel et hedge rejoué heure par heure (prix de `funding_history.jsonl`).
+- Routine de sweeps (anti-overfit, hebdo en Actions, ~10 min) : `python backtest_routine.py`
+  → `backtest_routine.json` + page backtests. La config prod est lue dans `backtest.py` (pas de
+  copie). Changer seulement la règle de verdict : `python backtest_routine.py --rejudge`.
+- Scripts d'exploration ponctuels : `research/` (lancer depuis la racine). Aides manuelles : `tools/`.
 - Dashboards : `python generate_html.py` (live v1 → `docs/index.html`) ·
   `python generate_dashboard.py` (v2 orientée décision → `docs/v2.html`) ·
   `python generate_backtest_html.py` (backtests → `docs/backtest.html`).
-- Dashboard v2 : le modèle de données est calculé dans `generate_dashboard.py`, le rendu est dans
-  le template `dashboard_v2.html` (ne jamais éditer `docs/v2.html`, il est régénéré). Tester un autre
+- Dashboards v2 et backtests : le modèle de données est calculé en Python, le rendu est dans un
+  template (`dashboard_v2.html`, `backtest_page.html`) + CSS/JS communs `dashboard_assets/`
+  (ne jamais éditer `docs/*.html`, ils sont régénérés). Tester un autre
   état : `python generate_dashboard.py --data-dir <dossier> --now "2026-08-29 23:50:00"` (ex. fichiers
   extraits d'un ancien commit avec `git show <sha>:positions.json`).
 - Collecte surfaces de vol : `vol_surface_logger.py` (horaire) → `vol_surface.jsonl` ;
@@ -49,11 +54,22 @@ sizing → hedge → régénère le dashboard (`docs/index.html`, GitHub Pages).
   `YIELD_NORM`, `ENTRY_SCORE_MIN`, `MIN_PREMIUM_USD`, `CB_*`, `SIZE_CONVEXITY`, `GRADUATED_CB`,
   `ALWAYS_IN_POSITION`…).
 - `backtest.py` **miroite** ces constantes — les garder synchronisées à chaque changement live.
+  `python check_params_sync.py` vérifie 35 paramètres (score, entrée, sizing, CB, politique de
+  hedge `HEDGE_*`, frais `FEE_*`) ; bloquant dans la routine hebdo.
+- Frais Deribit (`FEE_*`, grille Standard vérifiée le 2026-09-23 sur support.deribit.com) : le bot
+  est en paper, ils ne sont pas débités mais le backtest les applique et le dashboard v2 affiche
+  le PnL net de frais estimés. Revérifier la grille de temps en temps.
+- Appels API : le scan lit toute la chaîne via `fetch_option_chain` (book summary, greeks et IV
+  au bid recalculés en Black-76) — ne pas réintroduire d'appel `ticker` par option dans une boucle.
 
 ## Philosophie de calibration (important)
-- Le backtest price les options avec un modèle de skew ; les **vraies surfaces** sont collectées
-  (`vol_surface.jsonl`) pour supprimer le risque modèle. Le fit vient de peu de jours calmes →
-  les **magnitudes du backtest fité sont optimistes** ; ne pas se fier au Calmar absolu pour l'instant.
+- Le backtest price les options avec un modèle (niveau ATM/DVOL + skew quadratique par maturité) ;
+  les **vraies surfaces** sont collectées (`vol_surface.jsonl`) et utilisées telles quelles sur les
+  dates couvertes. Écart moyen modèle − marché ≈ +0,1 pt de vol depuis l'ajout du niveau ATM
+  (+4 pts avant : le DVOL servait d'ATM pour toutes les échéances). Le fit reste statique (DVOL
+  < 15 pts d'amplitude observée) → comportement en stress encore extrapolé.
+- Le hedge du backtest est rejoué **heure par heure** comme le live : l'ancien contrôle à la clôture
+  sous-estimait son coût d'un facteur ~7.
 - **Ne changer un param de scoring/sizing que si la routine le flagge `✅ robuste`** (gagne ≥3/5
   folds, gain ≥1.0 vs actuel), **pas** sur un Calmar fité plus haut seul.
 - Normalisations du score (skew/IV-HV/yield), seuil d'entrée et sizing sont **couplés par l'échelle

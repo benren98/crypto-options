@@ -1,3 +1,4 @@
+import sys, pathlib; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))  # racine du projet
 """Compare sizing rank linéaire vs profil en cloche."""
 import io, contextlib
 from backtest import run, rank_mult_linear, rank_mult_bell

@@ -7,6 +7,10 @@ output/
 pnl_snapshots.csv
 # pnl_summary.json est versionné dans le repo (lu par Claude Routine)
 
+# Sorties de diagnostic ponctuelles
+_run*.txt
+_diag*.py
+
 # Python
 __pycache__/
 *.pyc
