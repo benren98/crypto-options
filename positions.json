@@ -1,5 +1,44 @@
 {
-  "positions": [],
+  "positions": [
+    {
+      "instrument_name": "BTC-25SEP26-83000-P",
+      "strike": 83000.0,
+      "expiry_dt": "2026-09-25 08:00:00+00:00",
+      "tte_at_entry": 2.29,
+      "delta_at_entry": -0.10301,
+      "gamma_at_entry": 6e-05,
+      "vega_at_entry": 12.31075,
+      "theta_at_entry": -118.45004,
+      "iv_at_entry": 44.49,
+      "entry_price": 0.0018,
+      "entry_mark_price": 0.0017,
+      "entry_price_usd": 155.89,
+      "entry_spot": 86605.36,
+      "contracts": 0.3,
+      "entry_ts": "2026-09-23 01:03:47 UTC",
+      "hedge_qty": -0.0309,
+      "hedge_entry_spot": 86605.36,
+      "hedge_avg_entry": 86667.27,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-09-23 01:03:47 UTC",
+          "side": "SELL",
+          "qty": -0.0309,
+          "spot": 86605.36,
+          "perp_price": 86667.27,
+          "qty_before": 0.0,
+          "qty_after": -0.0309,
+          "vwap_before": 0.0,
+          "vwap_after": 86667.27,
+          "drift": 0.10301,
+          "note": "hedge initial (perp mark $86667.27 vs index $86605.36)"
+        }
+      ],
+      "entry_score": 0.478,
+      "entry_sizing_btc": 0.3
+    }
+  ],
   "hedge": {
     "qty": 0,
     "avg_entry": 79987.35,
