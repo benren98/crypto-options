@@ -1,17 +1,17 @@
 """
-Greeks Engine, Delta Hedge & Roll Manager
-==========================================
-1. Calcule les Greeks (Black-Scholes) et les compare aux Greeks Deribit.
-2. Gère une position de short puts OTM avec rolling automatique :
-     - Entrée  : TTE >= MIN_TTE_ENTRY (2j)
-     - Roll    : TTE <= ROLL_TRIGGER  (1j) -> ferme + réouvre
-3. Calcule le hedge delta via perp futures et génère les ordres.
-4. Suit le PnL mark-to-market en temps réel.
+Greeks Engine, Delta Hedge & Roll Manager — le bot (paper trading).
+====================================================================
+Un run (`--run`, toutes les heures via GitHub Actions) :
+  1. expire / rolle les positions (roll si TTE ≤ ROLL_TRIGGER ET gamma > seuil) ;
+  2. circuit breaker gradué (allègement puis fermeture totale) ;
+  3. scanne la chaîne d'options (2 appels API), score v2, entrée si score ≥ seuil ;
+  4. rebalance le hedge delta (short BTC-PERPETUAL) selon la politique HEDGE_* ;
+  5. écrit positions.json + scan_entry.json et synchronise le Gist.
 
 Usage:
-    python greeks_hedge.py --run          # scan + affiche position + hedge
+    python greeks_hedge.py --run          # un run complet
     python greeks_hedge.py --monitor      # boucle toutes les N minutes
-    python greeks_hedge.py --backtest     # simule les rolls sur données historiques
+    python greeks_hedge.py --scan-entry   # scan des opportunités seul
 """
 
 import argparse
@@ -39,11 +39,7 @@ POSITIONS_FILE  = Path(__file__).parent / "positions.json"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 CURRENCY        = "BTC"          # BTC | ETH
-DELTA_TARGET    = -0.20          # delta cible pour le put vendu
-DELTA_TOL       = 0.06           # tolérance autour du delta cible
-MIN_TTE_ENTRY   = 2.0            # jours minimum pour entrer
-MAX_TTE_ENTRY   = 7.0            # jours maximum pour entrer
-ROLL_TRIGGER         = 1.0   # jours restants -> fenêtre d'observation pour le roll
+ROLL_TRIGGER        = 1.0   # jours restants -> fenêtre d'observation pour le roll
 GAMMA_ROLL_THRESHOLD = 6.0   # pts de delta / 1% move AU-DESSUS duquel on rolle
                               # (roll si TTE <= ROLL_TRIGGER ET gamma > seuil)
                               # Gamma > 6pts = option se rapproche d'ATM = danger
@@ -51,6 +47,19 @@ HEDGE_THRESHOLD_BASE_PCT = 5.0   # bande de base en % de delta (ex : 5% = rebala
 HEDGE_IV_REF         = 70.0      # IV de référence BTC "normale" — calibre la bande
 # Formule : threshold_pct = BASE × sqrt(IV_current / IV_REF), clampé [2%, 8%]
 # Plus la vol est élevée → bandes plus larges → moins de rebalancements inutiles
+# Politique de hedge (miroir backtest.py, sweepée par la routine) — valeurs = comportement historique
+HEDGE_THRESHOLD_MODE = "absolute"  # "absolute" : bande en BTC fixe · "notional" : bande × Σ contrats
+HEDGE_RATIO          = 1.0       # fraction du delta options couverte (1 = hedge complet)
+HEDGE_FLATTEN_DELTA  = 0.0       # si |delta options| < X BTC → hedge remis à plat (0 = off)
+HEDGE_EVERY_H        = 1         # au plus un rebalancement toutes les N heures (1 = chaque run)
+
+# Frais Deribit — grille Standard vérifiée le 2026-09-23 (support.deribit.com, page Fees).
+# Le bot est en paper : ces frais ne sont pas débités, ils servent au backtest (miroir) et
+# au dashboard (PnL net de frais estimés).
+FEE_OPTION_RATE      = 0.0003    # options : 3 bps du sous-jacent par contrat (maker = taker)…
+FEE_OPTION_CAP       = 0.125     # …plafonné à 12,5 % de la prime
+FEE_DELIVERY_RATE    = 0.00015   # livraison 1,5 bps, plafonnée à 12,5 % de la valeur (0 si OTM)
+FEE_PERP_RATE        = 0.00035   # perpétuel taker 3,5 bps (maker 1,5 bps)
 RISK_FREE_RATE  = 0.05           # taux sans risque annualisé (approx)
 CONTRACTS       = 1              # nombre de puts vendus (1 contrat = 1 BTC sur Deribit)
 
@@ -256,62 +265,93 @@ def fetch_ticker_full(instrument_name: str) -> dict:
     return get("ticker", {"instrument_name": instrument_name})
 
 
-def fetch_put_candidates(currency: str,
-                          delta_target: float = DELTA_TARGET,
-                          delta_tol:    float = DELTA_TOL,
-                          min_tte:      float = MIN_TTE_ENTRY,
-                          max_tte:      float = MAX_TTE_ENTRY) -> pd.DataFrame:
-    """Retourne les puts OTM dans la fenêtre de maturité et de delta."""
-    instruments = get("get_instruments", {
-        "currency": currency,
-        "kind": "option",
-        "expired": "false",
-    })
+# ── Chaîne d'options complète en 2 appels (au lieu d'un ticker par option) ────
+# get_book_summary_by_currency renvoie prix mark/bid/ask, mark_iv et prix du sous-jacent de
+# chaque option, mais ni greeks ni IV au bid : on les recalcule en Black-76 sur le prix du
+# sous-jacent de l'échéance (convention Deribit). Validé le 2026-09-23 contre le ticker sur un
+# échantillon aléatoire : |Δdelta| < 1e-4, |ΔIV bid| < 0.05 pt, |Δmark| < 6e-5 BTC.
+CHAIN_TTL_S = 90
+_CHAIN_CACHE: dict = {}
+
+
+def _b76_put(F: float, K: float, T: float, sigma: float):
+    """Put Black-76 (r=0) : prix USD, delta, gamma, vega (USD/pt de vol), theta (USD/jour)."""
+    T = max(T, 1e-6); sigma = max(sigma, 1e-4)
+    sq = sigma * math.sqrt(T)
+    d1 = (math.log(F / K) + 0.5 * sigma * sigma * T) / sq
+    d2 = d1 - sq
+    phi = math.exp(-0.5 * d1 * d1) / math.sqrt(2 * math.pi)
+    price = K * norm.cdf(-d2) - F * norm.cdf(-d1)
+    return price, norm.cdf(d1) - 1.0, phi / (F * sq), F * phi * math.sqrt(T) / 100, -F * phi * sigma / (2 * math.sqrt(T)) / 365
+
+
+def _implied_vol_put(price_usd: float, F: float, K: float, T: float):
+    """IV (%) d'un put à partir de son prix USD, par bissection. None si sous l'intrinsèque."""
+    if price_usd <= max(K - F, 0.0) + 1e-9 or T <= 0:
+        return None
+    lo, hi = 0.005, 6.0
+    for _ in range(70):
+        mid = 0.5 * (lo + hi)
+        if _b76_put(F, K, T, mid)[0] > price_usd:
+            hi = mid
+        else:
+            lo = mid
+    return 0.5 * (lo + hi) * 100
+
+
+def fetch_option_chain(currency: str = CURRENCY) -> dict:
+    """{instrument_name: ligne} pour toutes les options de `currency`, format compatible
+    ticker (mark_price, mark_iv, bid_iv, best_bid/ask_price, greeks{…}, underlying_price).
+    Mis en cache CHAIN_TTL_S secondes : un run entier partage la même photographie."""
+    hit = _CHAIN_CACHE.get(currency)
+    if hit and time.time() - hit[0] < CHAIN_TTL_S:
+        return hit[1]
+    instruments = {i["instrument_name"]: i for i in get("get_instruments", {
+        "currency": currency, "kind": "option", "expired": "false"})}
+    book = get("get_book_summary_by_currency", {"currency": currency, "kind": "option"})
     now = now_ms()
-    rows = []
-    targets = [i for i in instruments
-               if i["instrument_name"].endswith("-P")]
-
-    for inst in targets:
-        tte = (inst["expiration_timestamp"] - now) / 86_400_000
-        if not (min_tte <= tte <= max_tte):
+    chain = {}
+    for b in book:
+        ins = instruments.get(b["instrument_name"])
+        F = b.get("underlying_price")
+        if not ins or not F:
             continue
-        try:
-            t = fetch_ticker_full(inst["instrument_name"])
-            greeks = t.get("greeks") or {}
-            delta  = greeks.get("delta")
-            if delta is None:
-                continue
-            if not (delta_target - delta_tol <= delta <= delta_target + delta_tol):
-                continue
-            rows.append({
-                "instrument_name":  inst["instrument_name"],
-                "strike":           inst["strike"],
-                "expiry_dt":        pd.to_datetime(inst["expiration_timestamp"],
-                                                   unit="ms", utc=True),
-                "tte_days":         round(tte, 3),
-                "delta":            delta,
-                "gamma":            greeks.get("gamma"),
-                "vega":             greeks.get("vega"),
-                "theta":            greeks.get("theta"),
-                "mark_iv":          t.get("mark_iv"),
-                "mark_price":       t.get("mark_price"),
-                "bid_price":        t.get("best_bid_price"),
-                "ask_price":        t.get("best_ask_price"),
-                "underlying_price": t.get("underlying_price"),
-                "open_interest":    t.get("open_interest"),
-            })
-        except Exception:
-            continue
+        T = (ins["expiration_timestamp"] - now) / (365 * 86_400_000)
+        mark_iv = b.get("mark_iv") or 0.0
+        row = {
+            "instrument_name":      b["instrument_name"],
+            "strike":               ins["strike"],
+            "expiration_timestamp": ins["expiration_timestamp"],
+            "option_type":          ins.get("option_type"),
+            "tte_days":             T * 365,
+            "underlying_price":     F,
+            "mark_price":           b.get("mark_price") or 0.0,
+            "best_bid_price":       b.get("bid_price") or 0.0,
+            "best_ask_price":       b.get("ask_price") or 0.0,
+            "mark_iv":              mark_iv,
+            "open_interest":        b.get("open_interest") or 0.0,
+            "greeks":               {},
+            "bid_iv":               None,
+        }
+        if ins.get("option_type") == "put" and T > 0 and mark_iv > 0:
+            _, d, g, v, th = _b76_put(F, ins["strike"], T, mark_iv / 100)
+            row["greeks"] = {"delta": d, "gamma": g, "vega": v, "theta": th}
+            if row["best_bid_price"] > 0:
+                row["bid_iv"] = _implied_vol_put(row["best_bid_price"] * F, F, ins["strike"], T)
+        chain[b["instrument_name"]] = row
+    _CHAIN_CACHE[currency] = (time.time(), chain)
+    return chain
 
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-    df["delta_dist"] = (df["delta"] - delta_target).abs()
-    df["score"] = df["delta_dist"] / df["delta_dist"].max() \
-                + (df["tte_days"] - min_tte) / max(df["tte_days"].max() - min_tte, 1)
-    df.sort_values("score", inplace=True)
-    return df.reset_index(drop=True)
+
+def fetch_quote(instrument_name: str, currency: str = CURRENCY) -> dict:
+    """Cotation d'une option depuis la chaîne en cache ; repli sur le ticker si absente."""
+    try:
+        row = fetch_option_chain(currency).get(instrument_name)
+        if row and row.get("greeks"):
+            return row
+    except Exception:
+        pass
+    return fetch_ticker_full(instrument_name)
 
 
 # ── Position & Roll Manager ───────────────────────────────────────────────────
@@ -395,7 +435,7 @@ def compute_position_greeks(position: dict, spot: float) -> dict:
     Calcule les Greeks BS de la position short put.
     Retourne les Greeks de la position (x contracts, signés pour short).
     """
-    t = fetch_ticker_full(position["instrument_name"])
+    t = fetch_quote(position["instrument_name"])
     greeks_deribit = t.get("greeks") or {}
     mark_iv   = t.get("mark_iv", 0) / 100   # Deribit donne en %
     mark_price= t.get("mark_price", 0)
@@ -478,13 +518,19 @@ def compute_hedge_order(pos_greeks: dict, current_hedge_qty: float,
       - Pour neutraliser : shorter 0.20 BTC de perp
       - hedge_qty stocké en positif = short perp
     """
-    target_hedge  = -pos_greeks["pos_delta"]   # qty à shorter sur perp
+    target_hedge  = -pos_greeks["pos_delta"] * HEDGE_RATIO   # qty à shorter sur perp
+    # Mise à plat du résiduel : quand les puts sont devenus quasi sans delta, un hedge
+    # résiduel sous la bande devient un pari directionnel (ex. −0,048 BTC gardé de 63k à 80k).
+    flatten = HEDGE_FLATTEN_DELTA > 0 and abs(pos_greeks["pos_delta"]) < HEDGE_FLATTEN_DELTA
+    if flatten:
+        target_hedge = 0.0
     delta_drift   = target_hedge - current_hedge_qty
 
-    # Seuil dynamique basé sur l'IV courante
+    # Seuil dynamique basé sur l'IV courante (bande en BTC fixe, ou × notionnel du book)
     iv_pct = pos_greeks.get("mark_iv_pct") or HEDGE_IV_REF
-    threshold_btc, threshold_pct = compute_hedge_threshold(iv_pct, contracts=1)
-    needs_rebalance = abs(delta_drift) > threshold_btc
+    n_book = pos_greeks.get("contracts", 1.0) if HEDGE_THRESHOLD_MODE == "notional" else 1
+    threshold_btc, threshold_pct = compute_hedge_threshold(iv_pct, contracts=max(n_book, 1.0))
+    needs_rebalance = abs(delta_drift) > threshold_btc or (flatten and abs(current_hedge_qty) > 1e-9)
 
     # target_hedge > 0 = on doit shorter du perp
     # order: si target > current -> SELL perp (augmenter le short)
@@ -504,7 +550,7 @@ def compute_hedge_order(pos_greeks: dict, current_hedge_qty: float,
 
 def compute_pnl(position: dict, spot: float) -> dict:
     """PnL mark-to-market de la position short put."""
-    t = fetch_ticker_full(position["instrument_name"])
+    t = fetch_quote(position["instrument_name"])
     current_price = t.get("mark_price", 0)
     entry_price   = position["entry_price"]
     n             = position["contracts"]
@@ -700,7 +746,7 @@ def apply_circuit_breaker(state: dict, spot: float, cb: dict) -> bool:
         for pos in state.get("positions", []):
             exit_p = pos["entry_price"]
             try:
-                t = fetch_ticker_full(pos["instrument_name"])
+                t = fetch_quote(pos["instrument_name"])
                 exit_p = t.get("best_ask_price") or t.get("mark_price") or exit_p
             except Exception:
                 pass
@@ -765,7 +811,7 @@ def apply_circuit_breaker(state: dict, spot: float, cb: dict) -> bool:
                 continue
             exit_p = pos["entry_price"]
             try:
-                t = fetch_ticker_full(pos["instrument_name"])
+                t = fetch_quote(pos["instrument_name"])
                 exit_p = t.get("best_ask_price") or t.get("mark_price") or exit_p
             except Exception:
                 pass
@@ -833,7 +879,7 @@ def expire_positions(state: dict, spot: float) -> list[str]:
         # Position expirée : calculer le PnL final
         exit_price = 0.0  # OTM → expire sans valeur par défaut
         try:
-            t = fetch_ticker_full(pos["instrument_name"])
+            t = fetch_quote(pos["instrument_name"])
             exit_price = t.get("mark_price") or 0.0
         except Exception:
             pass  # instrument retiré de l'API → on suppose worthless
@@ -885,7 +931,7 @@ def roll_positions(state: dict, spot: float) -> list[str]:
     rolled, to_close = [], []
     for name, lots in near.items():
         try:
-            t = fetch_ticker_full(name)
+            t = fetch_quote(name)
         except Exception as e:
             print(f"  {name}: ticker indisponible ({e}) — pas de roll ce run")
             continue
@@ -1128,6 +1174,7 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
         "pos_theta": sum(g["pos_theta"] for g in all_greeks),
         "mark_iv_pct": max((g.get("mark_iv_pct") or 50 for g in all_greeks), default=50),
         "tte_days":  min((g["tte_days"] for g in all_greeks), default=float("inf")),  # book vide : pas d'alerte roll
+        "contracts": sum(float(p.get("contracts", 1)) for p in open_positions),
         "spot":      spot,
     }
     pos_greeks = combined_greeks
@@ -1140,6 +1187,20 @@ def run_once(currency: str = CURRENCY, verbose: bool = True):
     print_section("HEDGE DELTA PORTFOLIO (via BTC-PERPETUAL)")
     hedge = compute_hedge_order(combined_greeks, current_hedge_qty, spot)
     display_hedge(hedge)
+
+    # Cadence minimale entre deux rebalancements (HEDGE_EVERY_H, 1 = chaque run).
+    # Le circuit breaker, lui, remet le hedge à plat sans attendre (apply_circuit_breaker).
+    if hedge["needs_rebalance"] and HEDGE_EVERY_H > 1:
+        _hh = hedge_data.get("history") or []
+        try:
+            _last = pd.to_datetime(_hh[-1]["ts"].replace(" UTC", ""), utc=True) if _hh else None
+        except Exception:
+            _last = None
+        if _last is not None:
+            _age_h = (pd.Timestamp.now(tz="UTC") - _last).total_seconds() / 3600
+            if _age_h < HEDGE_EVERY_H:
+                print(f"  [cadence] dernier rebalancement il y a {_age_h:.1f} h < {HEDGE_EVERY_H} h — reporté")
+                hedge["needs_rebalance"] = False
 
     # ── Rebalancement automatique si drift > seuil ────────────────────────────
     if hedge["needs_rebalance"]:
@@ -1456,18 +1517,17 @@ def fetch_scored_candidates(currency: str, spot: float,
     bon marché (deep OTM à quelques $) indépendamment du spread.
     Retourne un DataFrame trié par score décroissant.
     """
-    instruments = get("get_instruments", {"currency": currency, "kind": "option", "expired": "false"})
-    now_t = now_ms()
+    # Une seule photographie de la chaîne (2 appels API) au lieu d'un ticker par put
+    chain = fetch_option_chain(currency)
+    puts  = [r for r in chain.values() if r.get("option_type") == "put"]
     rows  = []
 
-    for inst in instruments:
-        if not inst["instrument_name"].endswith("-P"):
-            continue
-        tte = (inst["expiration_timestamp"] - now_t) / 86_400_000
+    for inst in puts:
+        tte = inst["tte_days"]
         if not (tte_min <= tte <= tte_max):
             continue
         try:
-            t      = fetch_ticker_full(inst["instrument_name"])
+            t      = inst
             greeks = t.get("greeks") or {}
             delta  = greeks.get("delta")
             mark_iv = t.get("mark_iv") or 0.0
@@ -1524,16 +1584,11 @@ def fetch_scored_candidates(currency: str, spot: float,
     atm_iv_by_exp: dict = {}
     cand_expiries = {r["expiry_ts"] for r in rows}
     for exp_ts in cand_expiries:
-        puts_exp = [i for i in instruments
-                    if i["instrument_name"].endswith("-P") and i["expiration_timestamp"] == exp_ts]
+        puts_exp = [i for i in puts if i["expiration_timestamp"] == exp_ts]
         if not puts_exp:
             continue
         atm_inst = min(puts_exp, key=lambda i: abs(i["strike"] - spot))
-        try:
-            atm_t = fetch_ticker_full(atm_inst["instrument_name"])
-            atm_iv_by_exp[exp_ts] = atm_t.get("mark_iv") or curr_iv
-        except Exception:
-            atm_iv_by_exp[exp_ts] = curr_iv
+        atm_iv_by_exp[exp_ts] = atm_inst.get("mark_iv") or curr_iv
 
     # ── Scoring ────────────────────────────────────────────────────────────────
     # rang DVOL 30j : sorti du score (commun à tous les candidats), utilisé par

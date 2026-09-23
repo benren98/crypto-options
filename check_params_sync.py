@@ -37,13 +37,25 @@ MIRROR = {
     "CB_T1_MOVE_3D_PCT":         "CB_T1_MOVE_3D",
     "CB_T1_KEEP":                "CB_T1_KEEP",
     "CB_T1_RESTORE_MOVE_PCT":    "CB_T1_RESTORE",
+    "DELTA_MIN_SPACING":         "DELTA_MIN_SPACING",
+    "SCAN_DELTA_MIN":            "SCAN_DELTA_MIN",
+    # Hedge (bande + politique)
+    "HEDGE_THRESHOLD_BASE_PCT":  "HEDGE_THRESHOLD_BASE_PCT",
+    "HEDGE_IV_REF":              "HEDGE_IV_REF",
+    "HEDGE_THRESHOLD_MODE":      "HEDGE_THRESHOLD_MODE",
+    "HEDGE_RATIO":               "HEDGE_RATIO",
+    "HEDGE_FLATTEN_DELTA":       "HEDGE_FLATTEN_DELTA",
+    "HEDGE_EVERY_H":             "HEDGE_EVERY_H",
+    # Frais Deribit
+    "FEE_OPTION_RATE":           "FEE_OPTION_RATE",
+    "FEE_OPTION_CAP":            "FEE_OPTION_CAP",
+    "FEE_DELIVERY_RATE":         "FEE_DELIVERY_RATE",
+    "FEE_PERP_RATE":             "FEE_PERP_RATE",
 }
 
-# Divergences assumées (documentées) : ne déclenchent pas d'erreur
-KNOWN_EXCEPTIONS = {
-    # backtest utilise un spacing plus étroit (grille de strikes discrète du simulateur)
-    "DELTA_MIN_SPACING": "0.08 live vs 0.04 backtest — assumé",
-}
+# Divergences assumées (documentées) : ne déclenchent pas d'erreur.
+# (DELTA_MIN_SPACING n'en est plus une : le backtest compare désormais les dates d'échéance.)
+KNOWN_EXCEPTIONS = {}
 
 ASSIGN_RE = re.compile(r"^([A-Z][A-Z0-9_]+)\s*=\s*([^#\n]+)", re.MULTILINE)
 

@@ -8,8 +8,8 @@ But : accumuler un historique réel (smile put + ATM par échéance) pour, plus 
 
 À chaque exécution (1 snapshot / jour UTC, dédupliqué), pour les échéances 4-35j :
 on relève par strike OTM put : mark_iv, bid_iv, delta, gamma, prix mark/bid/ask,
-open interest et volume 24h. Un seul appel get_book_summary fournit volume+OI ;
-le ticker par instrument fournit IV + greeks.
+open interest et volume 24h. get_book_summary fournit volume + OI, et la chaîne
+(greeks_hedge.fetch_option_chain) fournit IV et greeks recalculés — plus aucun ticker.
 
 Append d'une ligne JSON dans vol_surface.jsonl. Branché sur GitHub Actions.
 
@@ -18,7 +18,7 @@ Usage : python vol_surface_logger.py
 import json, os, sys
 from datetime import datetime, timezone
 sys.path.insert(0, '.')
-from greeks_hedge import get, now_ms, now_dt, fetch_spot, CURRENCY
+from greeks_hedge import get, now_ms, now_dt, fetch_spot, fetch_option_chain, CURRENCY
 
 LOG_FILE   = "vol_surface.jsonl"
 DTE_MIN    = 4         # échéances retenues (jours)
@@ -93,15 +93,15 @@ def run():
 
     # garder les MAX_EXP échéances les plus proches
     exps = sorted(set(p["exp_ts"] for p in puts))[:MAX_EXP]
+    chain = fetch_option_chain(CURRENCY)   # IV + greeks de toute la chaîne en 2 appels
     surface = []
     for exp_ts in exps:
         legs = sorted((p for p in puts if p["exp_ts"] == exp_ts), key=lambda p: abs(p["mny"] - 1))
         legs = legs[:MAX_STRIKES_PER_EXP]
         strikes = []
         for p in legs:
-            try:
-                t = get("ticker", {"instrument_name": p["name"]})
-            except Exception:
+            t = chain.get(p["name"])
+            if not t:
                 continue
             g = t.get("greeks", {}) or {}
             vol, oi = vol_oi.get(p["name"], (None, None))
