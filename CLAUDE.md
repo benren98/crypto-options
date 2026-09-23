@@ -32,8 +32,13 @@ sizing → hedge → régénère le dashboard (`docs/index.html`, GitHub Pages).
 - Backtest BTC (config prod) : `python backtest.py` — miroir des params live de `greeks_hedge.py`.
 - Routine de sweeps (anti-overfit, hebdo en Actions) : `python backtest_routine.py`
   → `backtest_routine.json` + dashboard backtests.
-- Dashboards : `python generate_html.py` (live → `docs/index.html`) ·
+- Dashboards : `python generate_html.py` (live v1 → `docs/index.html`) ·
+  `python generate_dashboard.py` (v2 orientée décision → `docs/v2.html`) ·
   `python generate_backtest_html.py` (backtests → `docs/backtest.html`).
+- Dashboard v2 : le modèle de données est calculé dans `generate_dashboard.py`, le rendu est dans
+  le template `dashboard_v2.html` (ne jamais éditer `docs/v2.html`, il est régénéré). Tester un autre
+  état : `python generate_dashboard.py --data-dir <dossier> --now "2026-08-29 23:50:00"` (ex. fichiers
+  extraits d'un ancien commit avec `git show <sha>:positions.json`).
 - Collecte surfaces de vol : `vol_surface_logger.py` (horaire) → `vol_surface.jsonl` ;
   fit `fit_vol_model.py` → `vol_model_fit.json` (≥15 jours).
 - Vérifier l'impact LIVE d'un changement de scoring : `greeks_hedge.fetch_scored_candidates(...)`

@@ -1,0 +1,865 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="900">
+<title>VRP Bot · Pilotage</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M6 22 L13 14 L18 18 L26 9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<!--
+  Dashboard v2 — template. NE PAS ÉDITER docs/v2.html : il est régénéré par
+  generate_dashboard.py qui injecte le modèle de données à la place du marqueur.
+  Palette : instance de référence dataviz (3 premiers slots, validés light + dark).
+-->
+<style>
+:root {
+  color-scheme: light;
+  --page:#f9f9f7; --surface:#fcfcfb; --surface-2:#f3f2ee; --ink:#0b0b0b; --ink-2:#52514e; --muted:#6f6d68;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10);
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --neg-mark:#e34948; --track:#cde2fb;
+  --pos-text:#006300; --neg-text:#c42f2f;
+  --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b; --info:#2a78d6;
+  --shadow:0 1px 2px rgba(11,11,11,.04), 0 4px 16px rgba(11,11,11,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface:#1a1a19; --surface-2:#232321; --ink:#ffffff; --ink-2:#c3c2b7; --muted:#9a988f;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --neg-mark:#e66767; --track:#1d3a5f;
+    --pos-text:#0ca30c; --neg-text:#e66767; --info:#3987e5;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page:#0d0d0d; --surface:#1a1a19; --surface-2:#232321; --ink:#ffffff; --ink-2:#c3c2b7; --muted:#9a988f;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --neg-mark:#e66767; --track:#1d3a5f;
+  --pos-text:#0ca30c; --neg-text:#e66767; --info:#3987e5;
+  --shadow:none;
+}
+* { box-sizing:border-box; }
+html, body { margin:0; }
+body { background:var(--page); color:var(--ink); font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; -webkit-font-smoothing:antialiased; }
+a { color:var(--s1); text-decoration:none; } a:hover { text-decoration:underline; }
+.wrap { max-width:1240px; margin:0 auto; padding:20px 16px 48px; }
+.num, table.t td.r, .tick { font-variant-numeric:tabular-nums; }
+h1,h2,h3 { margin:0; font-weight:600; }
+.muted { color:var(--muted); } .ink2 { color:var(--ink-2); }
+.pos { color:var(--pos-text); } .neg { color:var(--neg-text); }
+.small { font-size:12px; }
+
+/* Header */
+.top { display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; margin-bottom:16px; }
+.brand { display:flex; align-items:center; gap:10px; }
+.brand h1 { font-size:18px; letter-spacing:-.01em; }
+.pill { font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; padding:3px 8px; border-radius:999px; background:var(--surface-2); color:var(--ink-2); border:1px solid var(--border); }
+.botstatus { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-2); }
+.dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex:none; }
+.nav { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
+.btn { font:inherit; font-size:13px; color:var(--ink-2); background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:6px 10px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+.btn:hover { color:var(--ink); text-decoration:none; background:var(--surface-2); }
+.btn[aria-pressed="true"] { color:var(--ink); background:var(--surface-2); border-color:var(--axis); font-weight:600; }
+
+/* Cards & grids */
+.card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px; box-shadow:var(--shadow); min-width:0; }
+.card h3 { font-size:14px; display:flex; align-items:center; gap:8px; }
+.card .sub { color:var(--muted); font-size:12px; margin-top:2px; }
+.cardhead { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr)); gap:16px; margin-top:16px; }
+.grid3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr)); gap:16px; margin-top:16px; }
+.section { font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:32px 0 0; }
+
+/* Verdict */
+.verdict { display:flex; gap:14px; align-items:flex-start; padding:16px 18px; border-radius:12px; background:var(--surface); border:1px solid var(--border); box-shadow:var(--shadow); position:relative; overflow:hidden; }
+.verdict::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--lvl); }
+.verdict .icon { width:32px; height:32px; border-radius:50%; display:grid; place-items:center; font-weight:700; flex:none; color:#fff; background:var(--lvl); font-size:16px; }
+.verdict h2 { font-size:20px; letter-spacing:-.01em; }
+.verdict .lines { margin-top:4px; color:var(--ink-2); display:grid; gap:2px; }
+.verdict ul { margin:10px 0 0; padding:0; list-style:none; display:grid; gap:6px; }
+.verdict li { display:flex; gap:8px; align-items:baseline; }
+.lvl-good { --lvl:var(--good); } .lvl-warning { --lvl:var(--warning); } .lvl-critical { --lvl:var(--critical); }
+.lvl-idle { --lvl:var(--axis); } .lvl-info { --lvl:var(--info); } .lvl-serious { --lvl:var(--serious); }
+.lvl-idle .icon { color:var(--ink); }
+.badge { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; padding:2px 8px 2px 6px; border-radius:999px; background:color-mix(in srgb, var(--lvl) 14%, transparent); color:var(--ink); white-space:nowrap; }
+.badge i { font-style:normal; width:14px; height:14px; border-radius:50%; background:var(--lvl); color:#fff; display:grid; place-items:center; font-size:9px; }
+.lvl-warning.badge i, .lvl-idle.badge i { color:#0b0b0b; }
+
+/* KPI tiles */
+.kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:12px; margin-top:16px; }
+.tile { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; box-shadow:var(--shadow); min-width:0; }
+.tile .label { font-size:12px; color:var(--ink-2); display:flex; justify-content:space-between; gap:8px; }
+.tile .value { font-size:24px; font-weight:600; letter-spacing:-.02em; margin-top:4px; white-space:nowrap; }
+.tile .meta { font-size:12px; color:var(--muted); margin-top:4px; display:grid; gap:2px; }
+.tile.hero { grid-column:span 2; }
+.tile.hero .value { font-size:44px; line-height:1.05; }
+@media (max-width:560px) { .tile.hero { grid-column:span 1; } .tile.hero .value { font-size:36px; } }
+.spark { display:block; margin-top:8px; width:100%; height:36px; }
+
+/* Meters */
+.meter { position:relative; height:8px; border-radius:4px; background:var(--track); margin-top:8px; }
+.meter > span { position:absolute; left:0; top:0; bottom:0; border-radius:4px; background:var(--mfill, var(--s1)); }
+.meter .tickmark { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--ink-2); border-radius:1px; }
+.meterrow { display:grid; gap:2px; margin-bottom:14px; }
+.meterrow .head { display:flex; justify-content:space-between; gap:8px; font-size:13px; }
+.meterrow .ticklabels { position:relative; height:16px; font-size:11px; color:var(--muted); }
+.meterrow .ticklabels span { position:absolute; transform:translateX(-100%); white-space:nowrap; top:2px; }
+
+/* Gates */
+.gates { display:grid; gap:0; }
+.gate { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--grid); font-size:13px; }
+.gate:last-child { border-bottom:0; }
+.gate .gi { width:20px; height:20px; border-radius:50%; display:grid; place-items:center; font-size:11px; font-weight:700; color:#fff; flex:none; }
+.gate .gl { flex:1; min-width:0; }
+.gate .gd { color:var(--ink-2); text-align:right; font-variant-numeric:tabular-nums; }
+.callout { margin-top:12px; padding:10px 12px; border-radius:8px; background:var(--surface-2); font-size:13px; color:var(--ink-2); }
+.callout b { color:var(--ink); }
+
+/* Tables */
+.tscroll { overflow-x:auto; margin:0 -16px; padding:0 16px; }
+table.t { width:100%; border-collapse:collapse; font-size:13px; }
+table.t th { text-align:left; font-weight:500; color:var(--muted); font-size:12px; padding:6px 10px; border-bottom:1px solid var(--grid); white-space:nowrap; }
+table.t td { padding:8px 10px; border-bottom:1px solid var(--grid); vertical-align:middle; white-space:nowrap; }
+table.t th.r, table.t td.r { text-align:right; }
+table.t tr:last-child td { border-bottom:0; }
+table.t tbody tr.clickable { cursor:pointer; }
+table.t tbody tr.clickable:hover td, table.t tbody tr:focus-visible td { background:var(--surface-2); }
+table.t tr.sub td { background:var(--surface-2); padding:4px 10px 10px; }
+table.t tr.sub table.t td, table.t tr.sub table.t th { background:transparent; padding:5px 10px; }
+.caret { display:inline-block; width:12px; color:var(--muted); transition:transform .15s; }
+tr[aria-expanded="true"] .caret { transform:rotate(90deg); }
+.instr { font-weight:600; }
+.progress { width:84px; height:6px; border-radius:3px; background:var(--track); position:relative; display:inline-block; vertical-align:middle; margin-left:8px; }
+.progress span { position:absolute; left:0; top:0; bottom:0; border-radius:3px; background:var(--s1); }
+.progress.neg span { background:var(--neg-mark); }
+
+/* Score bars */
+.sbar { position:relative; width:150px; height:10px; display:flex; gap:2px; background:var(--surface-2); border-radius:0 4px 4px 0; }
+.sbar span { height:10px; }
+.sbar span:first-child { border-radius:0; }
+.sbar span:last-child { border-radius:0 4px 4px 0; }
+.sbar .thr { position:absolute; top:-4px; bottom:-4px; width:2px; background:var(--ink); border-radius:1px; }
+.legend { display:flex; flex-wrap:wrap; gap:6px 16px; font-size:12px; color:var(--ink-2); margin-bottom:8px; }
+.legend .key { display:inline-flex; align-items:center; gap:6px; }
+.legend .sw { display:inline-block; }
+.legend .sw.line { width:14px; height:2px; border-radius:1px; }
+.legend .sw.rect { width:10px; height:10px; border-radius:2px; }
+.legend .sw.diamond { width:8px; height:8px; transform:rotate(45deg); }
+
+/* Charts */
+.chartbox { position:relative; height:240px; }
+.empty { display:grid; place-items:center; height:100%; min-height:120px; color:var(--muted); font-size:13px; text-align:center; padding:12px; }
+details.dt { margin-top:10px; font-size:12px; }
+details.dt summary { cursor:pointer; color:var(--muted); }
+details.dt .tscroll { max-height:260px; overflow:auto; margin-top:6px; }
+
+/* Stats */
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr)); gap:12px; margin-top:16px; }
+.stat { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; box-shadow:var(--shadow); }
+.stat .label { font-size:12px; color:var(--ink-2); }
+.stat .value { font-size:20px; font-weight:600; margin-top:2px; letter-spacing:-.01em; }
+.stat .meta { font-size:12px; color:var(--muted); margin-top:2px; }
+
+.filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:32px; }
+.filters .lbl { font-size:12px; color:var(--muted); margin-right:4px; }
+.tabs { display:flex; gap:4px; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; }
+.chip { font-size:12px; padding:3px 8px; border-radius:6px; background:var(--surface-2); color:var(--ink-2); }
+.chip b { color:var(--ink); font-weight:600; }
+.reco { display:grid; gap:4px; padding:10px 0; border-bottom:1px solid var(--grid); }
+.reco:last-child { border-bottom:0; }
+.reco .arrow { color:var(--muted); margin:0 6px; }
+footer { margin-top:32px; font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 16px; }
+.err { padding:24px; border-radius:12px; background:var(--surface); border:1px solid var(--border); }
+@media print { .nav, .filters, details.dt { display:none; } }
+</style>
+<script>
+  // Thème appliqué avant le rendu (pas de flash) — préférence locale best-effort
+  try { var th = localStorage.getItem("vrp-theme"); if (th === "light" || th === "dark") document.documentElement.setAttribute("data-theme", th); } catch (e) {}
+</script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top" id="top"></header>
+  <section id="verdict" aria-live="polite"></section>
+  <section class="kpis" id="kpis" aria-label="Indicateurs clés"></section>
+  <div class="grid2">
+    <section class="card" id="entry"></section>
+    <section class="card" id="risk"></section>
+  </div>
+  <div style="margin-top:16px"><section class="card" id="book"></section></div>
+
+  <div class="filters" role="toolbar" aria-label="Période des graphiques">
+    <span class="lbl">Période des graphiques</span>
+    <div class="tabs" id="range"></div>
+  </div>
+  <h2 class="section">Performance</h2>
+  <div class="grid2">
+    <section class="card" id="perf-cum"></section>
+    <section class="card" id="perf-month"></section>
+  </div>
+  <div class="stats" id="perf-stats"></div>
+
+  <h2 class="section">Marché</h2>
+  <div class="grid3">
+    <section class="card" id="mk-spot"></section>
+    <section class="card" id="mk-vol"></section>
+    <section class="card" id="mk-fund"></section>
+  </div>
+
+  <h2 class="section">Opportunités &amp; décisions</h2>
+  <div style="margin-top:16px"><section class="card" id="scanner"></section></div>
+  <div class="grid2">
+    <section class="card" id="decisions"></section>
+    <section class="card" id="journal"></section>
+  </div>
+  <div id="reconcile"></div>
+  <footer id="foot"></footer>
+</div>
+
+<script type="application/json" id="dash-data">/*__DASHBOARD_DATA__*/null</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+"use strict";
+
+// ── Données ────────────────────────────────────────────────────────────────
+let D;
+try { D = JSON.parse(document.getElementById("dash-data").textContent); } catch (e) { D = null; }
+if (!D) {
+  document.querySelector(".wrap").innerHTML = "";
+  const box = document.createElement("div"); box.className = "err";
+  box.textContent = "Template non rendu : lancer `python generate_dashboard.py`.";
+  document.querySelector(".wrap").append(box);
+  return;
+}
+
+// ── Helpers DOM (texte toujours via textContent / text nodes) ──────────────
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v;
+    else if (k === "style") e.setAttribute("style", v);
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid == null || kid === false) continue;
+    e.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+  return e;
+}
+function mount(id, ...kids) { const el = document.getElementById(id); el.replaceChildren(...kids.flat(Infinity).filter(Boolean)); return el; }
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// ── Formats ────────────────────────────────────────────────────────────────
+const MINUS = "−";
+// Espace insécable normale plutôt que l'espace fine fr-FR (U+202F), illisible en petite taille
+function num(v, d = 0) { return Number(v).toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).replace(/ /g, " "); }
+function usd(v, o = {}) {
+  if (v == null || !isFinite(v)) return "—";
+  const d = o.d ?? 0, a = Math.abs(v);
+  const sign = v < 0 ? MINUS : (o.sign && v > 0 ? "+" : "");
+  if (o.compact && a >= 10000) return sign + num(a / 1000, 1) + " k$";
+  return sign + num(a, d) + " $";
+}
+function pct(v, d = 1, sign = false) {
+  if (v == null || !isFinite(v)) return "—";
+  const s = v < 0 ? MINUS : (sign && v > 0 ? "+" : "");
+  return s + num(Math.abs(v), d) + " %";
+}
+function sgn(v, d = 3, unit = "") {
+  if (v == null || !isFinite(v)) return "—";
+  const s = v < 0 ? MINUS : (v > 0 ? "+" : "");
+  return s + num(Math.abs(v), d) + unit;
+}
+function tone(v) { return v > 0 ? "pos" : v < 0 ? "neg" : ""; }
+function money(v, o = {}) { return h("span", { class: "num " + (o.plain ? "" : tone(v)) }, usd(v, { sign: true, ...o })); }
+const dFmt  = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short" });
+const dtFmt = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const mFmt  = new Intl.DateTimeFormat("fr-FR", { month: "short", year: "2-digit" });
+function fdate(iso) { return iso ? dFmt.format(new Date(iso)) : "—"; }
+function fdt(iso) { return iso ? dtFmt.format(new Date(iso)) : "—"; }
+function fmonth(m) { return mFmt.format(new Date(m + "-01T00:00:00Z")); }
+function ago(hours) {
+  if (hours == null) return "jamais";
+  if (hours < 1) return "il y a " + Math.max(1, Math.round(hours * 60)) + " min";
+  if (hours < 48) return "il y a " + num(hours, hours < 10 ? 1 : 0) + " h";
+  return "il y a " + num(hours / 24, 0) + " j";
+}
+const tzName = (() => { try { return new Intl.DateTimeFormat("fr-FR", { timeZoneName: "short" }).formatToParts(new Date()).find(p => p.type === "timeZoneName").value; } catch (e) { return ""; } })();
+
+const LVL = {
+  good: { icon: "✓", label: "OK" }, warning: { icon: "!", label: "À surveiller" },
+  critical: { icon: "✕", label: "Action" }, idle: { icon: "–", label: "Au repos" },
+  info: { icon: "i", label: "Info" }, serious: { icon: "!", label: "Sérieux" }, na: { icon: "?", label: "n/a" },
+};
+function badge(level, text) { return h("span", { class: "badge lvl-" + level }, h("i", { "aria-hidden": "true" }, LVL[level]?.icon || "•"), text); }
+
+// ── Plugins Chart.js (crosshair, étiquettes de fin, lignes de référence) ───
+const EXTRA = new WeakMap();   // options JS hors du résolveur d'options Chart.js
+const crosshair = {
+  id: "vrpCrosshair",
+  afterDraw(chart) {
+    if (chart.config.type !== "line") return;
+    const act = chart.tooltip && chart.tooltip.getActiveElements();
+    if (!act || !act.length) return;
+    const x = act[0].element.x, { top, bottom } = chart.chartArea, ctx = chart.ctx;
+    ctx.save(); ctx.strokeStyle = css("--axis"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke(); ctx.restore();
+  },
+};
+const refLines = {
+  id: "vrpRefLines",
+  afterDatasetsDraw(chart) {
+    const ex = EXTRA.get(chart.canvas); if (!ex || !ex.refLines) return;
+    const ctx = chart.ctx, a = chart.chartArea, y = chart.scales.y;
+    for (const l of ex.refLines) {
+      const py = y.getPixelForValue(l.value);
+      if (py < a.top - 1 || py > a.bottom + 1) continue;
+      ctx.save(); ctx.strokeStyle = l.color || css("--ink-2"); ctx.lineWidth = 1; ctx.setLineDash(l.dash || []);
+      ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke();
+      if (l.label) {
+        ctx.setLineDash([]); ctx.fillStyle = css("--muted"); ctx.font = "11px system-ui,sans-serif";
+        ctx.textBaseline = "bottom"; ctx.fillText(l.label, a.left + 4, py - 3);
+      }
+      ctx.restore();
+    }
+  },
+};
+const endLabels = {
+  id: "vrpEndLabels",
+  afterDatasetsDraw(chart) {
+    const ex = EXTRA.get(chart.canvas); if (!ex || !ex.endFmt) return;
+    const pts = [];
+    chart.data.datasets.forEach((ds, i) => {
+      if (!ds.vrpEnd) return;
+      const meta = chart.getDatasetMeta(i); if (meta.hidden) return;
+      const val = (p) => (p != null && typeof p === "object") ? p.y : p;
+      let j = ds.data.length - 1; while (j >= 0 && val(ds.data[j]) == null) j--;
+      if (j < 0 || !meta.data[j]) return;
+      pts.push({ x: meta.data[j].x, y: meta.data[j].y, v: val(ds.data[j]) });
+    });
+    pts.sort((a, b) => a.y - b.y);
+    const ctx = chart.ctx;
+    pts.forEach((p, k) => {
+      ctx.save(); ctx.fillStyle = css("--ink-2"); ctx.font = "600 11px system-ui,sans-serif"; ctx.textAlign = "right";
+      const above = k === 0;
+      ctx.textBaseline = above ? "bottom" : "top";
+      ctx.fillText(ex.endFmt(p.v), p.x - 2, above ? p.y - 6 : p.y + 6);
+      ctx.restore();
+    });
+  },
+};
+if (window.Chart) Chart.register(crosshair, refLines, endLabels);
+
+const CHARTS = [];
+function tooltipOpts(fmt, titleFmt) {
+  return {
+    backgroundColor: css("--surface"), borderColor: css("--border"), borderWidth: 1,
+    titleColor: css("--ink-2"), bodyColor: css("--ink"), padding: 10, cornerRadius: 8,
+    titleFont: { size: 11, weight: "500" }, bodyFont: { size: 12, weight: "600" },
+    boxWidth: 12, boxHeight: 2, boxPadding: 6, displayColors: true,
+    callbacks: {
+      title: (items) => items.length ? titleFmt(items[0].chart.scales.x.type === "linear" ? items[0].parsed.x : items[0].label) : "",
+      label: (c) => c.parsed.y == null ? null : "  " + fmt(c.parsed.y) + "   " + c.dataset.label,
+      labelColor: (c) => ({ borderColor: c.dataset.borderColor || c.dataset.backgroundColor, backgroundColor: c.dataset.vrpKey || c.dataset.borderColor || c.dataset.backgroundColor, borderWidth: 0 }),
+    },
+  };
+}
+function axes(yFmt, xFmt, o = {}) {
+  // o.time : axe X linéaire en millisecondes (vraie échelle de temps, les trous restent des trous)
+  const x = o.time
+    ? { type: "linear", grid: { display: false }, border: { color: css("--axis") }, min: o.xmin, max: o.xmax,
+        ticks: { color: css("--muted"), maxRotation: 0, autoSkip: true, maxTicksLimit: o.maxX || 6, font: { size: 11 },
+                 callback: (v) => xFmt(v) } }
+    : { stacked: !!o.stacked, grid: { display: false }, border: { color: css("--axis") },
+        ticks: { color: css("--muted"), maxRotation: 0, autoSkip: true, maxTicksLimit: o.maxX || 6, font: { size: 11 },
+                 callback(v) { return xFmt(this.getLabelForValue(v)); } } };
+  return {
+    x,
+    y: { stacked: !!o.stacked, grid: { color: css("--grid"), drawTicks: false }, border: { display: false },
+         suggestedMin: o.min, suggestedMax: o.max,
+         ticks: { color: css("--muted"), padding: 8, font: { size: 11 }, maxTicksLimit: 6, callback: (v) => yFmt(v) } },
+  };
+}
+const GAP_MS = 6 * 3600 * 1000;   // au-delà : la ligne est coupée (pas d'interpolation d'un trou)
+function lineDs(label, data, color, endLabel, gap) {
+  return { label, data, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0,
+           pointHoverRadius: 4, pointHoverBorderWidth: 2, pointHoverBorderColor: css("--surface"),
+           pointHoverBackgroundColor: color, tension: 0, spanGaps: gap ?? GAP_MS, borderJoinStyle: "round",
+           borderCapStyle: "round", vrpEnd: !!endLabel };
+}
+const xy = (arr, tk, vk) => arr.map(p => ({ x: Date.parse(p[tk]), y: p[vk] == null ? null : p[vk] }));
+function chartCard(id, title, sub, legendItems, build, table) {
+  const box = h("div", { class: "chartbox" });
+  const nodes = [h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, title), sub ? h("div", { class: "sub" }, sub) : null))];
+  if (legendItems && legendItems.length > 1) nodes.push(legend(legendItems));
+  nodes.push(box);
+  if (table) nodes.push(dataTable(table.headers, table.rows));
+  mount(id, nodes);
+  if (!window.Chart) { box.append(h("div", { class: "empty" }, "Graphique indisponible (Chart.js non chargé)")); return; }
+  const r = build(box);
+  if (r === null) box.append(h("div", { class: "empty" }, "Pas encore de données sur cette période"));
+}
+function canvasIn(box, label, extra) {
+  const c = h("canvas", { role: "img", "aria-label": label });
+  box.append(c);
+  EXTRA.set(c, extra || {});
+  return c;
+}
+function legend(items) {
+  return h("div", { class: "legend" }, items.map(it =>
+    h("span", { class: "key" }, h("span", { class: "sw " + (it.kind || "line"), style: "background:" + it.color }), it.name)));
+}
+function dataTable(headers, rows) {
+  return h("details", { class: "dt" }, h("summary", {}, "Voir les données"),
+    h("div", { class: "tscroll" }, h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, headers.map((x, i) => h("th", { class: i ? "r" : "" }, x)))),
+      h("tbody", {}, rows.map(r => h("tr", {}, r.map((x, i) => h("td", { class: i ? "r num" : "" }, x))))))));
+}
+
+// ── Période (filtre commun à tous les graphiques) ──────────────────────────
+const RANGES = [{ k: "30", label: "30 j" }, { k: "90", label: "90 j" }, { k: "all", label: "Tout" }];
+let range = "90";
+try { const r = localStorage.getItem("vrp-range"); if (RANGES.some(x => x.k === r)) range = r; } catch (e) {}
+function cutoffISO() {
+  if (range === "all") return "";
+  const d = new Date(Date.now() - Number(range) * 86400000);
+  return d.toISOString();
+}
+function renderRange() {
+  mount("range", RANGES.map(r => h("button", { class: "btn", "aria-pressed": String(r.k === range),
+    onclick: () => { range = r.k; try { localStorage.setItem("vrp-range", range); } catch (e) {} renderRange(); renderCharts(); } }, r.label)));
+}
+
+// ── Header ─────────────────────────────────────────────────────────────────
+function renderTop() {
+  const m = D.meta, age = m.bot_age_h;
+  const lvl = age == null || age >= 8 ? "critical" : age >= 4 ? "warning" : "good";
+  const themeBtn = h("button", { class: "btn", onclick: toggleTheme, title: "Basculer clair / sombre" }, "◐ Thème");
+  mount("top",
+    h("div", { class: "brand" }, h("h1", {}, "VRP Bot · BTC"), h("span", { class: "pill" }, m.mode)),
+    h("div", { class: "botstatus" }, h("span", { class: "dot", style: "background:var(--" + lvl + ")" }),
+      h("span", {}, "Dernier run ", h("b", {}, ago(age)), h("span", { class: "muted" }, " · " + fdt(m.bot_ts) + (tzName ? " " + tzName : "")))),
+    h("nav", { class: "nav" }, themeBtn,
+      h("a", { class: "btn", href: "index.html" }, "Dashboard v1"),
+      h("a", { class: "btn", href: "backtest.html" }, "Backtests"),
+      h("a", { class: "btn", href: m.repo + "/actions", target: "_blank", rel: "noopener" }, "GitHub Actions ↗")));
+}
+function toggleTheme() {
+  const dark = document.documentElement.getAttribute("data-theme") === "dark" ||
+    (!document.documentElement.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+  const next = dark ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("vrp-theme", next); } catch (e) {}
+  renderCharts(); renderKpis();
+}
+
+// ── Verdict ────────────────────────────────────────────────────────────────
+function renderVerdict() {
+  const v = D.verdict;
+  mount("verdict", h("div", { class: "verdict lvl-" + v.level },
+    h("div", { class: "icon", "aria-hidden": "true" }, LVL[v.level].icon),
+    h("div", { style: "min-width:0;flex:1" },
+      h("h2", {}, v.headline),
+      h("div", { class: "lines" }, h("div", {}, v.book), h("div", {}, v.entry)),
+      v.items.length ? h("ul", {}, v.items.map(it => h("li", {}, badge(it.level, LVL[it.level].label), h("span", {}, it.text)))) : null)));
+}
+
+// ── KPI ────────────────────────────────────────────────────────────────────
+function sparkline(values) {
+  if (!values || values.length < 2) return null;
+  const w = 240, ht = 36, pad = 4;
+  const min = Math.min(...values, 0), max = Math.max(...values, 0), span = max - min || 1;
+  const X = i => pad + i * (w - 2 * pad) / (values.length - 1);
+  const Y = v => ht - pad - (v - min) / span * (ht - 2 * pad);
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${w} ${ht}`); svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("class", "spark"); svg.setAttribute("aria-hidden", "true");
+  const zero = document.createElementNS(ns, "line");
+  zero.setAttribute("x1", pad); zero.setAttribute("x2", w - pad); zero.setAttribute("y1", Y(0)); zero.setAttribute("y2", Y(0));
+  zero.setAttribute("stroke", css("--grid")); zero.setAttribute("stroke-width", "1"); svg.append(zero);
+  const pl = document.createElementNS(ns, "polyline");
+  pl.setAttribute("points", values.map((v, i) => X(i).toFixed(1) + "," + Y(v).toFixed(1)).join(" "));
+  pl.setAttribute("fill", "none"); pl.setAttribute("stroke", css("--muted")); pl.setAttribute("stroke-width", "1.5");
+  pl.setAttribute("vector-effect", "non-scaling-stroke"); svg.append(pl);
+  const dot = document.createElementNS(ns, "circle");
+  dot.setAttribute("cx", X(values.length - 1)); dot.setAttribute("cy", Y(values[values.length - 1])); dot.setAttribute("r", "3");
+  dot.setAttribute("fill", css("--s1")); svg.append(dot);
+  return svg;
+}
+function meterEl(fill, color, ticks) {
+  const m = h("div", { class: "meter", style: "--mfill:" + color, role: "presentation" }, h("span", { style: "width:" + Math.min(100, fill * 100).toFixed(1) + "%" }));
+  (ticks || []).forEach(t => m.append(h("span", { class: "tickmark", style: "left:calc(" + (t.at * 100).toFixed(1) + "% - 1px)" })));
+  return m;
+}
+function sevColor(frac) { return frac >= 1 ? "var(--critical)" : frac >= 0.7 ? "var(--warning)" : "var(--s1)"; }
+function renderKpis() {
+  const p = D.performance, t = p.totals, mk = D.market, b = D.book.totals, cb = D.cb;
+  const tiles = [];
+  tiles.push(h("div", { class: "tile hero" },
+    h("div", { class: "label" }, h("span", {}, "PnL net de la stratégie"), h("span", { class: "muted" }, p.start ? "depuis le " + fdate(p.start) + " · " + num(p.days, 0) + " j" : "")),
+    h("div", { class: "value " + tone(t.net) }, usd(t.net, { sign: true })),
+    h("div", { class: "meta" },
+      h("div", {}, "Options ", money(t.options_realized), " · Hedge ", money(t.hedge_realized + t.hedge_mtm), " · Funding ", money(t.funding), t.latent_options ? [" · Latent ", money(t.latent_options)] : null)),
+    sparkline((p.daily || []).map(d => d.net))));
+
+  const mv1 = mk.move_1d, mv3 = mk.move_3d;
+  tiles.push(h("div", { class: "tile" }, h("div", { class: "label" }, "Spot BTC"),
+    h("div", { class: "value" }, usd(mk.spot)),
+    h("div", { class: "meta" }, h("div", {}, "24 h ", h("span", { class: "num " + tone(mv1) }, pct(mv1, 1, true)), " · 3 j ", h("span", { class: "num " + tone(mv3) }, pct(mv3, 1, true))))));
+
+  const ivhv = mk.iv_hv;
+  const vrpLvl = ivhv == null ? "na" : ivhv < 1.1 ? "warning" : ivhv < 1.35 ? "good" : "good";
+  const vrpTxt = ivhv == null ? "n/a" : ivhv < 1.1 ? "VRP mince" : ivhv < 1.35 ? "VRP correct" : "VRP riche";
+  tiles.push(h("div", { class: "tile" }, h("div", { class: "label" }, h("span", {}, "Régime de vol"), badge(vrpLvl, vrpTxt)),
+    h("div", { class: "value" }, "DVOL " + (mk.dvol != null ? num(mk.dvol, 1) : "—")),
+    h("div", { class: "meta" }, h("div", {}, "HV blend " + (mk.hv_blend != null ? num(mk.hv_blend, 1) : "—") + " · IV/HV " + (ivhv != null ? num(ivhv, 2) + "×" : "—")),
+      h("div", {}, "Rang 30 j " + (mk.iv_rank != null ? num(mk.iv_rank * 100, 0) + " %" : "—") + (mk.regime ? " · " + mk.regime : "")))));
+
+  const expo = b.cap ? b.contracts / b.cap : 0;
+  tiles.push(h("div", { class: "tile" }, h("div", { class: "label" }, "Exposition"),
+    h("div", { class: "value" }, num(b.contracts, 2) + " ", h("span", { class: "muted", style: "font-size:14px;font-weight:500" }, "/ " + num(b.eff_cap, 1) + " BTC")),
+    meterEl(expo, "var(--s1)"),
+    h("div", { class: "meta" }, h("div", {}, D.book.rows.length + " instrument" + (D.book.rows.length > 1 ? "s" : "") + " · TTE min " + (b.min_tte != null ? num(b.min_tte, 1) + " j" : "—")))));
+
+  const df = b.threshold_btc ? Math.abs(b.drift_btc) / b.threshold_btc : 0;
+  tiles.push(h("div", { class: "tile" }, h("div", { class: "label" }, h("span", {}, "Delta net (options + hedge)"),
+      h("span", { class: "muted" }, b.drift_btc < 0 ? "net short" : b.drift_btc > 0 ? "net long" : "neutre")),
+    h("div", { class: "value num" }, sgn(b.drift_btc, 3, " BTC")),
+    meterEl(df, sevColor(df)),
+    h("div", { class: "meta" }, h("div", {}, "rebalance à ±" + num(b.threshold_btc, 3) + " · hedge " + sgn(b.hedge_qty, 3, " BTC")))));
+
+  const cbLvl = cb.state === "armed" ? "good" : cb.state === "reduced" ? "warning" : "critical";
+  const cbTxt = cb.state === "armed" ? "Armé" : cb.state === "reduced" ? "Allégé" : "Risk-off";
+  const le = cb.last_event;
+  tiles.push(h("div", { class: "tile" }, h("div", { class: "label" }, "Circuit breaker"),
+    h("div", { class: "value" }, badge(cbLvl, cbTxt)),
+    h("div", { class: "meta" },
+      cb.since ? h("div", {}, "depuis " + fdt(cb.since)) : null,
+      cb.restore_rule ? h("div", {}, "reprise : " + cb.restore_rule) : null,
+      le ? h("div", {}, "dernier événement : " + fdate(le.ts) + (le.type === "cb_tier1_trim" ? " (allègement)" : " (fermeture)")) : null)));
+  mount("kpis", tiles);
+}
+
+// ── Entrées : portes + facteur limitant ────────────────────────────────────
+function renderEntry() {
+  const g = D.gates;
+  const head = h("div", { class: "cardhead" },
+    h("div", {}, h("h3", {}, "Entrées"), h("div", { class: "sub" }, "Conditions vérifiées par le bot à chaque run, dans l'ordre")),
+    badge(g.open ? "good" : "idle", g.open ? "ouvertes" : "fermées"));
+  const list = h("div", { class: "gates" }, g.gates.map(x =>
+    h("div", { class: "gate" },
+      h("span", { class: "gi", style: "background:var(--" + (x.ok ? "good" : "critical") + ")", "aria-label": x.ok ? "respectée" : "bloquante" }, x.ok ? "✓" : "✕"),
+      h("span", { class: "gl" }, x.label), h("span", { class: "gd" }, x.detail))));
+  const kids = [head, list];
+  if (g.limiting && !g.open) {
+    const n = g.limiting.norm || {};
+    kids.push(h("div", { class: "callout" },
+      "Composante la plus faible du meilleur candidat : ", h("b", {}, g.limiting.component), " — ", g.limiting.detail,
+      g.limiting.gap > 0 ? [". Il manque ", h("b", {}, num(g.limiting.gap, 3)), " de score pour atteindre le seuil."] : ".",
+      h("div", { class: "small", style: "margin-top:6px" }, "Composantes (sur 1) : VRP " + num(n.vrp ?? 0, 2) + " · yield " + num(n.yield ?? 0, 2) + " · skew " + num(n.skew ?? 0, 2))));
+  }
+  mount("entry", kids);
+}
+
+// ── Risque : distance aux CB + stress test ─────────────────────────────────
+function renderRisk() {
+  const cb = D.cb, st = D.stress;
+  const meters = cb.meters.map(m => {
+    const color = m.level === "critical" ? "var(--critical)" : m.level === "warning" ? "var(--warning)" : "var(--s1)";
+    return h("div", { class: "meterrow" },
+      h("div", { class: "head" }, h("span", {}, m.label, h("span", { class: "muted" }, " · " + m.hint)),
+        h("span", { class: "num" }, m.value == null ? "—" : sgn(m.value, 1, m.unit))),
+      meterEl(m.fill, color, m.ticks),
+      h("div", { class: "ticklabels" }, m.ticks.map(t => h("span", { style: "left:calc(" + (t.at * 100).toFixed(1) + "% + 1px)" }, t.label))));
+  });
+  const kids = [h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Risque"), h("div", { class: "sub" }, "Distance aux paliers du circuit breaker")))];
+  kids.push(...meters);
+  kids.push(h("h3", { style: "margin-top:4px" }, "Stress test du book"));
+  if (!st) {
+    kids.push(h("div", { class: "callout" }, "Book à plat : aucune exposition. Le stress test s'affiche dès la prochaine position."));
+  } else {
+    const maxAbs = Math.max(1, ...st.scenarios.flatMap(s => s.points.map(p => Math.abs(p.total))));
+    const bar = (v) => h("span", { class: "progress" + (v < 0 ? " neg" : ""), style: "width:70px" },
+      h("span", { style: "width:" + (Math.abs(v) / maxAbs * 100).toFixed(1) + "%" }));
+    kids.push(h("div", { class: "sub", style: "margin:2px 0 8px" }, "Variation de PnL (options + hedge) si le spot bouge maintenant — BS, strikes collants"));
+    kids.push(h("div", { class: "tscroll" }, h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Choc spot"), st.scenarios.map(s => h("th", { class: "r" }, s.label)), h("th", { class: "r" }, "dont hedge"))),
+      h("tbody", {}, st.shocks.map((s, i) => h("tr", {},
+        h("td", { class: "num" }, sgn(s, 0, " %")),
+        st.scenarios.map(sc => h("td", { class: "r" }, money(sc.points[i].total), bar(sc.points[i].total))),
+        h("td", { class: "r" }, money(st.scenarios[0].points[i].hedge))))))));
+  }
+  mount("risk", kids);
+}
+
+// ── Positions ──────────────────────────────────────────────────────────────
+function renderBook() {
+  const rows = D.book.rows, t = D.book.totals;
+  const head = h("div", { class: "cardhead" },
+    h("div", {}, h("h3", {}, "Positions ouvertes"),
+      h("div", { class: "sub" }, rows.length ? "Prime encaissée " + usd(t.premium_usd) + " · PnL latent " + usd(t.latent_usd, { sign: true }) + " · theta " + usd(t.theta_usd_day, { sign: true }) + "/j" : "Aucune position")),
+    rows.length ? h("span", { class: "muted small" }, "Cliquer une ligne pour le détail des lots") : null);
+  if (!rows.length) {
+    mount("book", head, h("div", { class: "empty" }, "Book à plat — le hedge est à " + sgn(t.hedge_qty, 3, " BTC") + ". Le bot entrera quand les conditions (carte « Entrées ») seront réunies."));
+    return;
+  }
+  const tb = h("tbody");
+  rows.forEach((r, i) => {
+    const cap = r.captured_pct;
+    const tr = h("tr", { class: "clickable", tabindex: "0", "aria-expanded": "false" },
+      h("td", {}, h("span", { class: "caret" }, "▸"), " ", h("span", { class: "instr" }, r.instrument), r.lots.length > 1 ? h("span", { class: "muted" }, "  " + r.lots.length + " lots") : null, r.roll_watch ? [" ", badge("warning", "roll")] : null),
+      h("td", { class: "r num" }, usd(r.strike), h("span", { class: "muted" }, "  " + pct(r.dist_pct, 1, true))),
+      h("td", { class: "r num" }, fdate(r.expiry), h("span", { class: "muted" }, "  " + num(r.tte_days, 1) + " j")),
+      h("td", { class: "r num" }, num(r.contracts, 3)),
+      h("td", { class: "r" }, usd(r.premium_usd)),
+      h("td", { class: "r" }, money(r.pnl_usd), cap != null ? h("span", { class: "progress" + (cap < 0 ? " neg" : "") }, h("span", { style: "width:" + Math.min(100, Math.abs(cap)).toFixed(0) + "%" })) : null,
+        h("span", { class: "muted num" }, " " + (cap != null ? pct(cap, 0) : ""))),
+      h("td", { class: "r num" }, sgn(-r.delta_btc, 3)),
+      h("td", { class: "r num" }, (r.iv_entry != null ? num(r.iv_entry, 1) : "—") + " → " + (r.iv_now != null ? num(r.iv_now, 1) : "—")),
+      h("td", { class: "r num" }, r.score != null ? num(r.score, 3) : "—"));
+    const sub = h("tr", { class: "sub", hidden: true }, h("td", { colspan: "9" },
+      h("table", { class: "t" },
+        h("thead", {}, h("tr", {}, ["Entrée", "Contrats", "Score", "Prime", "Spot entrée", "IV entrée", "PnL"].map((x, k) => h("th", { class: k ? "r" : "" }, x)))),
+        h("tbody", {}, r.lots.map(l => h("tr", {},
+          h("td", {}, fdt(l.entry_ts)), h("td", { class: "r num" }, num(l.contracts, 4)),
+          h("td", { class: "r num" }, l.score != null ? num(l.score, 3) : "—"), h("td", { class: "r num" }, usd(l.premium_usd, { d: 1 })),
+          h("td", { class: "r num" }, usd(l.entry_spot)), h("td", { class: "r num" }, l.iv_entry != null ? num(l.iv_entry, 1) + " %" : "—"),
+          h("td", { class: "r" }, l.pnl_usd != null ? money(l.pnl_usd) : h("span", { class: "muted" }, "non marqué"))))))));
+    const toggle = () => { const open = tr.getAttribute("aria-expanded") === "true"; tr.setAttribute("aria-expanded", String(!open)); sub.hidden = open; };
+    tr.addEventListener("click", toggle);
+    tr.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    tb.append(tr, sub);
+  });
+  mount("book", head, h("div", { class: "tscroll" }, h("table", { class: "t" },
+    h("thead", {}, h("tr", {}, ["Instrument", "Strike (distance)", "Échéance", "BTC", "Prime", "PnL latent (capté)", "Delta", "IV entrée → now", "Score"].map((x, k) => h("th", { class: k ? "r" : "" }, x)))), tb)));
+}
+
+// ── Graphiques (dépendent de la période) ───────────────────────────────────
+function destroyCharts() { while (CHARTS.length) { try { CHARTS.pop().destroy(); } catch (e) {} } }
+function renderCharts() {
+  destroyCharts();
+  const cut = cutoffISO();
+  const c1 = css("--s1"), c2 = css("--s2"), c3 = css("--s3"), ink = css("--ink");
+  const xmin = cut ? Date.parse(cut) : undefined, xmax = Date.parse(D.meta.generated_at);
+  const tAxes = (yFmt, o = {}) => axes(yFmt, fdate, { time: true, xmin, xmax, ...o });
+  const lineOpts = (fmt, titleFmt, yFmt, o) => ({ responsive: true, maintainAspectRatio: false, animation: false,
+    interaction: { mode: "index", intersect: false }, layout: { padding: { top: 16 } },
+    plugins: { legend: { display: false }, tooltip: tooltipOpts(fmt, titleFmt) }, scales: tAxes(yFmt, o) });
+
+  // 1. PnL réalisé cumulé (rebasé au début de la période)
+  const daily = (D.performance.daily || []).filter(d => !cut || d.d >= cut.slice(0, 10));
+  const base = daily.length && cut ? daily[0] : { net: 0, options: 0 };
+  const dayMs = (d) => Date.parse(d.d + "T23:59:00Z");
+  const net = daily.map(d => ({ x: dayMs(d), y: +(d.net - (cut ? base.net : 0)).toFixed(2) }));
+  const opt = daily.map(d => ({ x: dayMs(d), y: +(d.options - (cut ? base.options : 0)).toFixed(2) }));
+  chartCard("perf-cum", "PnL réalisé cumulé", cut ? "Rebasé à zéro au début de la période — l'écart entre les courbes = coût du hedge et du funding" : "L'écart entre les deux courbes = coût du hedge et du funding",
+    [{ name: "Net stratégie", color: c1 }, { name: "Options seules", color: c2 }],
+    (box) => {
+      if (daily.length < 2) return null;
+      const cv = canvasIn(box, "PnL réalisé cumulé, net et options seules", { endFmt: v => usd(v, { sign: true }), refLines: [{ value: 0, color: css("--axis") }] });
+      CHARTS.push(new Chart(cv, { type: "line",
+        data: { datasets: [lineDs("Net stratégie", net, c1, true, 2 * 86400000), lineDs("Options seules", opt, c2, true, 2 * 86400000)] },
+        options: lineOpts(v => usd(v, { sign: true }), fdate, v => usd(v, { compact: true })) }));
+    },
+    { headers: ["Jour", "Options (réalisé)", "Hedge (réalisé)", "Funding", "Net"],
+      rows: daily.map(d => [d.d, usd(d.options), usd(d.hedge), usd(d.funding), usd(d.net)]) });
+
+  // 2. Attribution mensuelle
+  const months = (D.performance.monthly || []).filter(m => !cut || m.m >= cut.slice(0, 7));
+  chartCard("perf-month", "Attribution mensuelle", "Prime des options clôturées vs coût du hedge et funding encaissé",
+    [{ name: "Options", color: c1, kind: "rect" }, { name: "Hedge", color: c2, kind: "rect" }, { name: "Funding", color: c3, kind: "rect" }, { name: "Net", color: ink, kind: "diamond" }],
+    (box) => {
+      if (!months.length) return null;
+      const cv = canvasIn(box, "Attribution mensuelle du PnL", { refLines: [{ value: 0, color: css("--axis") }] });
+      const bar = (label, key, color) => ({ type: "bar", label, data: months.map(m => m[key]), backgroundColor: color, borderColor: css("--surface"),
+        borderWidth: 1, maxBarThickness: 24, stack: "pnl", vrpKey: color, order: 2 });
+      CHARTS.push(new Chart(cv, { type: "bar",
+        data: { labels: months.map(m => m.m), datasets: [bar("Options", "options", c1), bar("Hedge", "hedge", c2), bar("Funding", "funding", c3),
+          { type: "line", label: "Net", data: months.map(m => m.net), showLine: false, stack: "net", order: 0, pointStyle: "rectRot", pointRadius: 6,
+            pointHoverRadius: 7, pointBackgroundColor: ink, pointBorderColor: css("--surface"), pointBorderWidth: 2, borderColor: ink, backgroundColor: ink }] },
+        options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+          plugins: { legend: { display: false }, tooltip: tooltipOpts(v => usd(v, { sign: true }), fmonth) },
+          scales: axes(v => usd(v, { compact: true }), fmonth, { stacked: true, maxX: 12 }) } }));
+    },
+    { headers: ["Mois", "Options", "Hedge", "Funding", "Net"], rows: months.map(m => [fmonth(m.m), usd(m.options), usd(m.hedge), usd(m.funding), usd(m.net)]) });
+
+  // 3. Spot + strikes
+  const S = D.series, spot = (S.spot || []).filter(p => !cut || p.t >= cut);
+  const strikes = S.strikes || [];
+  chartCard("mk-spot", "Spot BTC", strikes.length ? "Pointillés : strikes des positions ouvertes" : "Index Deribit (points 4 h)", null,
+    (box) => {
+      if (spot.length < 2) return null;
+      const vals = spot.map(p => p.v);
+      const lo = Math.min(...vals, ...strikes), hi = Math.max(...vals);
+      const cv = canvasIn(box, "Spot BTC", { endFmt: v => usd(v), refLines: strikes.map(k => ({ value: k, dash: [4, 4], color: css("--ink-2"), label: "strike " + num(k, 0) })) });
+      CHARTS.push(new Chart(cv, { type: "line",
+        data: { datasets: [lineDs("Spot", xy(spot, "t", "v"), c1, true)] },
+        options: lineOpts(v => usd(v), fdt, v => usd(v, { compact: true }), { min: lo * 0.99, max: hi * 1.01 }) }));
+    },
+    { headers: ["Date", "Spot"], rows: spot.slice().reverse().map(p => [fdt(p.t), usd(p.v)]) });
+
+  // 4. Vol implicite vs réalisée
+  const vol = (S.vol || []).filter(p => !cut || p.t >= cut);
+  chartCard("mk-vol", "Vol implicite vs réalisée", "Le VRP vendu = l'écart entre les deux courbes",
+    [{ name: "DVOL (implicite 30 j)", color: c1 }, { name: "HV blend 10/30 j", color: c2 }],
+    (box) => {
+      if (vol.length < 2) return null;
+      const cv = canvasIn(box, "DVOL et volatilité réalisée", { endFmt: v => num(v, 1) });
+      const gap = 13 * 3600 * 1000;   // le cron GitHub prend parfois plusieurs heures de retard
+      CHARTS.push(new Chart(cv, { type: "line",
+        data: { datasets: [lineDs("DVOL", xy(vol, "t", "dvol"), c1, true, gap), lineDs("HV blend", xy(vol, "t", "hv"), c2, true, gap)] },
+        options: lineOpts(v => num(v, 1) + " %", fdt, v => num(v, 0) + " %") }));
+    },
+    { headers: ["Date", "DVOL", "HV blend"], rows: vol.slice().reverse().map(p => [fdt(p.t), p.dvol != null ? num(p.dvol, 1) : "—", p.hv != null ? num(p.hv, 1) : "—"]) });
+
+  // 5. Funding annualisé
+  const fund = (S.funding || []).filter(p => !cut || p.t >= cut);
+  chartCard("mk-fund", "Funding du perpétuel", "Annualisé, moyenne glissante 7 j — positif = le hedge short encaisse", null,
+    (box) => {
+      if (fund.length < 2) return null;
+      const cv = canvasIn(box, "Funding annualisé du BTC-PERPETUAL", { endFmt: v => pct(v, 1, true), refLines: [{ value: 0, color: css("--axis") }] });
+      CHARTS.push(new Chart(cv, { type: "line",
+        data: { datasets: [lineDs("Funding annualisé", xy(fund, "t", "v"), c1, true)] },
+        options: lineOpts(v => pct(v, 2, true), fdt, v => pct(v, 0, true)) }));
+    },
+    { headers: ["Date", "Funding annualisé"], rows: fund.slice().reverse().map(p => [fdt(p.t), pct(p.v, 2, true)]) });
+}
+
+// ── Stats de performance ───────────────────────────────────────────────────
+function renderPerfStats() {
+  const p = D.performance, ev = p.events, br = ev.by_reason || {}, vb = p.vs_backtest;
+  const stat = (label, value, meta) => h("div", { class: "stat" }, h("div", { class: "label" }, label), h("div", { class: "value" }, value), meta ? h("div", { class: "meta" }, meta) : null);
+  const cbr = br.cb_tier1_trim, exp = br.expiration || br.expired;
+  const ratio = vb.live_annual != null && vb.bt_annual ? vb.live_annual / vb.bt_annual : null;
+  mount("perf-stats",
+    stat("Prime conservée", p.kept_pct != null ? pct(p.kept_pct, 0) : "—", "part de la prime des options restée après hedge et funding"),
+    stat("Événements gagnants", ev.n ? num(ev.wins / ev.n * 100, 0) + " %" : "—", ev.wins + " / " + ev.n + " clôtures (" + ev.lots + " lots)"),
+    stat("Expirations", exp ? money(exp.pnl) : "—", exp ? exp.n + " événements" : ""),
+    stat("Allègements CB", cbr ? money(cbr.pnl) : "—", cbr ? cbr.n + " rachats partiels" : "aucun"),
+    stat("Live vs backtest (annualisé)", ratio != null ? pct(ratio * 100, 0) : "—",
+      vb.live_annual != null ? "live " + usd(vb.live_annual, { sign: true, compact: true }) + "/an · backtest " + usd(vb.bt_annual, { sign: true, compact: true }) + "/an (optimiste)" : ""));
+}
+
+// ── Scanner ────────────────────────────────────────────────────────────────
+const STATUS = { eligible: ["good", "éligible"], held: ["idle", "déjà tenu"], held_reentry: ["info", "ré-entrée possible"], filtered: ["idle", "filtré (proche d'une position)"] };
+function renderScanner() {
+  const s = D.scanner, rows = s.rows, thr = s.threshold, c = [css("--s1"), css("--s2"), css("--s3")];
+  const scale = Math.max(0.7, thr * 1.4, ...rows.map(r => r.score));
+  const head = h("div", { class: "cardhead" },
+    h("div", {}, h("h3", {}, "Scanner — meilleurs candidats"),
+      h("div", { class: "sub" }, "Barre = contribution pondérée de chaque composante au score · trait = seuil d'entrée " + num(thr, 2))));
+  if (!rows.length) { mount("scanner", head, h("div", { class: "empty" }, "Aucun candidat au dernier scan")); return; }
+  const lg = legend([{ name: "VRP (IV/HV) · poids " + num(s.weights.vrp, 2), color: c[0], kind: "rect" },
+                     { name: "Yield ajusté · " + num(s.weights.yield, 2), color: c[1], kind: "rect" },
+                     { name: "Skew · " + num(s.weights.skew, 2), color: c[2], kind: "rect" }]);
+  const tb = h("tbody", {}, rows.map(r => {
+    const segs = [r.contrib.vrp, r.contrib.yield, r.contrib.skew];
+    const bar = h("div", { class: "sbar", title: "VRP " + num(segs[0], 3) + " · Yield " + num(segs[1], 3) + " · Skew " + num(segs[2], 3) },
+      segs.map((v, i) => h("span", { style: "width:" + (v / scale * 100).toFixed(1) + "%;background:" + c[i] })),
+      h("span", { class: "thr", style: "left:" + (thr / scale * 100).toFixed(1) + "%" }));
+    const [lvl, txt] = STATUS[r.status] || ["idle", r.status];
+    return h("tr", {},
+      h("td", {}, h("span", { class: "instr" }, r.instrument)),
+      h("td", {}, badge(lvl, txt), r.held_score != null ? h("span", { class: "muted small" }, "  tenu à " + num(r.held_score, 3)) : null),
+      h("td", { class: "r num" }, num(r.tte_days, 1) + " j"),
+      h("td", { class: "r num" }, pct(r.dist_pct, 1, true)),
+      h("td", { class: "r num" }, usd(r.premium_usd)),
+      h("td", { class: "r num" }, num(r.iv_hv, 2) + "×"),
+      h("td", { class: "r num" }, sgn(r.skew_pct, 1, " %")),
+      h("td", {}, bar),
+      h("td", { class: "r num" }, h("b", { class: r.score >= thr ? "pos" : "" }, num(r.score, 3))));
+  }));
+  mount("scanner", head, lg, h("div", { class: "tscroll" }, h("table", { class: "t" },
+    h("thead", {}, h("tr", {}, ["Instrument", "Statut", "TTE", "Distance", "Prime", "IV/HV", "Skew", "Contributions", "Score"].map((x, k) => h("th", { class: [2, 3, 4, 5, 6, 8].includes(k) ? "r" : "" }, x)))), tb)));
+}
+
+// ── Décisions + paramètres ─────────────────────────────────────────────────
+function renderDecisions() {
+  const d = D.decisions, P = D.meta.params;
+  const kids = [h("div", { class: "cardhead" },
+    h("div", {}, h("h3", {}, "Décisions en attente"), h("div", { class: "sub" }, "Routine de backtests du " + fdate(d.generated_at) + " · " + d.n_sweeps + " sweeps, 5 régimes")),
+    h("a", { class: "btn", href: "backtest.html" }, "Détail →"))];
+  if (d.recommendations.length) {
+    kids.push(...d.recommendations.map(r => h("div", { class: "reco" },
+      h("div", {}, badge("info", "robuste " + r.wins + "/" + r.n), "  ", h("b", {}, r.param)),
+      h("div", { class: "num" }, h("span", { class: "muted" }, "actuel "), r.current, h("span", { class: "arrow" }, "→"), h("b", {}, r.proposed),
+        h("span", { class: "muted" }, "   gain Calmar moyen " + (r.gain != null ? "+" + num(r.gain, 2) : "—"))))));
+    kids.push(h("div", { class: "callout" }, "À appliquer à la main dans greeks_hedge.py (+ miroir backtest.py) — le test de synchro vérifie la cohérence."));
+  } else {
+    kids.push(h("div", { class: "callout" }, "Aucune : la configuration actuelle reste la meilleure sur l'ensemble des régimes."));
+  }
+  if (d.inert && d.inert.length) kids.push(h("div", { class: "sub", style: "margin-top:10px" }, "Sans effet mesurable (candidats à la suppression) : " + d.inert.join(" · ")));
+  const chip = (k, v) => h("span", { class: "chip" }, k + " ", h("b", {}, v));
+  kids.push(h("h3", { style: "margin-top:16px" }, "Paramètres live"));
+  kids.push(h("div", { class: "chips", style: "margin-top:8px" },
+    chip("Seuil score", num(P.ENTRY_SCORE_MIN, 2)), chip("Porte DVOL", "≥ " + num(P.DVOL_MIN, 0)),
+    chip("Cap", num(P.MAX_PORTFOLIO_BTC, 1) + " BTC"), chip("Poids", [P.SCORE_W_IVHV, P.SCORE_W_YIELD, P.SCORE_W_SKEW].map(x => num(x, 2)).join(" / ")),
+    chip("Convexité", num(P.SIZE_CONVEXITY, 1)), chip("Plancher rang", num(P.RANK_FLOOR, 1)), chip("Prime min", usd(P.MIN_PREMIUM_USD)),
+    chip("Allègement", "−" + num(P.CB_T1_MOVE_1D_PCT, 0) + "%/1j · −" + num(P.CB_T1_MOVE_3D_PCT, 0) + "%/3j → garde " + num(P.CB_T1_KEEP * 100, 0) + "%"),
+    chip("Fermeture", "−" + num(P.CB_MOVE_3D_PCT, 0) + "%/3j · DVOL +" + num(P.CB_DVOL_3D_PTS, 0))));
+  mount("decisions", kids);
+}
+
+// ── Journal ────────────────────────────────────────────────────────────────
+const REASON = { expiration: "Expiration", expired: "Expiration", cb_tier1_trim: "Allègement CB", circuit_breaker: "Fermeture CB", roll: "Roll" };
+let journalTab = "closed";
+function renderJournal() {
+  const j = D.journal;
+  const tabs = h("div", { class: "tabs", role: "tablist" },
+    [["closed", "Clôtures"], ["hedge", "Hedge"]].map(([k, l]) => h("button", { class: "btn", role: "tab", "aria-pressed": String(journalTab === k), "aria-selected": String(journalTab === k),
+      onclick: () => { journalTab = k; renderJournal(); } }, l)));
+  let body;
+  if (journalTab === "closed") {
+    body = j.closed.length ? h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, ["Date", "Instrument", "Raison", "BTC", "PnL"].map((x, k) => h("th", { class: k >= 3 ? "r" : "" }, x)))),
+      h("tbody", {}, j.closed.map(c => h("tr", {},
+        h("td", { class: "num" }, fdt(c.ts)), h("td", {}, c.instrument, c.lots > 1 ? h("span", { class: "muted" }, "  " + c.lots + " lots") : null),
+        h("td", {}, REASON[c.reason] || c.reason), h("td", { class: "r num" }, num(c.contracts, 3)), h("td", { class: "r" }, money(c.pnl))))))
+      : h("div", { class: "empty" }, "Aucune clôture sur 60 jours");
+  } else {
+    body = j.hedge.length ? h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, ["Date", "Sens", "Qté", "Prix", "Hedge après", "Réalisé"].map((x, k) => h("th", { class: k >= 2 ? "r" : "" }, x)))),
+      h("tbody", {}, j.hedge.map(e => h("tr", {},
+        h("td", { class: "num" }, fdt(e.ts)), h("td", {}, e.side === "BUY" ? "Achat" : "Vente"), h("td", { class: "r num" }, num(Math.abs(e.qty), 4)),
+        h("td", { class: "r num" }, usd(e.price)), h("td", { class: "r num" }, sgn(e.qty_after, 4)),
+        h("td", { class: "r" }, e.realized != null ? money(e.realized) : "—")))))
+      : h("div", { class: "empty" }, "Aucun rebalancement");
+  }
+  mount("journal", h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Journal"), h("div", { class: "sub" }, "60 derniers jours · lots d'un même événement regroupés")), tabs),
+    h("div", { class: "tscroll", style: "max-height:420px;overflow:auto" }, body));
+}
+
+// ── Réconciliation (mode réel) ─────────────────────────────────────────────
+function renderReconcile() {
+  const r = D.reconcile;
+  if (!r) { mount("reconcile"); return; }
+  const ok = !r.n_mismatched && r.hedge && r.hedge.ok;
+  const card = h("section", { class: "card", style: "margin-top:16px" },
+    h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Réconciliation Deribit (" + r.env + ")"), h("div", { class: "sub" }, "Bot vs compte réel · " + r.generated_at)),
+      badge(ok ? "good" : "critical", ok ? "synchro" : r.n_mismatched + " écart(s)")),
+    h("div", { class: "tscroll" }, h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, ["Instrument", "Bot", "Réel", "Écart", "Statut"].map((x, k) => h("th", { class: k && k < 4 ? "r" : "" }, x)))),
+      h("tbody", {}, (r.positions || []).map(p => h("tr", {}, h("td", {}, p.instrument), h("td", { class: "r num" }, num(p.internal_qty, 4)),
+        h("td", { class: "r num" }, num(p.real_qty, 4)), h("td", { class: "r num" }, sgn(p.diff, 4)), h("td", {}, badge(p.status === "ok" ? "good" : "critical", p.status))))))));
+  mount("reconcile", card);
+}
+
+function renderFoot() {
+  mount("foot", h("span", {}, "Généré " + fdt(D.meta.generated_at) + (tzName ? " (" + tzName + ")" : "")),
+    h("span", {}, "Sources : positions.json · scan_entry.json · pnl_history.json · funding_history.jsonl · backtest_routine.json"),
+    h("span", {}, "Mode " + D.meta.mode + " — aucun ordre réel"));
+}
+
+renderTop(); renderVerdict(); renderKpis(); renderEntry(); renderRisk(); renderBook();
+renderRange(); renderCharts(); renderPerfStats(); renderScanner(); renderDecisions(); renderJournal(); renderReconcile(); renderFoot();
+if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { if (!document.documentElement.getAttribute("data-theme")) { renderCharts(); renderKpis(); } });
+})();
+</script>
+</body>
+</html>
