@@ -36212,3 +36212,6 @@
 {"ts": 1790528400000, "date": "2026-09-27 17:00", "interest_1h": 0.0, "interest_8h": 0.0, "index_price": 84410.75}
 {"ts": 1790532000000, "date": "2026-09-27 18:00", "interest_1h": 0.0, "interest_8h": 0.0, "index_price": 84550.84}
 {"ts": 1790535600000, "date": "2026-09-27 19:00", "interest_1h": 0.0, "interest_8h": 0.0, "index_price": 84797.25}
+{"ts": 1790539200000, "date": "2026-09-27 20:00", "interest_1h": 0.0, "interest_8h": 0.0, "index_price": 84716.75}
+{"ts": 1790542800000, "date": "2026-09-27 21:00", "interest_1h": 0.0, "interest_8h": 0.0, "index_price": 84532.11}
+{"ts": 1790546400000, "date": "2026-09-27 22:00", "interest_1h": 1.6062702789499936e-08, "interest_8h": 1.615428242248673e-08, "index_price": 84665.95}
