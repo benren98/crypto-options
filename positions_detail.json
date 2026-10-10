@@ -1,24 +1,24 @@
 [
   {
     "instrument": "BTC-16OCT26-75000-P",
-    "tte_days": 5.693,
-    "days_held": 2.3896,
+    "tte_days": 5.5195,
+    "days_held": 2.5631,
     "entry_spot": 82647.9,
     "entry_price_btc": 0.0023,
     "current_price_btc": 0.0009,
-    "current_ask_btc": 0.001,
+    "current_ask_btc": 0.0009,
     "current_bid_btc": 0.0008,
-    "current_iv_pct": 46.36,
+    "current_iv_pct": 47.25,
     "entry_iv_pct": 46.542942515313534,
-    "iv_change": -0.18,
-    "pnl_option_btc": 0.000418,
-    "pnl_option_usd": 34.65,
-    "pnl_pct_of_premium": 60.76,
-    "theta_theory_usd": 37.37,
-    "theta_daily_now_usd": 10.54,
-    "vrp_capture_pct": 92.7,
-    "live_delta": -0.01151,
+    "iv_change": 0.71,
+    "pnl_option_btc": 0.000417,
+    "pnl_option_usd": 34.62,
+    "pnl_pct_of_premium": 60.71,
+    "theta_theory_usd": 40.09,
+    "theta_daily_now_usd": 10.64,
+    "vrp_capture_pct": 86.4,
+    "live_delta": -0.01115,
     "live_gamma": 6e-06,
-    "live_vega": 2.5887
+    "live_vega": 2.4859
   }
 ]
