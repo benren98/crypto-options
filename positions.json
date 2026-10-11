@@ -37,6 +37,44 @@
       ],
       "entry_score": 0.482,
       "entry_sizing_btc": 0.3
+    },
+    {
+      "instrument_name": "BTC-23OCT26-74000-P",
+      "strike": 74000.0,
+      "expiry_dt": "2026-10-23 08:00:00+00:00",
+      "tte_at_entry": 11.97,
+      "delta_at_entry": -0.06239459236362033,
+      "gamma_at_entry": 1.892938447823333e-05,
+      "vega_at_entry": 18.494419502587583,
+      "theta_at_entry": -33.297422908843856,
+      "iv_at_entry": 42.28312215292438,
+      "entry_price": 0.002,
+      "entry_mark_price": 0.00217457,
+      "entry_price_usd": 166.01,
+      "entry_spot": 83004.07,
+      "contracts": 0.3,
+      "entry_ts": "2026-10-11 08:47:56 UTC",
+      "hedge_qty": -0.01872,
+      "hedge_entry_spot": 83004.07,
+      "hedge_avg_entry": 83023.89,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-10-11 08:47:56 UTC",
+          "side": "SELL",
+          "qty": -0.01872,
+          "spot": 83004.07,
+          "perp_price": 83023.89,
+          "qty_before": 0.0,
+          "qty_after": -0.01872,
+          "vwap_before": 0.0,
+          "vwap_after": 83023.89,
+          "drift": 0.06239,
+          "note": "hedge initial (perp mark $83023.89 vs index $83004.07)"
+        }
+      ],
+      "entry_score": 0.485,
+      "entry_sizing_btc": 0.3
     }
   ],
   "hedge": {
