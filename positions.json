@@ -306,9 +306,9 @@
     }
   ],
   "hedge": {
-    "qty": -0.31597,
-    "avg_entry": 82074.69,
-    "rebalances": 90,
+    "qty": -0.4168,
+    "avg_entry": 81701.83,
+    "rebalances": 91,
     "realized_pnl_usd": -3024.01,
     "history": [
       {
@@ -1622,6 +1622,21 @@
         "realized_cumul_usd": -3024.01,
         "delta_net_after_pct": -0.0,
         "note": "hedge net apr\u00e8s entr\u00e9e (BTC-18OCT26-78000-P) \u00b7 short augment\u00e9 \u2014 VWAP recalcul\u00e9"
+      },
+      {
+        "ts": "2026-10-15 05:54:31 UTC",
+        "side": "SELL",
+        "qty": -0.10083,
+        "spot": 80533.41,
+        "qty_before": -0.31597,
+        "qty_after": -0.4168,
+        "vwap_before": 82074.69,
+        "vwap_after": 81701.83,
+        "drift": -0.10083,
+        "realized_pnl_usd": 0.0,
+        "realized_cumul_usd": -3024.01,
+        "delta_net_after_pct": 0.0,
+        "note": "short augment\u00e9 \u2014 VWAP recalcul\u00e9"
       }
     ]
   },
