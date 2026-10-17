@@ -115,44 +115,6 @@
       "entry_sizing_btc": 0.5
     },
     {
-      "instrument_name": "BTC-17OCT26-78000-P",
-      "strike": 78000.0,
-      "expiry_dt": "2026-10-17 08:00:00+00:00",
-      "tte_at_entry": 2.69,
-      "delta_at_entry": -0.10777433767470401,
-      "gamma_at_entry": 5.713743780918501e-05,
-      "vega_at_entry": 13.014725552586164,
-      "theta_at_entry": -111.79975828423096,
-      "iv_at_entry": 44.96628589137611,
-      "entry_price": 0.0019,
-      "entry_mark_price": 0.00207902,
-      "entry_price_usd": 155.44,
-      "entry_spot": 81811.87,
-      "contracts": 0.5,
-      "entry_ts": "2026-10-14 15:30:15 UTC",
-      "hedge_qty": -0.05389,
-      "hedge_entry_spot": 81811.87,
-      "hedge_avg_entry": 81841.27,
-      "hedge_rebalances": 1,
-      "hedge_history": [
-        {
-          "ts": "2026-10-14 15:30:15 UTC",
-          "side": "SELL",
-          "qty": -0.05389,
-          "spot": 81811.87,
-          "perp_price": 81841.27,
-          "qty_before": 0.0,
-          "qty_after": -0.05389,
-          "vwap_before": 0.0,
-          "vwap_after": 81841.27,
-          "drift": 0.10777,
-          "note": "hedge initial (perp mark $81841.27 vs index $81811.87)"
-        }
-      ],
-      "entry_score": 0.625,
-      "entry_sizing_btc": 0.5
-    },
-    {
       "instrument_name": "BTC-23OCT26-73000-P",
       "strike": 73000.0,
       "expiry_dt": "2026-10-23 08:00:00+00:00",
@@ -417,6 +379,44 @@
       ],
       "entry_score": 0.781,
       "entry_sizing_btc": 0.3
+    },
+    {
+      "instrument_name": "BTC-30OCT26-70000-P",
+      "strike": 70000.0,
+      "expiry_dt": "2026-10-30 08:00:00+00:00",
+      "tte_at_entry": 12.97,
+      "delta_at_entry": -0.047713088694429695,
+      "gamma_at_entry": 1.2648219581876597e-05,
+      "vega_at_entry": 15.313073962406257,
+      "theta_at_entry": -30.09275326087536,
+      "iv_at_entry": 51.114913149294594,
+      "entry_price": 0.002,
+      "entry_mark_price": 0.00197012,
+      "entry_price_usd": 163.16,
+      "entry_spot": 81577.72,
+      "contracts": 0.5,
+      "entry_ts": "2026-10-17 08:49:16 UTC",
+      "hedge_qty": -0.02386,
+      "hedge_entry_spot": 81577.72,
+      "hedge_avg_entry": 81599.73,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-10-17 08:49:16 UTC",
+          "side": "SELL",
+          "qty": -0.02386,
+          "spot": 81577.72,
+          "perp_price": 81599.73,
+          "qty_before": 0.0,
+          "qty_after": -0.02386,
+          "vwap_before": 0.0,
+          "vwap_after": 81599.73,
+          "drift": 0.04771,
+          "note": "hedge initial (perp mark $81599.73 vs index $81577.72)"
+        }
+      ],
+      "entry_score": 0.775,
+      "entry_sizing_btc": 0.5
     }
   ],
   "hedge": {
@@ -6250,6 +6250,51 @@
       "exit_reason": "expiration",
       "pnl_btc": 0.00069,
       "pnl_usd": 57.03
+    },
+    {
+      "instrument_name": "BTC-17OCT26-78000-P",
+      "strike": 78000.0,
+      "expiry_dt": "2026-10-17 08:00:00+00:00",
+      "tte_at_entry": 2.69,
+      "delta_at_entry": -0.10777433767470401,
+      "gamma_at_entry": 5.713743780918501e-05,
+      "vega_at_entry": 13.014725552586164,
+      "theta_at_entry": -111.79975828423096,
+      "iv_at_entry": 44.96628589137611,
+      "entry_price": 0.0019,
+      "entry_mark_price": 0.00207902,
+      "entry_price_usd": 155.44,
+      "entry_spot": 81811.87,
+      "contracts": 0.5,
+      "entry_ts": "2026-10-14 15:30:15 UTC",
+      "hedge_qty": -0.05389,
+      "hedge_entry_spot": 81811.87,
+      "hedge_avg_entry": 81841.27,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-10-14 15:30:15 UTC",
+          "side": "SELL",
+          "qty": -0.05389,
+          "spot": 81811.87,
+          "perp_price": 81841.27,
+          "qty_before": 0.0,
+          "qty_after": -0.05389,
+          "vwap_before": 0.0,
+          "vwap_after": 81841.27,
+          "drift": 0.10777,
+          "note": "hedge initial (perp mark $81841.27 vs index $81811.87)"
+        }
+      ],
+      "entry_score": 0.625,
+      "entry_sizing_btc": 0.5,
+      "exit_price": 0.0,
+      "exit_spot": 81593.0,
+      "exit_ts": "2026-10-17 08:49:13 UTC",
+      "tte_at_exit": 0.0,
+      "exit_reason": "expiration",
+      "pnl_btc": 0.00095,
+      "pnl_usd": 77.72
     }
   ],
   "last_updated": "2026-08-17 15:16:38 UTC",
