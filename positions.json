@@ -341,12 +341,50 @@
       ],
       "entry_score": 0.67,
       "entry_sizing_btc": 0.5
+    },
+    {
+      "instrument_name": "BTC-6NOV26-70000-P",
+      "strike": 70000.0,
+      "expiry_dt": "2026-11-06 08:00:00+00:00",
+      "tte_at_entry": 12.63,
+      "delta_at_entry": -0.0685624851095229,
+      "gamma_at_entry": 1.7280950201765172e-05,
+      "vega_at_entry": 19.73048268691853,
+      "theta_at_entry": -40.012337406091206,
+      "iv_at_entry": 50.429297918666435,
+      "entry_price": 0.0028,
+      "entry_mark_price": 0.00298663,
+      "entry_price_usd": 224.4,
+      "entry_spot": 80142.78,
+      "contracts": 0.5,
+      "entry_ts": "2026-10-24 16:58:27 UTC",
+      "hedge_qty": -0.03428,
+      "hedge_entry_spot": 80142.78,
+      "hedge_avg_entry": 80137.3,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-10-24 16:58:27 UTC",
+          "side": "SELL",
+          "qty": -0.03428,
+          "spot": 80142.78,
+          "perp_price": 80137.3,
+          "qty_before": 0.0,
+          "qty_after": -0.03428,
+          "vwap_before": 0.0,
+          "vwap_after": 80137.3,
+          "drift": 0.06856,
+          "note": "hedge initial (perp mark $80137.30 vs index $80142.78)"
+        }
+      ],
+      "entry_score": 0.654,
+      "entry_sizing_btc": 0.5
     }
   ],
   "hedge": {
-    "qty": -0.10907,
-    "avg_entry": 80928.03,
-    "rebalances": 99,
+    "qty": -0.18639,
+    "avg_entry": 80602.29,
+    "rebalances": 100,
     "realized_pnl_usd": -3506.93,
     "history": [
       {
@@ -1791,6 +1829,21 @@
         "vwap_before": 81253.17,
         "vwap_after": 80928.03,
         "drift": -0.04809,
+        "realized_pnl_usd": 0.0,
+        "realized_cumul_usd": -3506.93,
+        "delta_net_after_pct": 0.0,
+        "note": "hedge net apr\u00e8s entr\u00e9e (BTC-6NOV26-70000-P) \u00b7 short augment\u00e9 \u2014 VWAP recalcul\u00e9"
+      },
+      {
+        "ts": "2026-10-24 16:58:27 UTC",
+        "side": "SELL",
+        "qty": -0.07732,
+        "spot": 80142.78,
+        "qty_before": -0.10907,
+        "qty_after": -0.18639,
+        "vwap_before": 80928.03,
+        "vwap_after": 80602.29,
+        "drift": -0.07732,
         "realized_pnl_usd": 0.0,
         "realized_cumul_usd": -3506.93,
         "delta_net_after_pct": 0.0,
