@@ -12058,5 +12058,23 @@
     "pnl_total": -3297.4,
     "theta_daily": 148.42,
     "n_positions": 11
+  },
+  {
+    "ts": "2026-10-25 00:20:07 UTC",
+    "spot": 80663.91,
+    "tte_days": 12.3194,
+    "delta_pct": 4.807,
+    "net_delta_pct": -3.414,
+    "gamma_pts": 1.3948,
+    "iv_pct": 51.05,
+    "dvol": 37.98,
+    "hv_5d": 22.41,
+    "hv_10d": 20.95,
+    "hv_30d": 24.51,
+    "pnl_option": 259.79,
+    "pnl_hedge": -3551.02,
+    "pnl_total": -3272.84,
+    "theta_daily": 152.24,
+    "n_positions": 12
   }
 ]
