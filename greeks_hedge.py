@@ -53,7 +53,10 @@ HEDGE_RATIO          = 1.0       # fraction du delta options couverte — 0.7 �
                                  # backtest fidèle (config B, coûts inclus) le hedge complet réduit le
                                  # MaxDD sans coût de PnL (100 % · 4 h : Calmar 11.3 vs 5.7 à 70 % · 1 h,
                                  # meilleur pire-fold ; tient avec perp 7 bp et rachats CB +10 pts)
-HEDGE_FLATTEN_DELTA  = 0.0       # si |delta options| < X BTC → hedge remis à plat (0 = off)
+HEDGE_FLATTEN_DELTA  = 0.05      # si |delta options| < X BTC → hedge remis à plat (0 = off). 0 → 0.05 le
+                                 # 2026-10-25 (routine ✅ 3/5) : en août un short résiduel de 0.0485 BTC, resté
+                                 # sous la bande, a perdu 824 $ pendant +27 % de BTC alors que les puts loin
+                                 # de la monnaie n'avaient quasi plus de delta
 HEDGE_EVERY_H        = 4         # au plus un rebalancement « normal » toutes les N heures (1 = chaque
                                  # run) ; 1 → 4 le 2026-09-24. Le scan, les entrées et le circuit breaker
                                  # tournent à chaque run, et tout changement du book (entrée, expiration,

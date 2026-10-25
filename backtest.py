@@ -84,7 +84,7 @@ HEDGE_THRESHOLD_BASE_PCT = 5.0        # bande = BASE × √(IV_ref/HEDGE_IV_REF)
 HEDGE_IV_REF             = 70.0       # IV_ref = IV max des positions (comme le live)
 HEDGE_THRESHOLD_MODE     = "absolute" # "absolute" : bande en BTC fixe (live) · "notional" : × Σ contrats
 HEDGE_RATIO              = 1.0        # fraction du delta couverte — 1.0 depuis le 2026-09-24 (miroir live)
-HEDGE_FLATTEN_DELTA      = 0.0        # si |delta options| < X BTC → hedge remis à plat (0 = off)
+HEDGE_FLATTEN_DELTA      = 0.05       # si |delta options| < X BTC → hedge remis à plat (miroir live, 2026-10-25)
 HEDGE_EVERY_H            = 4          # rebalance « normal » au plus toutes les N heures (4 = live depuis le 2026-09-24)
 HEDGE_CADENCE_EXEMPT     = True       # après un changement du book (entrée, expiration, allègement, fermeture)
                                       # le premier contrôle ignore la cadence (rehedge immédiat si seuil dépassé)
