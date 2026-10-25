@@ -42,6 +42,8 @@ BOT_STALE_WARN_H   = 4.0   # cron horaire mais GitHub retarde souvent (p90 obser
 BOT_STALE_ACTION_H = 8.0
 MARKET_DAYS        = 120   # profondeur des séries marché embarquées
 JOURNAL_DAYS       = 60
+RECENT_DAYS        = 14    # fil « ce qui s'est passé »
+NET_SERIES_DAYS    = 35    # série nette embarquée (PnL depuis la dernière visite)
 
 
 # ── Utilitaires ────────────────────────────────────────────────────────────────
@@ -633,6 +635,114 @@ class Model:
                           "realized": fnum(e.get("realized_pnl_usd"), None) if e.get("realized_pnl_usd") is not None else None})
         return {"closed": list(groups.values()), "hedge": hedge}
 
+    # ── Ce qui s'est passé récemment ───────────────────────────────────────────
+    def recent(self, perf):
+        """PnL net sur 24 h / 7 j / 30 j et fil des événements des RECENT_DAYS derniers jours.
+
+        PnL net à l'instant t (même définition que le total du dashboard) =
+          options réalisées (clôtures ≤ t) + latent des options ouvertes (pnl_history.pnl_option)
+          + hedge réalisé + mark-to-market (pnl_history.pnl_hedge) + funding (≤ t) + frais estimés (≤ t).
+        La série nette (NET_SERIES_DAYS jours) part dans le modèle pour que la page calcule aussi
+        le PnL « depuis votre dernière visite »."""
+        opt_ev = sorted((parse_ts(h.get("exit_ts")), fnum(h.get("pnl_usd")))
+                        for h in self.closed if parse_ts(h.get("exit_ts")))
+        fund_ev = self._funding_events()
+        fee_ev = self._fee_events()[0]
+
+        def cum(events):
+            ts = [t for t, _ in events]
+            acc, run = [], 0.0
+            for _, v in events:
+                run += v; acc.append(run)
+            return lambda t: acc[bisect_right(ts, t) - 1] if ts and bisect_right(ts, t) else 0.0
+        c_opt, c_fund, c_fee = cum(opt_ev), cum(fund_ev), cum(fee_ev)
+
+        def parts_at(t, pnl_option, pnl_hedge):
+            return {"options": c_opt(t) + pnl_option, "hedge": pnl_hedge,
+                    "funding": c_fund(t), "fees": c_fee(t)}
+
+        pts = []
+        for r in self.history:
+            t = parse_ts(r.get("ts"))
+            if t and t <= self.now:
+                pts.append((t, parts_at(t, fnum(r.get("pnl_option")), fnum(r.get("pnl_hedge")))))
+        pts.sort(key=lambda x: x[0])
+        tt = perf["totals"]
+        now_parts = {"options": tt["options_realized"] + tt["latent_options"],
+                     "hedge": tt["hedge_realized"] + tt["hedge_mtm"],
+                     "funding": tt["funding"], "fees": tt["fees"]}
+        start = parse_ts(perf.get("start"))
+
+        def window(days):
+            t0 = self.now - timedelta(days=days)
+            before = [p for p in pts if p[0] <= t0]
+            if before:
+                ref_t, ref = before[-1]
+            elif start and start >= t0:
+                ref_t, ref = start, {k: 0.0 for k in now_parts}     # le live a démarré dans la fenêtre
+            else:
+                return None
+            d = {k: round(now_parts[k] - ref[k], 2) for k in now_parts}
+            return {"days": days, "since": iso(ref_t), "net": round(sum(d.values()), 2), **d}
+
+        series_from = self.now - timedelta(days=NET_SERIES_DAYS)
+        net_series = [[iso(t), round(sum(p.values()), 2)] for t, p in pts if t >= series_from]
+        net_series.append([iso(self.now), round(sum(now_parts.values()), 2)])
+
+        # Fil des événements (le plus récent d'abord)
+        cutoff = self.now - timedelta(days=RECENT_DAYS)
+        ev = []
+        opened = OrderedDict()   # une ouverture = (instrument, horodatage d'entrée), lots allégés regroupés
+        for lot in self.positions + self.closed:
+            t = parse_ts(lot.get("entry_ts"))
+            if not t or t < cutoff:
+                continue
+            key = (lot.get("instrument_name"), str(lot.get("entry_ts")))
+            o = opened.setdefault(key, {"t": t, "lot": lot, "contracts": 0.0, "open": False})
+            o["contracts"] += fnum(lot.get("contracts"), 1)
+            o["open"] = o["open"] or lot in self.positions
+        entries = OrderedDict()  # regroupées par instrument et par jour (le bot recharge souvent la même option)
+        for (name, _), o in sorted(opened.items(), key=lambda kv: kv[1]["t"]):
+            lot = o["lot"]
+            n = fnum(lot.get("entry_sizing_btc"), o["contracts"]) or o["contracts"]
+            es, strike = fnum(lot.get("entry_spot")), fnum(lot.get("strike"))
+            g = entries.setdefault((name, o["t"].date()), {
+                "ts": iso(o["t"]), "type": "entry", "instrument": name, "n_entries": 0, "contracts": 0.0,
+                "premium_usd": 0.0, "score": lot.get("entry_score"), "tte_days": fnum(lot.get("tte_at_entry"), None),
+                "dist_pct": round((strike / es - 1) * 100, 1) if es and strike else None, "still_open": False})
+            g["ts"] = iso(o["t"])                     # horodatage de la dernière entrée du jour
+            g["n_entries"] += 1
+            g["contracts"] = round(g["contracts"] + n, 4)
+            g["premium_usd"] = round(g["premium_usd"] + fnum(lot.get("entry_price")) * es * n, 2)
+            g["still_open"] = g["still_open"] or o["open"]
+            if lot.get("entry_score") is not None:
+                g["score"] = max(fnum(g["score"]), fnum(lot.get("entry_score")))
+        ev.extend(entries.values())
+        for g in self.journal()["closed"]:
+            if parse_ts(g["ts"]) and parse_ts(g["ts"]) >= cutoff:
+                ev.append({"ts": g["ts"], "type": g["reason"] or "exit", "instrument": g["instrument"],
+                           "contracts": g["contracts"], "pnl_usd": g["pnl"], "premium_usd": g["premium"]})
+        info = self.state.get("risk_off_info") or {}
+        for k, typ in (("ts", "cb_close"), ("reentry_ts", "cb_reentry")):
+            t = parse_ts(info.get(k))
+            if t and t >= cutoff and not (typ == "cb_close" and any(e["type"] == "circuit_breaker" for e in ev)):
+                ev.append({"ts": iso(t), "type": typ})
+        days = OrderedDict()     # hedge : un résumé par jour plutôt qu'une ligne par rebalancement
+        for e in self.hedge.get("history", []) or []:
+            t = parse_ts(e.get("ts"))
+            if not t or t < cutoff:
+                continue
+            d = days.setdefault(t.date().isoformat(), {"t": t, "n": 0, "net_qty": 0.0, "realized": 0.0})
+            d["t"] = max(d["t"], t); d["n"] += 1
+            d["net_qty"] += fnum(e.get("qty")) * (-1 if e.get("side") == "SELL" else 1)
+            d["realized"] += fnum(e.get("realized_pnl_usd"))
+        for d in days.values():
+            ev.append({"ts": iso(d["t"]), "type": "hedge", "n": d["n"], "net_qty": round(d["net_qty"], 5),
+                       "pnl_usd": round(d["realized"], 2)})
+        ev.sort(key=lambda e: e["ts"], reverse=True)
+        return {"windows": {k: window(n) for k, n in (("24h", 1), ("7d", 7), ("30d", 30))},
+                "net_series": net_series, "events": ev, "days": RECENT_DAYS}
+
     # ── Routine : décisions en attente ─────────────────────────────────────────
     def decisions(self):
         recos = []
@@ -741,6 +851,7 @@ class Model:
             "book": {"rows": rows, "totals": tot}, "stress": stress, "cb": cb, "gates": gates,
             "scanner": {"rows": scan_rows, "weights": weights, "threshold": gates["threshold"]},
             "performance": perf, "capital": cap, "series": market, "journal": self.journal(), "decisions": dec,
+            "recent": self.recent(perf),
             "reconcile": self.recon,
         }
 

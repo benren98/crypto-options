@@ -13,6 +13,33 @@
 -->
 <style>
 /*__COMMON_CSS__*/
+/* « Ce qui s'est passé » : fenêtres de PnL + fil d'événements */
+.recent { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:16px; }
+@media (max-width:860px) { .recent { grid-template-columns:1fr; } }
+.rwins { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; align-content:start; }
+.rw .meta span.l { display:block; }
+.rw .num, .feed .num { white-space:nowrap; }
+#recent .cardhead .btn { white-space:nowrap; flex-shrink:0; }
+@media (max-width:560px) {
+  .rwins { grid-template-columns:1fr; }
+  .rw .meta span.l { display:inline; margin-right:10px; }
+}
+.rw { border:1px solid var(--border); border-radius:10px; padding:10px 12px; min-width:0; background:var(--surface-2); }
+.rw .label { font-size:12px; color:var(--ink-2); display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap; }
+.rw .value { font-size:20px; font-weight:600; margin-top:2px; white-space:nowrap; }
+.rw .meta { font-size:11.5px; color:var(--muted); margin-top:3px; line-height:1.45; }
+.rw.visit { grid-column:1 / -1; border-color:var(--s1); }
+.feed { list-style:none; margin:0; padding:0; display:grid; gap:2px; }
+.feed li { display:grid; grid-template-columns:28px minmax(0,1fr) auto; gap:10px; align-items:start; padding:8px 6px; border-radius:8px; }
+.feed li + li { border-top:1px solid var(--grid); }
+.feed .ic { width:26px; height:26px; border-radius:50%; display:grid; place-items:center; font-size:13px; font-weight:700;
+  background:var(--surface-2); color:var(--ink-2); border:1px solid var(--border); }
+.feed .t1 { font-size:13.5px; font-weight:600; display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+.feed .t2 { font-size:12px; color:var(--muted); margin-top:2px; overflow-wrap:anywhere; }
+.feed .rt { text-align:right; font-size:12px; color:var(--muted); white-space:nowrap; }
+.feed .rt .num { display:block; font-size:13.5px; font-weight:600; }
+.feed li.fresh { background:color-mix(in srgb, var(--s1) 9%, transparent); }
+.newtag { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--s1); }
 </style>
 <script>
   // Thème appliqué avant le rendu (pas de flash) — préférence locale best-effort
@@ -24,6 +51,7 @@
   <header class="top" id="top"></header>
   <section id="verdict" aria-live="polite"></section>
   <section class="kpis" id="kpis" aria-label="Indicateurs clés"></section>
+  <section class="card" id="recent" style="margin-top:16px" aria-label="Ce qui s'est passé"></section>
   <div class="grid2">
     <section class="card" id="entry"></section>
     <section class="card" id="risk"></section>
@@ -165,6 +193,7 @@ function renderKpis() {
     h("div", { class: "label" }, h("span", {}, "PnL net de la stratégie (après frais estimés)"), h("span", { class: "muted" }, p.start ? "depuis le " + fdate(p.start) + " · " + num(p.days, 0) + " j" : "")),
     h("div", { class: "value " + tone(t.net) }, usd(t.net, { sign: true })),
     h("div", { class: "meta" },
+      recentLine(),
       h("div", {}, "Options ", money(t.options_realized), " · Hedge ", money(t.hedge_realized + t.hedge_mtm), " · Funding ", money(t.funding),
         " · Frais ", money(t.fees), t.latent_options ? [" · Latent ", money(t.latent_options)] : null),
       h("div", {}, "Avant frais : " + usd(t.net_before_fees, { sign: true }) + " — frais estimés avec la grille Deribit Standard (le bot est en paper)")),
@@ -213,6 +242,96 @@ function renderKpis() {
       cb.restore_rule ? h("div", {}, "reprise : " + cb.restore_rule) : null,
       le ? h("div", {}, "dernier événement : " + fdate(le.ts) + (le.type === "cb_tier1_trim" ? " (allègement)" : " (fermeture)")) : null)));
   mount("kpis", tiles);
+}
+
+// ── Ce qui s'est passé : PnL récent + fil d'événements ─────────────────────
+// Visite précédente mémorisée dans ce navigateur (commodité locale) ; les rechargements
+// automatiques de la page (15 min) ne comptent pas comme une nouvelle visite.
+const VISIT = (() => {
+  const now = Date.now();
+  try {
+    const seen = Number(localStorage.getItem("vrp-seen")) || 0;
+    let prev = Number(localStorage.getItem("vrp-prev")) || 0;
+    if (!seen || now - seen > 30 * 60000) { prev = seen; localStorage.setItem("vrp-prev", String(prev)); }
+    localStorage.setItem("vrp-seen", String(now));
+    return prev || null;
+  } catch (e) { return null; }
+})();
+function netSinceVisit() {
+  const s = (D.recent && D.recent.net_series) || [];
+  if (!VISIT || s.length < 2 || Date.parse(s[0][0]) > VISIT) return null;
+  let ref = null;
+  for (const [t, v] of s) { if (Date.parse(t) <= VISIT) ref = v; else break; }
+  return ref == null ? null : s[s.length - 1][1] - ref;
+}
+function recentLine() {
+  const w = (D.recent && D.recent.windows) || {};
+  const parts = [["24 h", w["24h"]], ["7 j", w["7d"]], ["30 j", w["30d"]]].filter(([, x]) => x);
+  if (!parts.length) return null;
+  return h("div", {}, parts.map(([l, x], i) => [i ? " · " : "", l + " ", money(x.net)]));
+}
+let recentAll = false;
+function evView(e) {
+  const btc = v => num(v, v < 1 ? 2 : 1) + " BTC";
+  switch (e.type) {
+    case "entry": return { ic: "+", t: e.n_entries > 1 ? "Entrées × " + e.n_entries : "Nouvelle position", inst: e.instrument,
+      d: [btc(e.contracts), "prime " + usd(e.premium_usd), e.score != null ? "score " + num(e.score, 3) : null,
+          e.dist_pct != null ? "strike " + pct(e.dist_pct, 1, true) + " du spot" : null,
+          e.tte_days != null ? "TTE " + num(e.tte_days, 1) + " j" : null, e.still_open ? "toujours ouverte" : "déjà clôturée"].filter(Boolean).join(" · "),
+      v: e.premium_usd, vl: "prime" };
+    case "expiration": case "expired": return { ic: "✓", t: "Expiration", inst: e.instrument,
+      d: btc(e.contracts) + " · prime encaissée " + usd(e.premium_usd), v: e.pnl_usd, vl: "PnL" };
+    case "roll": return { ic: "↻", t: "Roll", inst: e.instrument, d: btc(e.contracts) + " rachetés avant l'échéance (gamma)", v: e.pnl_usd, vl: "PnL" };
+    case "cb_tier1_trim": return { ic: "!", t: "Allègement du circuit breaker", inst: e.instrument, d: btc(e.contracts) + " rachetés", v: e.pnl_usd, vl: "PnL" };
+    case "circuit_breaker": return { ic: "✕", t: "Fermeture du circuit breaker", inst: e.instrument, d: btc(e.contracts) + " rachetés", v: e.pnl_usd, vl: "PnL" };
+    case "cb_close": return { ic: "✕", t: "Circuit breaker : book fermé (risk-off)", d: "entrées bloquées jusqu'à la reprise" };
+    case "cb_reentry": return { ic: "↗", t: "Circuit breaker : entrées de nouveau autorisées", d: "" };
+    case "hedge": return { ic: "⇅", t: "Hedge : " + e.n + " rebalancement" + (e.n > 1 ? "s" : ""),
+      d: e.net_qty ? (e.net_qty < 0 ? "vente nette " : "achat net ") + num(Math.abs(e.net_qty), 4) + " BTC-PERP" : "net nul sur la journée",
+      v: e.pnl_usd || null, vl: "réalisé" };
+    default: return { ic: "•", t: REASON[e.type] || e.type, inst: e.instrument, d: "", v: e.pnl_usd, vl: "PnL" };
+  }
+}
+function renderRecent() {
+  const R = D.recent;
+  if (!R) { mount("recent"); return; }
+  const w = R.windows || {};
+  const win = (label, x, sub) => h("div", { class: "rw" },
+    h("div", { class: "label" }, h("span", {}, label), sub ? h("span", { class: "muted" }, sub) : null),
+    x ? h("div", { class: "value num " + tone(x.net) }, usd(x.net, { sign: true })) : h("div", { class: "value muted" }, "—"),
+    h("div", { class: "meta" }, x ? [["options ", x.options], ["hedge ", x.hedge], ["frais ", x.fees]].map(([l, v]) => h("span", { class: "l" }, l, money(v)))
+                                  : "historique insuffisant"));
+  const tiles = [];
+  const nv = netSinceVisit();
+  const fresh = VISIT ? R.events.filter(e => Date.parse(e.ts) > VISIT).length : 0;
+  if (VISIT) {
+    tiles.push(h("div", { class: "rw visit" },
+      h("div", { class: "label" }, h("span", {}, "Depuis votre dernière visite"), h("span", { class: "muted" }, fdt(new Date(VISIT).toISOString()) + " · " + ago((Date.now() - VISIT) / 3600000))),
+      h("div", { class: "value num " + tone(nv) }, nv == null ? "—" : usd(nv, { sign: true })),
+      h("div", { class: "meta" }, fresh ? fresh + " événement" + (fresh > 1 ? "s" : "") + " depuis (marqué" + (fresh > 1 ? "s" : "") + " « nouveau »)" : "aucun événement depuis",
+        nv == null ? " · visite plus ancienne que l'historique embarqué" : "")));
+  }
+  tiles.push(win("Dernières 24 h", w["24h"]), win("7 derniers jours", w["7d"]), win("30 derniers jours", w["30d"]));
+  const lim = Date.now() - (recentAll ? R.days : 7) * 86400000;
+  const evs = R.events.filter(e => Date.parse(e.ts) >= lim);
+  const items = evs.map(e => {
+    const v = evView(e), isNew = VISIT && Date.parse(e.ts) > VISIT;
+    return h("li", { class: isNew ? "fresh" : "" },
+      h("span", { class: "ic", "aria-hidden": "true" }, v.ic),
+      h("div", { style: "min-width:0" },
+        h("div", { class: "t1" }, h("span", {}, v.t), v.inst ? h("span", { class: "instr" }, v.inst) : null, isNew ? h("span", { class: "newtag" }, "nouveau") : null),
+        v.d ? h("div", { class: "t2" }, v.d) : null),
+      h("div", { class: "rt" }, v.v != null ? h("span", { class: "num " + (v.vl === "prime" ? "" : tone(v.v)) }, usd(v.v, { sign: v.vl !== "prime" })) : null,
+        h("span", { title: fdt(e.ts) }, ago((Date.now() - Date.parse(e.ts)) / 3600000))));
+  });
+  const toggle = R.events.length > evs.length || recentAll
+    ? h("button", { class: "btn", onclick: () => { recentAll = !recentAll; renderRecent(); } }, recentAll ? "Voir 7 j" : "Voir " + R.days + " j")
+    : null;
+  mount("recent",
+    h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Ce qui s'est passé"),
+      h("div", { class: "sub" }, "PnL net (frais estimés compris) sur la période · événements du bot, du plus récent au plus ancien")), toggle),
+    h("div", { class: "recent" }, h("div", { class: "rwins" }, tiles),
+      items.length ? h("ol", { class: "feed" }, items) : h("div", { class: "empty" }, "Aucun événement sur les " + (recentAll ? R.days : 7) + " derniers jours")));
 }
 
 // ── Entrées : portes + facteur limitant ────────────────────────────────────
@@ -569,7 +688,7 @@ function renderFoot() {
     h("span", {}, "Mode " + D.meta.mode + " — aucun ordre réel"));
 }
 
-renderTop(); renderVerdict(); renderKpis(); renderEntry(); renderRisk(); renderBook();
+renderTop(); renderVerdict(); renderKpis(); renderRecent(); renderEntry(); renderRisk(); renderBook();
 renderRange(); renderCharts(); renderPerfStats(); renderCapYield(); renderScanner(); renderDecisions(); renderJournal(); renderReconcile(); renderFoot();
 if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { if (!document.documentElement.getAttribute("data-theme")) { renderCharts(); renderKpis(); } });
 })();
