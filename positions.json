@@ -458,9 +458,9 @@
     }
   ],
   "hedge": {
-    "qty": -0.43854,
-    "avg_entry": 78533.22,
-    "rebalances": 106,
+    "qty": -0.48581,
+    "avg_entry": 78397.56,
+    "rebalances": 107,
     "realized_pnl_usd": -3472.56,
     "history": [
       {
@@ -2014,6 +2014,21 @@
         "realized_cumul_usd": -3472.56,
         "delta_net_after_pct": -0.0,
         "note": "hedge net apr\u00e8s entr\u00e9e (BTC-6NOV26-70000-P) \u00b7 rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
+      },
+      {
+        "ts": "2026-10-31 06:21:09 UTC",
+        "side": "SELL",
+        "qty": -0.04727,
+        "spot": 77139.03,
+        "qty_before": -0.43854,
+        "qty_after": -0.48581,
+        "vwap_before": 78533.22,
+        "vwap_after": 78397.56,
+        "drift": -0.04727,
+        "realized_pnl_usd": 0.0,
+        "realized_cumul_usd": -3472.56,
+        "delta_net_after_pct": 0.0,
+        "note": "short augment\u00e9 \u2014 VWAP recalcul\u00e9"
       }
     ]
   },
