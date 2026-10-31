@@ -1,0 +1,1151 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pricer autocall BTC</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M6 22 L12 12 L17 19 L21 9 L26 22' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<!--
+  Pricer d'autocall — template. NE PAS ÉDITER docs/autocall.html : il est régénéré par
+  generate_autocall_html.py (surface SSVI recalibrée sur Deribit + moteur autocall_engine.js).
+-->
+<style>
+/* Styles communs des dashboards (v2 live + backtests). Tokens de couleur : palette dataviz
+   de référence, validée CVD en clair et en sombre. Injecté par les générateurs. */
+:root {
+  color-scheme: light;
+  --page:#f9f9f7; --surface:#fcfcfb; --surface-2:#f3f2ee; --ink:#0b0b0b; --ink-2:#52514e; --muted:#6f6d68;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,.10);
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --neg-mark:#e34948; --track:#cde2fb;
+  --pos-text:#006300; --neg-text:#c42f2f;
+  --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b; --info:#2a78d6;
+  --shadow:0 1px 2px rgba(11,11,11,.04), 0 4px 16px rgba(11,11,11,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page:#0d0d0d; --surface:#1a1a19; --surface-2:#232321; --ink:#ffffff; --ink-2:#c3c2b7; --muted:#9a988f;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --neg-mark:#e66767; --track:#1d3a5f;
+    --pos-text:#0ca30c; --neg-text:#e66767; --info:#3987e5;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page:#0d0d0d; --surface:#1a1a19; --surface-2:#232321; --ink:#ffffff; --ink-2:#c3c2b7; --muted:#9a988f;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --neg-mark:#e66767; --track:#1d3a5f;
+  --pos-text:#0ca30c; --neg-text:#e66767; --info:#3987e5;
+  --shadow:none;
+}
+* { box-sizing:border-box; }
+html, body { margin:0; }
+body { background:var(--page); color:var(--ink); font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; -webkit-font-smoothing:antialiased; }
+a { color:var(--s1); text-decoration:none; } a:hover { text-decoration:underline; }
+.wrap { max-width:1240px; margin:0 auto; padding:20px 16px 48px; }
+.num, table.t td.r, .tick { font-variant-numeric:tabular-nums; }
+h1,h2,h3 { margin:0; font-weight:600; }
+.muted { color:var(--muted); } .ink2 { color:var(--ink-2); }
+.pos { color:var(--pos-text); } .neg { color:var(--neg-text); }
+.small { font-size:12px; }
+
+/* Header */
+.top { display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; margin-bottom:16px; }
+.brand { display:flex; align-items:center; gap:10px; }
+.brand h1 { font-size:18px; letter-spacing:-.01em; }
+.pill { font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; padding:3px 8px; border-radius:999px; background:var(--surface-2); color:var(--ink-2); border:1px solid var(--border); }
+.botstatus { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-2); }
+.dot { width:8px; height:8px; border-radius:50%; display:inline-block; flex:none; }
+.nav { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
+.btn { font:inherit; font-size:13px; color:var(--ink-2); background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:6px 10px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+.btn:hover { color:var(--ink); text-decoration:none; background:var(--surface-2); }
+.btn[aria-pressed="true"] { color:var(--ink); background:var(--surface-2); border-color:var(--axis); font-weight:600; }
+
+/* Cards & grids */
+.card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px; box-shadow:var(--shadow); min-width:0; }
+.card h3 { font-size:14px; display:flex; align-items:center; gap:8px; }
+.card .sub { color:var(--muted); font-size:12px; margin-top:2px; }
+.cardhead { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr)); gap:16px; margin-top:16px; }
+.grid3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr)); gap:16px; margin-top:16px; }
+.section { font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:32px 0 0; }
+
+/* Verdict */
+.verdict { display:flex; gap:14px; align-items:flex-start; padding:16px 18px; border-radius:12px; background:var(--surface); border:1px solid var(--border); box-shadow:var(--shadow); position:relative; overflow:hidden; }
+.verdict::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--lvl); }
+.verdict .icon { width:32px; height:32px; border-radius:50%; display:grid; place-items:center; font-weight:700; flex:none; color:#fff; background:var(--lvl); font-size:16px; }
+.verdict h2 { font-size:20px; letter-spacing:-.01em; }
+.verdict .lines { margin-top:4px; color:var(--ink-2); display:grid; gap:2px; }
+.verdict ul { margin:10px 0 0; padding:0; list-style:none; display:grid; gap:6px; }
+.verdict li { display:flex; gap:8px; align-items:baseline; }
+.lvl-good { --lvl:var(--good); } .lvl-warning { --lvl:var(--warning); } .lvl-critical { --lvl:var(--critical); }
+.lvl-idle { --lvl:var(--axis); } .lvl-info { --lvl:var(--info); } .lvl-serious { --lvl:var(--serious); }
+.lvl-idle .icon { color:var(--ink); }
+.badge { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; padding:2px 8px 2px 6px; border-radius:999px; background:color-mix(in srgb, var(--lvl) 14%, transparent); color:var(--ink); white-space:nowrap; }
+.badge i { font-style:normal; width:14px; height:14px; border-radius:50%; background:var(--lvl); color:#fff; display:grid; place-items:center; font-size:9px; }
+.lvl-warning.badge i, .lvl-idle.badge i { color:#0b0b0b; }
+
+/* KPI tiles */
+.kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:12px; margin-top:16px; }
+.tile { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; box-shadow:var(--shadow); min-width:0; }
+.tile .label { font-size:12px; color:var(--ink-2); display:flex; justify-content:space-between; gap:8px; }
+.tile .value { font-size:24px; font-weight:600; letter-spacing:-.02em; margin-top:4px; white-space:nowrap; }
+.tile .meta { font-size:12px; color:var(--muted); margin-top:4px; display:grid; gap:2px; }
+.tile.hero { grid-column:span 2; }
+.tile.hero .value { font-size:44px; line-height:1.05; }
+@media (max-width:560px) { .tile.hero { grid-column:span 1; } .tile.hero .value { font-size:36px; } }
+.spark { display:block; margin-top:8px; width:100%; height:36px; }
+
+/* Meters */
+.meter { position:relative; height:8px; border-radius:4px; background:var(--track); margin-top:8px; }
+.meter > span { position:absolute; left:0; top:0; bottom:0; border-radius:4px; background:var(--mfill, var(--s1)); }
+.meter .tickmark { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--ink-2); border-radius:1px; }
+.meterrow { display:grid; gap:2px; margin-bottom:14px; }
+.meterrow .head { display:flex; justify-content:space-between; gap:8px; font-size:13px; }
+.meterrow .ticklabels { position:relative; height:16px; font-size:11px; color:var(--muted); }
+.meterrow .ticklabels span { position:absolute; transform:translateX(-100%); white-space:nowrap; top:2px; }
+
+/* Gates */
+.gates { display:grid; gap:0; }
+.gate { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--grid); font-size:13px; }
+.gate:last-child { border-bottom:0; }
+.gate .gi { width:20px; height:20px; border-radius:50%; display:grid; place-items:center; font-size:11px; font-weight:700; color:#fff; flex:none; }
+.gate .gl { flex:1; min-width:0; }
+.gate .gd { color:var(--ink-2); text-align:right; font-variant-numeric:tabular-nums; }
+.callout { margin-top:12px; padding:10px 12px; border-radius:8px; background:var(--surface-2); font-size:13px; color:var(--ink-2); }
+.callout b { color:var(--ink); }
+
+/* Tables */
+.tscroll { overflow-x:auto; margin:0 -16px; padding:0 16px; }
+table.t { width:100%; border-collapse:collapse; font-size:13px; }
+table.t th { text-align:left; font-weight:500; color:var(--muted); font-size:12px; padding:6px 10px; border-bottom:1px solid var(--grid); white-space:nowrap; }
+table.t td { padding:8px 10px; border-bottom:1px solid var(--grid); vertical-align:middle; white-space:nowrap; }
+table.t th.r, table.t td.r { text-align:right; }
+table.t tr:last-child td { border-bottom:0; }
+table.t tbody tr.clickable { cursor:pointer; }
+table.t tbody tr.clickable:hover td, table.t tbody tr:focus-visible td { background:var(--surface-2); }
+table.t tr.sub td { background:var(--surface-2); padding:4px 10px 10px; }
+table.t tr.sub table.t td, table.t tr.sub table.t th { background:transparent; padding:5px 10px; }
+.caret { display:inline-block; width:12px; color:var(--muted); transition:transform .15s; }
+tr[aria-expanded="true"] .caret { transform:rotate(90deg); }
+.instr { font-weight:600; }
+.progress { width:84px; height:6px; border-radius:3px; background:var(--track); position:relative; display:inline-block; vertical-align:middle; margin-left:8px; }
+.progress span { position:absolute; left:0; top:0; bottom:0; border-radius:3px; background:var(--s1); }
+.progress.neg span { background:var(--neg-mark); }
+
+/* Score bars */
+.sbar { position:relative; width:150px; height:10px; display:flex; gap:2px; background:var(--surface-2); border-radius:0 4px 4px 0; }
+.sbar span { height:10px; }
+.sbar span:first-child { border-radius:0; }
+.sbar span:last-child { border-radius:0 4px 4px 0; }
+.sbar .thr { position:absolute; top:-4px; bottom:-4px; width:2px; background:var(--ink); border-radius:1px; }
+.legend { display:flex; flex-wrap:wrap; gap:6px 16px; font-size:12px; color:var(--ink-2); margin-bottom:8px; }
+.legend .key { display:inline-flex; align-items:center; gap:6px; }
+.legend .sw { display:inline-block; }
+.legend .sw.line { width:14px; height:2px; border-radius:1px; }
+.legend .sw.rect { width:10px; height:10px; border-radius:2px; }
+.legend .sw.diamond { width:8px; height:8px; transform:rotate(45deg); }
+
+/* Charts */
+.chartbox { position:relative; height:240px; }
+.empty { display:grid; place-items:center; height:100%; min-height:120px; color:var(--muted); font-size:13px; text-align:center; padding:12px; }
+details.dt { margin-top:10px; font-size:12px; }
+details.dt summary { cursor:pointer; color:var(--muted); }
+details.dt .tscroll { max-height:260px; overflow:auto; margin-top:6px; }
+
+/* Stats */
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr)); gap:12px; margin-top:16px; }
+.stat { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; box-shadow:var(--shadow); }
+.stat .label { font-size:12px; color:var(--ink-2); }
+.stat .value { font-size:20px; font-weight:600; margin-top:2px; letter-spacing:-.01em; }
+.stat .meta { font-size:12px; color:var(--muted); margin-top:2px; }
+
+.filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:32px; }
+.filters .lbl { font-size:12px; color:var(--muted); margin-right:4px; }
+.tabs { display:flex; gap:4px; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; }
+.chip { font-size:12px; padding:3px 8px; border-radius:6px; background:var(--surface-2); color:var(--ink-2); }
+.chip b { color:var(--ink); font-weight:600; }
+.reco { display:grid; gap:4px; padding:10px 0; border-bottom:1px solid var(--grid); }
+.reco:last-child { border-bottom:0; }
+.reco .arrow { color:var(--muted); margin:0 6px; }
+footer { margin-top:32px; font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 16px; }
+.err { padding:24px; border-radius:12px; background:var(--surface); border:1px solid var(--border); }
+@media print { .nav, .filters, details.dt { display:none; } }
+
+.acgrid { display:grid; grid-template-columns:minmax(300px,390px) minmax(0,1fr); gap:16px; margin-top:16px; align-items:start; }
+@media (max-width:900px) { .acgrid { grid-template-columns:1fr; } }
+.acgrid > div { display:grid; gap:16px; min-width:0; }
+#form { position:sticky; top:12px; max-height:calc(100vh - 24px); overflow:auto; }
+@media (max-width:900px) { #form { position:static; max-height:none; } }
+.fgroup { border-top:1px solid var(--grid); padding-top:10px; margin-top:10px; }
+.fgroup:first-of-type { border-top:0; padding-top:0; margin-top:0; }
+.fgroup h4 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; }
+.field { display:grid; grid-template-columns:minmax(0,1fr) 128px; gap:8px; align-items:center; padding:4px 0; }
+.field label { font-size:13px; color:var(--ink-2); }
+.field .hint { grid-column:1 / -1; font-size:11.5px; color:var(--muted); margin-top:-2px; }
+.field .ctl { display:flex; align-items:center; gap:6px; justify-content:flex-end; }
+.field .ctl .u { font-size:12px; color:var(--muted); min-width:34px; }
+.field input[type=number], .field select { width:100%; font:inherit; font-size:13px; padding:6px 8px; border-radius:8px;
+  border:1px solid var(--border); background:var(--surface-2); color:var(--ink); text-align:right; }
+.field select { text-align:left; }
+.field input[type=checkbox] { width:18px; height:18px; accent-color:var(--s1); }
+.field input:focus-visible, .field select:focus-visible { outline:2px solid var(--s1); outline-offset:1px; }
+.field.solved input { border-style:dashed; color:var(--muted); }
+.formbar { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+.headline { display:flex; flex-wrap:wrap; gap:6px 24px; align-items:flex-end; }
+.headline .big { font-size:46px; font-weight:650; letter-spacing:-.02em; line-height:1; }
+.headline .big small { font-size:18px; font-weight:500; color:var(--muted); margin-left:4px; }
+.headline .side { font-size:13px; color:var(--ink-2); display:grid; gap:2px; padding-bottom:4px; }
+.rtiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr)); gap:10px; margin-top:14px; }
+.rtile { border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:var(--surface-2); min-width:0; }
+.rtile .l { font-size:12px; color:var(--ink-2); }
+.rtile .v { font-size:20px; font-weight:600; margin-top:2px; white-space:nowrap; }
+.rtile .m { font-size:11.5px; color:var(--muted); margin-top:2px; }
+.decomp { margin-top:14px; display:grid; gap:6px; }
+.decomp .row { display:grid; grid-template-columns:minmax(0,190px) minmax(0,1fr) 84px; gap:10px; align-items:center; font-size:13px; }
+.decomp .bar { height:10px; border-radius:5px; background:var(--surface-2); overflow:hidden; }
+.decomp .bar span { display:block; height:100%; border-radius:5px; }
+.decomp .val { text-align:right; font-variant-numeric:tabular-nums; }
+.warns { margin-top:12px; display:grid; gap:6px; }
+.busy { display:inline-flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
+.busy::before { content:""; width:10px; height:10px; border-radius:50%; border:2px solid var(--s1); border-right-color:transparent; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .busy::before { animation:none; } }
+.stale { opacity:.55; transition:opacity .2s; }
+.chartbox { position:relative; height:240px; }
+.sensgrid td.num, .valgrid td.num { white-space:nowrap; }
+.valgrid td.off { color:var(--muted); }
+.method p { font-size:13px; color:var(--ink-2); margin:6px 0; line-height:1.5; }
+.method code { font-size:12px; }
+.selrow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.selrow select { font:inherit; font-size:13px; padding:5px 8px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--ink); }
+</style>
+<script>
+  try { var th = localStorage.getItem("vrp-theme"); if (th === "light" || th === "dark") document.documentElement.setAttribute("data-theme", th); } catch (e) {}
+</script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top" id="top"></header>
+  <div class="acgrid">
+    <section class="card" id="form" aria-label="Paramètres du produit"></section>
+    <div>
+      <section class="card" id="result" aria-live="polite"></section>
+      <div class="grid2" style="margin-top:0">
+        <section class="card" id="calls"></section>
+        <section class="card" id="outcomes"></section>
+      </div>
+      <section class="card" id="sched"></section>
+      <section class="card" id="sens"></section>
+    </div>
+  </div>
+  <h2 class="section">Marché et modèle</h2>
+  <div class="grid2">
+    <section class="card" id="smile"></section>
+    <section class="card" id="term"></section>
+  </div>
+  <div style="margin-top:16px"><section class="card" id="valid"></section></div>
+  <div style="margin-top:16px"><section class="card method" id="method"></section></div>
+  <footer id="foot"></footer>
+</div>
+
+<script type="application/json" id="mkt-data">{"as_of":"2026-10-31T21:25:59Z","underlying":"BTC","spot":77382.2,"usd_rate":0.04,"ssvi":{"rho0":-0.291431,"rho1":0.183768,"eta0":1.413604,"eta1":-1.164708,"gamma":0.412576,"rmse_volpts":0.51,"n_quotes":339},"expiries":[{"expiry":"2026-11-03T08:00:00+00:00","t":0.006686,"F":77408.0,"theta":0.00071,"rho":-0.2865,"eta":1.3826,"rmse_volpts":0.53,"quotes":[[68000,-0.12958,66.19,null,73.11,-0.0077],[69000,-0.11498,61.42,57.16,65.92,-0.0103],[70000,-0.10059,55.95,50.76,61.37,-0.0132],[71000,-0.08641,53.65,51.56,55.98,-0.0232],[72000,-0.07242,47.95,46.49,48.31,-0.031],[73000,-0.05863,44.29,43.31,44.5,-0.0508],[74000,-0.04503,41.19,40.52,42.05,-0.0879],[74500,-0.03829,39.76,38.66,40.55,-0.1162],[75000,-0.0316,38.42,37.65,39.2,-0.1535],[75500,-0.02496,37.07,35.96,37.71,-0.2009],[76000,-0.01836,35.62,34.74,36.25,-0.2595],[76500,-0.0118,34.35,33.53,35.21,-0.3321],[77000,-0.00528,33.45,32.04,33.61,-0.418],[77500,0.00119,32.4,30.89,33.96,0.4874],[78000,0.00762,31.57,30.1,33.29,0.3889],[78500,0.01401,30.77,30.12,30.83,0.2932],[79000,0.02036,30.5,29.89,31.16,0.2108],[79500,0.02667,30.62,29.73,31.33,0.1463],[80000,0.03294,31.28,30.47,31.86,0.1012],[80500,0.03917,32.13,31.17,33.0,0.0698],[81000,0.04536,32.83,31.29,33.85,0.0468],[82000,0.05763,36.04,34.01,38.04,0.0261],[83000,0.06975,39.47,36.43,42.51,0.016],[84000,0.08173,39.5,41.83,48.56,0.006],[85000,0.09356,41.69,null,51.41,0.0032],[86000,0.10526,47.89,null,56.89,0.0038],[87000,0.11682,50.4,null,62.23,0.0024]]},{"expiry":"2026-11-04T08:00:00+00:00","t":0.009426,"F":77419.56,"theta":0.00183,"rho":-0.2836,"eta":1.3638,"rmse_volpts":0.39,"quotes":[[68000,-0.12973,67.14,64.26,70.21,-0.0215],[69000,-0.11513,64.04,61.87,66.4,-0.0299],[70000,-0.10074,60.47,58.19,62.91,-0.0405],[71000,-0.08656,58.7,57.55,60.1,-0.0609],[72000,-0.07257,55.67,54.56,56.55,-0.0854],[73000,-0.05878,53.03,52.22,53.76,-0.1215],[74000,-0.04517,50.7,49.98,51.59,-0.173],[74500,-0.03844,49.56,48.89,50.7,-0.2053],[75000,-0.03175,48.58,47.13,50.41,-0.243],[75500,-0.02511,47.55,46.29,49.31,-0.2854],[76000,-0.01851,46.42,44.64,47.48,-0.3325],[76500,-0.01195,45.36,44.92,46.27,-0.3846],[77000,-0.00543,44.82,42.9,45.51,-0.4417],[77500,0.00104,43.91,43.91,45.2,0.4988],[78000,0.00747,43.52,42.39,45.0,0.4382],[78500,0.01386,42.76,42.44,43.79,0.3771],[79000,0.02021,42.22,41.41,42.86,0.3183],[79500,0.02652,42.32,40.68,43.82,0.266],[80000,0.03279,42.64,41.48,43.92,0.2203],[81000,0.04521,42.64,41.47,42.86,0.142],[82000,0.05748,42.9,41.96,43.91,0.087],[83000,0.0696,43.85,42.43,44.38,0.0533],[84000,0.08158,46.1,44.31,47.0,0.0359],[85000,0.09341,48.36,45.78,51.09,0.0246],[86000,0.10511,50.47,47.85,54.66,0.017]]},{"expiry":"2026-11-06T08:00:00+00:00","t":0.014906,"F":77453.34,"theta":0.002565,"rho":-0.2821,"eta":1.3546,"rmse_volpts":0.78,"quotes":[[65000,-0.17529,69.21,66.32,72.1,-0.0171],[68000,-0.13017,60.32,59.6,60.65,-0.0356],[70000,-0.10118,54.62,54.03,55.39,-0.0605],[72000,-0.07301,49.95,48.99,50.31,-0.1098],[73000,-0.05922,48.06,47.13,48.54,-0.1495],[74000,-0.04561,46.21,44.65,47.57,-0.2014],[75000,-0.03219,44.82,44.18,45.42,-0.2691],[76000,-0.01894,43.37,42.56,43.67,-0.3504],[77000,-0.00587,42.05,40.75,42.83,-0.4443],[78000,0.00703,40.81,40.57,41.61,0.4537],[79000,0.01977,40.44,39.38,41.58,0.3535],[80000,0.03235,39.93,38.6,41.12,0.2613],[81000,0.04477,40.47,39.5,40.42,0.189],[82000,0.05704,40.56,39.57,41.13,0.1298],[83000,0.06916,41.07,40.6,41.62,0.0878],[84000,0.08114,41.89,41.34,42.72,0.0593],[85000,0.09298,43.52,42.58,43.52,0.0424],[86000,0.10467,45.43,44.62,45.8,0.0315],[87000,0.11623,47.18,45.69,48.66,0.0233],[88000,0.12766,49.27,47.48,49.46,0.0182],[90000,0.15013,53.66,51.79,56.74,0.0119],[92000,0.17211,56.9,null,58.31,0.0073],[95000,0.2042,61.84,null,62.71,0.0038],[100000,0.25549,66.12,null,76.5,0.0009]]},{"expiry":"2026-11-13T08:00:00+00:00","t":0.034084,"F":77528.51,"theta":0.005334,"rho":-0.278,"eta":1.3285,"rmse_volpts":0.54,"quotes":[[65000,-0.17626,56.78,55.94,57.18,-0.0415],[68000,-0.13114,51.43,50.68,51.82,-0.0766],[70000,-0.10215,48.1,47.45,48.83,-0.1161],[72000,-0.07398,45.22,44.63,45.67,-0.1767],[74000,-0.04658,42.83,42.4,43.23,-0.2648],[75000,-0.03316,41.79,41.47,42.22,-0.3198],[76000,-0.01991,40.74,40.2,40.91,-0.3812],[77000,-0.00684,39.9,39.22,40.59,-0.4484],[78000,0.00606,39.26,38.5,39.86,0.4811],[79000,0.0188,38.53,38.33,39.02,0.4095],[80000,0.03138,38.27,37.58,39.05,0.3413],[81000,0.0438,37.85,37.0,38.61,0.277],[82000,0.05607,37.69,36.75,38.58,0.2203],[83000,0.06819,37.73,37.2,38.26,0.1725],[84000,0.08017,37.77,37.24,38.25,0.1325],[85000,0.09201,38.26,37.81,38.42,0.1025],[86000,0.1037,38.64,38.1,39.21,0.0781],[88000,0.12669,40.07,39.52,40.09,0.0469],[90000,0.14916,41.86,41.44,42.26,0.0293],[95000,0.20323,48.43,46.8,50.05,0.0129]]},{"expiry":"2026-11-20T08:00:00+00:00","t":0.053262,"F":77602.67,"theta":0.00796,"rho":-0.275,"eta":1.3097,"rmse_volpts":0.32,"quotes":[[65000,-0.17721,52.37,51.68,52.73,-0.0634],[70000,-0.10311,45.61,44.39,46.25,-0.151],[72000,-0.07494,43.24,42.37,43.87,-0.2116],[73000,-0.06114,42.3,41.91,42.59,-0.2498],[74000,-0.04754,41.3,40.75,42.01,-0.2924],[75000,-0.03411,40.48,40.15,40.74,-0.3402],[76000,-0.02087,39.65,38.83,39.96,-0.3921],[77000,-0.0078,38.95,38.44,38.99,-0.4476],[78000,0.00511,38.47,37.93,39.02,0.4948],[79000,0.01785,38.05,37.43,38.53,0.4367],[80000,0.03042,37.5,37.22,37.79,0.3789],[81000,0.04285,37.22,36.76,37.96,0.3242],[82000,0.05512,37.08,36.69,37.35,0.2738],[83000,0.06724,37.03,36.5,37.22,0.2284],[84000,0.07921,37.11,36.23,37.84,0.1889],[85000,0.09105,37.22,36.91,37.82,0.1546],[86000,0.10275,37.53,36.99,38.03,0.1265],[88000,0.12573,38.39,37.78,38.9,0.0846],[90000,0.14821,39.53,38.94,40.08,0.0572],[95000,0.20228,44.15,43.46,44.19,0.0265]]},{"expiry":"2026-11-27T08:00:00+00:00","t":0.07244,"F":77689.01,"theta":0.010428,"rho":-0.2727,"eta":1.2947,"rmse_volpts":0.51,"quotes":[[58000,-0.29227,58.61,58.62,59.21,-0.0267],[60000,-0.25837,56.02,55.84,56.75,-0.0368],[62000,-0.22558,53.28,53.04,53.76,-0.05],[64000,-0.19383,50.55,50.32,50.89,-0.0678],[66000,-0.16306,48.01,47.17,48.3,-0.0923],[67000,-0.14802,46.95,46.0,47.99,-0.1085],[68000,-0.13321,45.84,45.42,46.31,-0.1269],[69000,-0.11861,44.81,44.39,45.19,-0.1483],[70000,-0.10422,43.84,42.98,44.44,-0.173],[71000,-0.09003,42.91,42.59,43.25,-0.2012],[72000,-0.07605,41.98,41.68,42.29,-0.2328],[73000,-0.06225,41.15,40.88,41.45,-0.2685],[74000,-0.04865,40.38,40.14,40.67,-0.3078],[75000,-0.03523,39.63,39.38,39.88,-0.3506],[76000,-0.02198,39.01,38.58,39.54,-0.3967],[77000,-0.00891,38.3,37.7,38.64,-0.4451],[78000,0.004,37.78,37.63,38.56,0.5046],[79000,0.01673,37.4,36.84,37.78,0.4539],[80000,0.02931,37.15,36.85,37.33,0.4039],[81000,0.04174,36.81,36.74,37.24,0.355],[82000,0.05401,36.6,36.03,37.08,0.3089],[83000,0.06613,36.57,36.31,36.87,0.2668],[84000,0.0781,36.58,36.03,37.26,0.2284],[85000,0.08994,36.6,35.79,37.14,0.1939],[86000,0.10163,36.81,36.42,37.17,0.1645],[87000,0.11319,37.01,36.63,37.47,0.1386],[88000,0.12462,37.34,37.3,38.23,0.1171],[89000,0.13592,37.64,37.18,38.04,0.0983],[90000,0.1471,38.03,37.49,38.47,0.0829],[91000,0.15815,38.57,37.96,39.06,0.0706],[92000,0.16907,39.17,38.73,39.35,0.0604],[93000,0.17989,39.55,39.26,39.97,0.0508],[94000,0.19058,40.32,39.51,41.09,0.0444],[95000,0.20116,41.07,40.35,42.1,0.0388],[96000,0.21163,42.0,41.55,42.52,0.0347],[97000,0.222,42.92,42.12,43.71,0.0312],[98000,0.23225,43.39,42.48,44.28,0.0268],[99000,0.24241,44.3,43.32,45.27,0.0242],[100000,0.25246,45.32,44.81,46.18,0.0223],[102000,0.27226,46.9,46.05,47.72,0.0181],[104000,0.29168,48.21,46.69,49.72,0.0145],[105000,0.30125,49.09,48.0,50.16,0.0134],[106000,0.31073,50.06,49.29,51.49,0.0126],[108000,0.32942,51.73,50.42,53.02,0.0108],[110000,0.34777,53.32,51.11,55.53,0.0093],[112000,0.36579,53.97,51.12,56.67,0.0072],[115000,0.39222,56.48,54.35,56.74,0.0061],[120000,0.43478,59.07,55.67,64.06,0.004]]},{"expiry":"2026-12-25T08:00:00+00:00","t":0.149152,"F":78036.87,"theta":0.021992,"rho":-0.2642,"eta":1.2409,"rmse_volpts":0.84,"quotes":[[20000,-1.36145,125.68,119.08,132.33,-0.0012],[30000,-0.95598,97.01,94.27,99.77,-0.0031],[35000,-0.80183,88.0,86.48,88.14,-0.0057],[40000,-0.6683,78.62,78.1,79.13,-0.0093],[45000,-0.55052,69.89,69.52,70.21,-0.0148],[50000,-0.44516,62.74,62.27,63.15,-0.0251],[52000,-0.40594,60.23,59.89,60.62,-0.0313],[54000,-0.3682,57.75,57.43,58.05,-0.039],[55000,-0.34985,56.7,56.48,56.76,-0.0439],[56000,-0.33183,55.48,55.39,55.64,-0.0489],[58000,-0.29674,52.92,52.4,53.49,-0.0601],[60000,-0.26284,50.91,50.49,51.4,-0.0756],[62000,-0.23005,49.14,48.79,49.55,-0.0956],[64000,-0.1983,47.33,46.45,47.75,-0.1197],[65000,-0.18279,46.29,45.7,46.9,-0.1331],[66000,-0.16753,45.54,45.31,45.87,-0.1491],[68000,-0.13767,43.99,43.82,44.3,-0.1853],[70000,-0.10869,42.55,42.39,42.82,-0.2286],[72000,-0.08052,41.28,40.89,41.28,-0.2794],[73000,-0.06672,40.7,40.54,40.91,-0.3075],[74000,-0.05312,40.19,39.92,40.27,-0.3373],[75000,-0.03969,39.69,39.39,39.73,-0.3686],[76000,-0.02645,39.2,38.93,39.26,-0.4011],[78000,-0.00047,38.41,38.17,38.82,-0.4692],[80000,0.02485,37.82,37.35,38.0,0.4613],[82000,0.04954,37.29,37.01,37.69,0.3928],[84000,0.07364,36.92,36.58,37.29,0.3281],[85000,0.08547,36.82,36.48,37.23,0.2981],[86000,0.09717,36.66,36.5,36.89,0.2691],[88000,0.12016,36.58,36.18,36.62,0.2177],[90000,0.14263,36.73,36.18,37.19,0.175],[92000,0.16461,37.05,36.9,37.48,0.1403],[94000,0.18611,37.26,36.87,37.56,0.111],[95000,0.1967,37.65,36.88,38.36,0.1003],[96000,0.20717,37.93,37.51,38.31,0.09],[98000,0.22779,38.56,38.26,38.82,0.0728],[100000,0.24799,39.26,38.91,39.57,0.0594],[102000,0.26779,40.09,39.56,40.58,0.0492],[104000,0.28721,40.91,40.36,41.53,0.041],[105000,0.29678,41.28,40.79,41.74,0.0374],[106000,0.30626,41.67,41.14,42.17,0.0342],[108000,0.32495,42.59,41.99,43.16,0.0292],[110000,0.3433,43.48,42.56,44.34,0.025],[115000,0.38775,45.92,44.74,47.08,0.018],[120000,0.43031,48.42,47.29,49.52,0.0136],[125000,0.47113,50.51,49.07,51.92,0.0102],[130000,0.51035,52.98,51.27,54.66,0.0084],[135000,0.54809,54.99,52.9,57.05,0.0067],[140000,0.58446,56.41,53.75,59.05,0.005],[150000,0.65345,59.61,55.74,63.47,0.0032],[160000,0.71799,63.76,60.6,66.9,0.0026],[170000,0.77862,68.46,65.12,71.78,0.0025],[180000,0.83578,72.11,null,73.55,0.0021],[190000,0.88984,75.99,null,73.3,0.002],[200000,0.94114,76.4,null,77.03,0.0012],[210000,0.98993,79.9,null,85.28,0.0011],[220000,1.03645,83.21,null,88.77,0.0011],[230000,1.0809,86.35,null,92.08,0.0011],[240000,1.12346,87.81,null,90.08,0.0008],[250000,1.16428,87.81,null,92.96,0.0005]]},{"expiry":"2027-01-29T08:00:00+00:00","t":0.245043,"F":78428.91,"theta":0.035636,"rho":-0.2567,"eta":1.1937,"rmse_volpts":0.35,"quotes":[[58000,-0.30175,48.68,48.18,48.83,-0.0849],[60000,-0.26785,47.2,46.94,47.51,-0.1033],[62000,-0.23506,45.67,45.22,46.2,-0.1245],[64000,-0.20331,44.35,43.99,44.43,-0.1501],[66000,-0.17254,43.17,43.03,43.41,-0.1803],[67000,-0.1575,42.56,42.15,42.88,-0.1969],[68000,-0.14268,42.06,41.85,42.19,-0.2149],[69000,-0.12809,41.57,41.38,41.71,-0.2341],[70000,-0.1137,41.07,40.75,41.38,-0.2543],[71000,-0.09951,40.61,40.29,40.89,-0.2757],[72000,-0.08553,40.22,39.96,40.54,-0.2984],[73000,-0.07173,39.9,39.75,40.03,-0.3221],[74000,-0.05813,39.5,39.36,39.63,-0.3464],[75000,-0.0447,39.12,38.81,39.34,-0.3716],[76000,-0.03146,38.82,38.62,38.88,-0.3975],[77000,-0.01839,38.55,38.26,38.78,-0.424],[78000,-0.00548,38.26,37.99,38.24,-0.4508],[79000,0.00726,37.97,37.69,38.19,0.5221],[80000,0.01983,37.74,37.45,37.96,0.4949],[81000,0.03226,37.58,37.3,37.81,0.468],[82000,0.04453,37.49,37.23,37.74,0.4415],[83000,0.05665,37.29,37.0,37.52,0.415],[84000,0.06862,37.18,37.12,37.39,0.3894],[85000,0.08046,37.11,36.82,37.36,0.3646],[86000,0.09215,36.97,36.91,37.18,0.3402],[87000,0.10372,36.9,36.84,37.12,0.3169],[88000,0.11514,36.92,36.62,37.2,0.2951],[89000,0.12644,36.88,36.84,37.14,0.2738],[90000,0.13762,36.93,36.61,37.24,0.2542],[91000,0.14867,36.9,36.56,37.21,0.235],[92000,0.1596,36.98,36.7,37.39,0.2176],[93000,0.17041,37.04,36.72,37.44,0.2011],[94000,0.1811,37.04,36.98,37.36,0.1851],[96000,0.20216,37.2,36.78,37.62,0.1573],[98000,0.22277,37.41,36.93,37.87,0.1334],[100000,0.24298,37.69,37.14,38.19,0.1133],[102000,0.26278,38.12,37.53,38.13,0.0971],[104000,0.2822,38.55,38.24,38.9,0.0833],[105000,0.29177,38.7,38.5,39.19,0.0768],[106000,0.30125,38.91,38.7,39.43,0.0711],[108000,0.31994,39.31,39.04,39.54,0.0609],[110000,0.33829,39.83,39.46,40.21,0.0529],[115000,0.38274,41.31,40.73,41.94,0.0384],[120000,0.4253,42.71,41.92,43.48,0.0283]]},{"expiry":"2027-03-26T08:00:00+00:00","t":0.398467,"F":79084.06,"theta":0.05967,"rho":-0.2465,"eta":1.1291,"rmse_volpts":0.44,"quotes":[[35000,-0.81516,64.78,63.81,66.01,-0.014],[40000,-0.68163,59.48,59.13,60.01,-0.0226],[45000,-0.56385,55.59,54.63,56.57,-0.0374],[50000,-0.45849,51.58,51.26,51.94,-0.0581],[52000,-0.41927,50.14,49.55,50.74,-0.069],[54000,-0.38153,48.7,48.18,49.23,-0.0815],[55000,-0.36318,48.0,47.89,48.39,-0.0885],[56000,-0.34516,47.47,47.02,47.94,-0.0965],[58000,-0.31007,46.23,45.96,46.78,-0.1134],[60000,-0.27617,45.11,44.93,45.3,-0.133],[62000,-0.24338,44.09,43.91,44.24,-0.1554],[64000,-0.21163,43.13,42.85,43.45,-0.1805],[65000,-0.19612,42.63,42.33,42.91,-0.194],[66000,-0.18086,42.26,42.01,42.56,-0.2086],[68000,-0.151,41.5,41.31,41.82,-0.2397],[70000,-0.12202,40.8,40.46,41.18,-0.2734],[72000,-0.09385,40.2,39.91,40.36,-0.3097],[74000,-0.06645,39.66,39.39,39.82,-0.3481],[75000,-0.05302,39.39,39.08,39.71,-0.3678],[76000,-0.03978,39.22,38.88,39.5,-0.388],[78000,-0.0138,38.85,38.56,38.96,-0.429],[80000,0.01152,38.57,38.26,38.86,0.5297],[82000,0.03621,38.37,38.04,38.64,0.4887],[84000,0.06031,38.16,38.03,38.43,0.4483],[85000,0.07214,38.1,37.78,38.38,0.4287],[86000,0.08384,38.02,37.83,38.24,0.4093],[88000,0.10683,37.95,37.68,38.1,0.3722],[90000,0.1293,37.9,37.6,38.03,0.3369],[92000,0.15128,37.85,37.62,38.07,0.3037],[94000,0.17278,37.82,37.55,38.02,0.2728],[95000,0.18337,37.89,37.51,38.0,0.2588],[96000,0.19384,37.91,37.65,38.16,0.245],[98000,0.21446,37.95,37.74,38.27,0.219],[100000,0.23466,38.04,37.82,38.39,0.1957],[102000,0.25446,38.1,37.94,38.25,0.1742],[104000,0.27388,38.22,37.81,38.47,0.1552],[105000,0.28345,38.34,37.99,38.67,0.1468],[106000,0.29293,38.48,38.11,38.83,0.1391],[108000,0.31162,38.62,38.22,38.99,0.1238],[110000,0.32997,38.95,38.53,39.36,0.1114],[112000,0.34799,39.12,38.66,39.57,0.0993],[115000,0.37442,39.26,38.74,39.77,0.0827],[120000,0.41698,40.17,39.54,40.79,0.0646],[125000,0.4578,41.08,40.39,41.76,0.0509],[130000,0.49702,41.57,41.09,42.03,0.039],[140000,0.57113,43.48,43.02,44.06,0.026],[150000,0.64012,45.5,44.9,46.28,0.0185],[160000,0.70466,47.41,46.88,47.79,0.0137],[170000,0.76529,49.03,47.91,49.15,0.0102],[180000,0.82245,50.74,49.36,50.92,0.008],[190000,0.87651,52.45,51.15,54.44,0.0065],[200000,0.92781,54.07,52.54,55.59,0.0054]]},{"expiry":"2027-06-25T08:00:00+00:00","t":0.647782,"F":80170.18,"theta":0.099712,"rho":-0.2334,"eta":1.0458,"rmse_volpts":0.44,"quotes":[[30000,-0.98295,62.72,61.85,63.6,-0.0139],[40000,-0.69527,54.75,53.97,55.54,-0.0361],[45000,-0.57749,51.05,50.49,51.63,-0.0536],[50000,-0.47213,48.26,47.87,48.71,-0.0793],[52000,-0.43291,47.06,46.69,47.45,-0.0914],[54000,-0.39517,46.01,45.67,46.35,-0.1052],[55000,-0.37682,45.71,45.4,46.05,-0.1135],[56000,-0.3588,45.26,44.75,45.67,-0.1216],[58000,-0.32371,44.44,44.17,44.73,-0.1392],[60000,-0.28981,43.69,43.32,44.09,-0.1587],[62000,-0.25702,43.05,42.72,43.43,-0.1801],[64000,-0.22527,42.41,42.09,42.75,-0.2031],[65000,-0.20976,42.18,41.89,42.52,-0.2155],[66000,-0.1945,41.9,41.62,42.23,-0.228],[68000,-0.16464,41.35,41.08,41.66,-0.2543],[70000,-0.13566,40.92,40.66,41.21,-0.2821],[72000,-0.10749,40.44,40.16,40.69,-0.311],[74000,-0.08009,40.14,39.75,40.43,-0.3411],[76000,-0.05342,39.8,39.43,40.08,-0.3719],[78000,-0.02744,39.5,39.17,39.66,-0.4031],[80000,-0.00212,39.25,38.84,39.47,-0.4346],[82000,0.02257,39.06,38.83,39.3,0.534],[84000,0.04667,38.93,38.63,39.25,0.5031],[85000,0.0585,38.89,38.67,39.14,0.4879],[86000,0.0702,38.82,38.51,39.13,0.4727],[88000,0.09319,38.73,38.48,38.96,0.4431],[90000,0.11566,38.67,38.41,38.89,0.4145],[92000,0.13764,38.59,38.29,38.78,0.3867],[94000,0.15914,38.58,38.31,38.81,0.3604],[95000,0.16973,38.6,38.33,38.84,0.3479],[96000,0.1802,38.58,38.31,38.82,0.3354],[98000,0.20082,38.59,38.31,38.83,0.3116],[100000,0.22102,38.6,38.31,38.86,0.2891],[102000,0.24082,38.64,38.34,38.9,0.268],[104000,0.26024,38.71,38.4,38.99,0.2484],[105000,0.26981,38.74,38.38,38.98,0.239],[106000,0.27929,38.83,38.53,39.14,0.2304],[108000,0.29798,38.85,38.51,39.15,0.2128],[110000,0.31633,38.92,38.57,39.25,0.1968],[112000,0.33435,39.08,38.74,39.45,0.1825],[114000,0.35205,39.17,38.8,39.54,0.1688],[115000,0.36078,39.18,38.91,39.41,0.162],[116000,0.36944,39.26,38.99,39.51,0.156],[120000,0.40334,39.5,39.06,39.93,0.1336],[125000,0.44416,39.82,39.49,40.15,0.1102],[130000,0.48338,40.11,39.72,40.48,0.0908],[135000,0.52112,40.6,40.27,41.13,0.0762],[140000,0.55749,40.9,40.39,41.39,0.0631],[150000,0.62648,41.72,41.06,42.38,0.0448],[160000,0.69102,42.76,42.25,43.26,0.0332],[170000,0.75165,43.79,43.15,44.41,0.0252],[180000,0.80881,44.92,44.25,45.78,0.0199],[190000,0.86287,46.1,45.42,46.94,0.0162],[200000,0.91417,47.05,46.12,47.97,0.013]]},{"expiry":"2027-09-24T08:00:00+00:00","t":0.897097,"F":81281.37,"theta":0.140521,"rho":-0.2225,"eta":0.977,"rmse_volpts":0.37,"quotes":[[40000,-0.70904,52.13,51.61,52.16,-0.0462],[50000,-0.48589,46.72,46.38,47.02,-0.0935],[60000,-0.30357,43.21,42.91,43.53,-0.172],[65000,-0.22353,41.95,41.59,42.3,-0.2233],[66000,-0.20826,41.7,41.44,41.95,-0.2343],[68000,-0.17841,41.34,40.96,41.62,-0.2574],[70000,-0.14942,40.99,40.63,41.25,-0.2813],[72000,-0.12125,40.68,40.4,41.0,-0.306],[74000,-0.09385,40.39,40.13,40.71,-0.3312],[76000,-0.06718,40.12,39.82,40.53,-0.3569],[78000,-0.04121,39.91,39.62,40.17,-0.3828],[80000,-0.01589,39.7,39.37,39.92,-0.4089],[82000,0.0088,39.51,39.32,39.72,0.565],[84000,0.0329,39.36,39.17,39.57,0.5391],[86000,0.05643,39.24,39.0,39.53,0.5136],[88000,0.07942,39.14,38.94,39.34,0.4885],[90000,0.10189,39.07,38.86,39.26,0.464],[92000,0.12387,39.05,38.77,39.31,0.4404],[94000,0.14538,38.98,38.82,39.22,0.4172],[96000,0.16643,38.95,38.73,39.28,0.3949],[98000,0.18705,38.95,38.65,39.21,0.3735],[100000,0.20725,38.93,38.74,39.16,0.3528],[102000,0.22706,38.92,38.7,39.14,0.333],[104000,0.24647,38.94,38.71,39.15,0.3142],[106000,0.26552,38.98,38.75,39.21,0.2965],[108000,0.28421,39.02,38.7,39.32,0.2795],[110000,0.30256,39.06,38.86,39.34,0.2634],[112000,0.32058,39.08,38.77,39.43,0.2479],[114000,0.33828,39.19,38.92,39.44,0.234],[115000,0.34702,39.24,38.97,39.49,0.2273],[116000,0.35567,39.27,38.99,39.53,0.2206],[118000,0.37277,39.27,38.98,39.54,0.2072],[120000,0.38957,39.37,39.08,39.65,0.1954],[125000,0.4304,39.63,39.31,39.94,0.1688],[130000,0.46962,39.78,39.55,40.01,0.145],[135000,0.50736,40.04,39.65,40.41,0.1254],[140000,0.54373,40.2,39.91,40.48,0.1079],[150000,0.61272,40.68,40.48,41.18,0.0811],[160000,0.67726,41.17,40.72,41.59,0.0616],[170000,0.73788,41.97,41.43,42.47,0.0487],[180000,0.79504,42.68,42.04,43.3,0.0388],[190000,0.84911,43.17,42.63,43.7,0.0306],[200000,0.9004,43.82,43.24,44.33,0.0249],[210000,0.94919,44.48,43.84,45.11,0.0206],[220000,0.99571,45.39,45.33,45.8,0.0178]]}]}</script>
+<script id="engine">/*
+ * autocall_engine.js — Pricer d'autocall sur BTC (Monte Carlo en volatilité locale).
+ *
+ * Utilisé par docs/autocall.html (dans un Web Worker) et par tools/autocall_check.js (Node).
+ * Aucune dépendance, aucun accès au DOM.
+ *
+ * Marché (autocall_market.json, calibré par autocall_market.py) :
+ *   surface SSVI w(k, t) = θ_t/2 · (1 + ρφk + √((φk + ρ)² + 1 − ρ²)), k = ln(K/F_t), φ = η/(θ^γ (1+θ)^(1−γ)),
+ *   ρ(θ) = ρ0 + ρ1√θ, η(θ) = η0 + η1√θ ; θ_t interpolé linéairement entre échéances, ATM constante au-delà ;
+ *   forwards F_t des futures synthétiques Deribit (base interpolée), actualisation au taux USD.
+ * Marges du vendeur sur le modèle : décalage parallèle de vol, facteur de skew (ρ), facteur d'ailes (η),
+ *   décalage de la base des forwards, taux USD.
+ * Modèle de diffusion : volatilité locale de Dupire tirée de la surface (reprice les vanilles),
+ *   schéma d'Euler en log-forward, pas journalier (le BTC cote 7 j/7), variables antithétiques.
+ * Le prix de l'autocall est linéaire en chaque taux de coupon : une seule simulation donne
+ *   PV = A + c·Bc + g·Bg, d'où le coupon qui égalise PV à 100 % − marge du vendeur.
+ */
+(function (root) {
+  "use strict";
+
+  const DAY = 1 / 365;
+  const K_MIN = -4.0, K_MAX = 2.5, K_STEP = 0.02;            // grille de log-moneyness de la vol locale
+  const NK = Math.round((K_MAX - K_MIN) / K_STEP) + 1;
+
+  // ── Loi normale ──────────────────────────────────────────────────────────
+  function ncdf(x) {                                            // Abramowitz-Stegun 7.1.26 (erreur < 1e-7)
+    const t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2);
+    const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t
+      * Math.exp(-x * x / 2);
+    return x >= 0 ? 0.5 * (1 + y) : 0.5 * (1 - y);
+  }
+  function b76(F, K, T, sig, call) {                            // prix forward (non actualisé)
+    if (T <= 0 || sig <= 0) return call ? Math.max(F - K, 0) : Math.max(K - F, 0);
+    const sq = sig * Math.sqrt(T), d1 = (Math.log(F / K) + 0.5 * sq * sq) / sq, d2 = d1 - sq;
+    return call ? F * ncdf(d1) - K * ncdf(d2) : K * ncdf(-d2) - F * ncdf(-d1);
+  }
+  function impliedVol(price, F, K, T, call) {
+    const intr = call ? Math.max(F - K, 0) : Math.max(K - F, 0);
+    if (!(price > intr + 1e-12) || price >= (call ? F : K)) return null;
+    let lo = 1e-3, hi = 6;
+    for (let i = 0; i < 90; i++) { const m = 0.5 * (lo + hi); if (b76(F, K, T, m, call) > price) hi = m; else lo = m; }
+    return 0.5 * (lo + hi);
+  }
+
+  // ── Générateur pseudo-aléatoire reproductible (mulberry32) + Box-Muller ──
+  function rng(seed) {
+    let a = seed >>> 0, spare = null;
+    const u = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    return function normal() {
+      if (spare !== null) { const s = spare; spare = null; return s; }
+      let x, y, r;
+      do { x = 2 * u() - 1; y = 2 * u() - 1; r = x * x + y * y; } while (r >= 1 || r === 0);
+      const f = Math.sqrt(-2 * Math.log(r) / r);
+      spare = y * f; return x * f;
+    };
+  }
+
+  // ── Surface (avec marges) ────────────────────────────────────────────────
+  const DEFAULT_MARGINS = { volShift: 0, skewMult: 1, wingMult: 1, basisShift: 0, rate: null };
+
+  function makeSurface(mkt, margins) {
+    const m = Object.assign({}, DEFAULT_MARGINS, margins || {});
+    const P = mkt.ssvi, S0 = mkt.spot;
+    const ex = mkt.expiries.slice().sort((a, b) => a.t - b.t);
+    const ts = [0].concat(ex.map(e => e.t)), ths = [0].concat(ex.map(e => e.theta));
+    const bas = ex.map(e => Math.log(e.F / S0) / e.t);         // base annualisée (log) par échéance
+    const tLast = ts[ts.length - 1], thLast = ths[ths.length - 1];
+    const rate = (m.rate == null ? mkt.usd_rate : m.rate);
+
+    function theta(t) {
+      if (t >= tLast) return thLast * t / tLast;                // vol ATM constante au-delà de la dernière échéance
+      let i = 1; while (ts[i] < t) i++;
+      return ths[i - 1] + (ths[i] - ths[i - 1]) * (t - ts[i - 1]) / (ts[i] - ts[i - 1]);
+    }
+    function basis(t) {
+      if (t <= ex[0].t) return bas[0];
+      if (t >= ex[ex.length - 1].t) return bas[bas.length - 1];
+      let i = 1; while (ex[i].t < t) i++;
+      return bas[i - 1] + (bas[i] - bas[i - 1]) * (t - ex[i - 1].t) / (ex[i].t - ex[i - 1].t);
+    }
+    function wBase(k, t) {
+      const th = Math.max(theta(t), 1e-10), sq = Math.sqrt(th);
+      let rho = Math.max(-0.98, Math.min(0.98, (P.rho0 + P.rho1 * sq) * m.skewMult));
+      let eta = Math.max(0.02, (P.eta0 + P.eta1 * sq) * m.wingMult);
+      eta = Math.min(eta, 2 / (1 + Math.abs(rho)) - 1e-6);      // condition sans arbitrage papillon
+      const phi = eta / (Math.pow(th, P.gamma) * Math.pow(1 + th, 1 - P.gamma));
+      return th / 2 * (1 + rho * phi * k + Math.sqrt((phi * k + rho) * (phi * k + rho) + 1 - rho * rho));
+    }
+    function vol(k, t) {                                        // vol implicite avec décalage parallèle
+      return Math.max(0.01, Math.sqrt(wBase(k, t) / t) + m.volShift / 100);
+    }
+    function w(k, t) { const s = vol(k, t); return s * s * t; }
+    return {
+      S0, rate, margins: m, vol, w,
+      F: t => S0 * Math.exp((basis(t) + m.basisShift / 100) * t),
+      DF: t => Math.exp(-rate * t),
+    };
+  }
+
+  // Volatilité locale de Dupire en variance totale : σ² = ∂t w / [1 − k w'/w + ¼(−¼ − 1/w + k²/w²) w'² + ½ w'']
+  function localVol(surf, k, t) {
+    const dt = Math.min(1e-4, t / 2), dk = 1e-3;
+    const w0 = surf.w(k, t), wt = (surf.w(k, t + dt) - surf.w(k, t - dt)) / (2 * dt);
+    const wp = surf.w(k + dk, t), wm = surf.w(k - dk, t);
+    const wk = (wp - wm) / (2 * dk), wkk = (wp - 2 * w0 + wm) / (dk * dk);
+    const den = 1 - k * wk / w0 + 0.25 * (-0.25 - 1 / w0 + k * k / (w0 * w0)) * wk * wk + 0.5 * wkk;
+    let v = den > 1e-6 && wt > 0 ? wt / den : w0 / t;           // repli : vol implicite si arbitrage local
+    return Math.min(4, Math.max(0.05, Math.sqrt(v)));
+  }
+  // Une ligne par jour : variance locale MOYENNÉE sur la journée (4 points) — une échéance listée
+  // tombe en cours de journée et la variance peut sauter d'une échéance à l'autre (événement coté)
+  const SUBT = [0.125, 0.375, 0.625, 0.875];
+  function localVolGrid(surf, nDays) {
+    const g = new Float32Array(nDays * NK);
+    for (let n = 0; n < nDays; n++) {
+      for (let j = 0; j < NK; j++) {
+        let v = 0;
+        for (const f of SUBT) { const s = localVol(surf, K_MIN + j * K_STEP, (n + f) * DAY); v += s * s; }
+        g[n * NK + j] = Math.sqrt(v / SUBT.length);
+      }
+    }
+    return g;
+  }
+
+  // Pas de temps : 4 sous-pas par jour sur les 30 premiers jours (les ailes des échéances courtes ne se
+  // forment pas en quelques pas journaliers), 1 pas par jour ensuite. off[n] = indice du 1er aléa du jour n.
+  const EARLY_DAYS = 30, EARLY_SUB = 4;
+  function stepPlan(D) {
+    const off = new Int32Array(D + 1);
+    for (let n = 0; n < D; n++) off[n + 1] = off[n] + (n < EARLY_DAYS ? EARLY_SUB : 1);
+    return off;
+  }
+  function advance(x, lv, n, off, zs, sgn) {           // fait avancer ln(S/F) d'un jour (vol locale du jour n)
+    const nsub = off[n + 1] - off[n], dt = DAY / nsub, sq = Math.sqrt(dt), row = n * NK;
+    for (let q = 0; q < nsub; q++) {
+      let pos = (x - K_MIN) / K_STEP;
+      if (pos < 0) pos = 0; else if (pos > NK - 1.001) pos = NK - 1.001;
+      const j = pos | 0, fr = pos - j, s = lv[row + j] * (1 - fr) + lv[row + j + 1] * fr;
+      x += -0.5 * s * s * dt + s * sq * sgn * zs[off[n] + q];
+    }
+    return x;
+  }
+
+  // ── Produit ──────────────────────────────────────────────────────────────
+  const FREQ_DAYS = { daily: 1, weekly: 7, monthly: 365 / 12, quarterly: 365 / 4, semiannual: 365 / 2, annual: 365 };
+  const DEFAULT_PRODUCT = {
+    maturityMonths: 12, freq: "monthly", firstCallObs: 1,
+    acBarrier: 1.00, acStepDown: 0.0, acFloor: 0.5,
+    guaranteedRate: 0.0, guaranteedPeriods: 0,                  // 0 = sur toutes les périodes
+    condRate: 0.20, cpnBarrier: 0.70, memory: true,
+    pdiBarrier: 0.60, pdiType: "continuous", pdiStrike: 1.00,
+    solveFor: "conditional", upfront: 0.02,                     // marge du vendeur, en % du nominal
+  };
+  function schedule(p) {
+    const D = Math.max(1, Math.round(p.maturityMonths * 365 / 12)), per = FREQ_DAYS[p.freq] || FREQ_DAYS.monthly;
+    const days = [];
+    for (let i = 1; ; i++) { const d = Math.round(i * per); if (d >= D) break; if (!days.length || d > days[days.length - 1]) days.push(d); }
+    days.push(D);
+    return days;
+  }
+
+  // ── Monte Carlo de l'autocall ────────────────────────────────────────────
+  function price(mkt, product, margins, opts) {
+    const p = Object.assign({}, DEFAULT_PRODUCT, product || {});
+    const o = Object.assign({ paths: 20000, seed: 12345 }, opts || {});
+    const surf = makeSurface(mkt, margins);
+    const days = schedule(p), nObs = days.length, D = days[nObs - 1];
+    const lv = localVolGrid(surf, D);
+    const Fd = new Float64Array(D + 1), DFd = new Float64Array(D + 1);
+    for (let n = 0; n <= D; n++) { Fd[n] = surf.F(n * DAY); DFd[n] = surf.DF(n * DAY); }
+    const obsAt = new Int32Array(D + 1).fill(-1);
+    days.forEach((d, i) => { obsAt[d] = i; });
+    const alpha = days.map((d, i) => (d - (i ? days[i - 1] : 0)) / 365);
+    const acLevel = days.map((_, i) => Math.max(p.acFloor, p.acBarrier - p.acStepDown * Math.max(0, i + 1 - p.firstCallObs)));
+    const gN = p.guaranteedPeriods > 0 ? p.guaranteedPeriods : nObs;          // périodes à coupon garanti
+    const condFrom = p.guaranteedPeriods > 0 && p.guaranteedRate > 0 ? p.guaranteedPeriods : 0;
+    const S0 = surf.S0, off = stepPlan(D);
+
+    const N = o.paths - (o.paths % 2), normal = rng(o.seed);
+    const A = new Float64Array(N), Bc = new Float64Array(N), Bg = new Float64Array(N);
+    const callCount = new Float64Array(nObs);
+    let ki = 0, lossN = 0, lossSum = 0, lifeSum = 0, cpnUnits = 0;
+    // Issues : rappel anticipé · échéance sans perte · pertes en capital par tranche
+    const OUT = [["Rappelé avant l'échéance", null], ["Échéance, capital rendu", 0], ["Perte 0–10 %", 0.10],
+                 ["Perte 10–20 %", 0.20], ["Perte 20–40 %", 0.40], ["Perte 40–60 %", 0.60], ["Perte > 60 %", Infinity]];
+    const hist = new Float64Array(OUT.length);
+    const zs = new Float64Array(off[D]);
+
+    for (let path = 0; path < N; path++) {
+      if (path % 2 === 0) for (let n = 0; n < off[D]; n++) zs[n] = normal();
+      const sgn = path % 2 === 0 ? 1 : -1;                      // antithétique
+      let x = 0, minRatio = 1, a = 0, bc = 0, bg = 0, bank = 0, alive = true, ratio = 1;
+      for (let n = 0; n < D && alive; n++) {
+        x = advance(x, lv, n, off, zs, sgn);
+        ratio = Fd[n + 1] * Math.exp(x) / S0;
+        if (ratio < minRatio) minRatio = ratio;
+        const i = obsAt[n + 1];
+        if (i < 0) continue;
+        const df = DFd[n + 1];
+        if (i < gN && p.guaranteedRate > 0) bg += df * alpha[i];
+        if (i >= condFrom) {
+          if (ratio >= p.cpnBarrier) { bc += df * (alpha[i] + bank); cpnUnits += 1; bank = 0; }
+          else if (p.memory) bank += alpha[i];
+        }
+        if (i < nObs - 1 && i + 1 >= p.firstCallObs && ratio >= acLevel[i]) {
+          a += df; alive = false; callCount[i] += 1; lifeSum += days[i] * DAY;
+        }
+      }
+      if (alive) {                                                  // échéance
+        const hit = p.pdiType === "european" ? ratio <= p.pdiBarrier : minRatio <= p.pdiBarrier;
+        let red = 1;
+        if (hit) { ki += 1; if (ratio < p.pdiStrike) { const loss = (p.pdiStrike - ratio) / p.pdiStrike; red = 1 - loss; lossN += 1; lossSum += loss; } }
+        a += DFd[D] * red; callCount[nObs - 1] += 1; lifeSum += D * DAY;
+        const loss = 1 - red;
+        let b = 1; if (loss > 1e-12) { b = 2; while (b < OUT.length - 1 && loss > OUT[b][1]) b++; }
+        hist[b] += 1;
+      } else hist[0] += 1;
+      A[path] = a; Bc[path] = bc; Bg[path] = bg;
+    }
+
+    const mean = arr => { let s = 0; for (let i = 0; i < arr.length; i++) s += arr[i]; return s / arr.length; };
+    const mA = mean(A), mBc = mean(Bc), mBg = mean(Bg), target = 1 - p.upfront;
+    let c = p.condRate, g = p.guaranteedRate;
+    if (p.solveFor === "conditional" && mBc > 1e-9) c = (target - mA - g * mBg) / mBc;
+    if (p.solveFor === "guaranteed" && mBg > 1e-9) g = (target - mA - c * mBc) / mBg;
+    // Erreur type sur les paires antithétiques (indépendantes entre elles)
+    let s1 = 0, s2 = 0;
+    for (let i = 0; i < N; i += 2) {
+      const v = 0.5 * (A[i] + c * Bc[i] + g * Bg[i] + A[i + 1] + c * Bc[i + 1] + g * Bg[i + 1]);
+      s1 += v; s2 += v * v;
+    }
+    const pairs = N / 2, pv = s1 / pairs, se = Math.sqrt(Math.max(0, s2 / pairs - pv * pv) / pairs);
+    return {
+      pv, se, sellerMargin: 1 - pv, condRate: c, guaranteedRate: g, target,
+      parts: { redemption: mA, conditional: c * mBc, guaranteed: g * mBg, annuityCond: mBc, annuityGuar: mBg,
+               zeroCoupon: DFd[D] },
+      obs: days.map((d, i) => ({ day: d, t: d * DAY, alpha: alpha[i], acLevel: i + 1 >= p.firstCallObs && i < nObs - 1 ? acLevel[i] : null,
+                                  callProb: callCount[i] / N })),
+      probs: { autocall: 1 - callCount[nObs - 1] / N, maturity: callCount[nObs - 1] / N, ki: ki / N,
+               loss: lossN / N, lossGivenLoss: lossN ? lossSum / lossN : 0 },
+      expectedLife: lifeSum / N, expectedCoupons: cpnUnits / N,
+      outcomes: OUT.map((o, i) => ({ label: o[0], p: hist[i] / N })),
+      settings: { paths: N, seed: o.seed, days: D, nObs, rate: surf.rate, margins: surf.margins },
+    };
+  }
+
+  // ── Contrôle : les vanilles du marché repricées par le Monte Carlo ───────
+  function validate(mkt, margins, opts) {
+    const o = Object.assign({ paths: 20000, seed: 777, maxDays: 400, moneyness: [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.4] }, opts || {});
+    const surf = makeSurface(mkt, margins);
+    const exDays = Array.from(new Set(mkt.expiries.map(e => Math.max(1, Math.round(e.t * 365))).filter(d => d <= o.maxDays))).sort((a, b) => a - b);
+    const D = exDays[exDays.length - 1], lv = localVolGrid(surf, D);
+    const Fd = new Float64Array(D + 1); for (let n = 0; n <= D; n++) Fd[n] = surf.F(n * DAY);
+    const at = new Int32Array(D + 1).fill(-1); exDays.forEach((d, i) => { at[d] = i; });
+    const N = o.paths - (o.paths % 2), normal = rng(o.seed), off = stepPlan(D);
+    const sums = exDays.map(() => new Float64Array(o.moneyness.length));
+    const zs = new Float64Array(off[D]);
+    for (let path = 0; path < N; path++) {
+      if (path % 2 === 0) for (let n = 0; n < off[D]; n++) zs[n] = normal();
+      const sgn = path % 2 === 0 ? 1 : -1;
+      let x = 0;
+      for (let n = 0; n < D; n++) {
+        x = advance(x, lv, n, off, zs, sgn);
+        const e = at[n + 1];
+        if (e >= 0) {
+          const S = Fd[n + 1] * Math.exp(x);
+          o.moneyness.forEach((m, q) => { const K = m * Fd[n + 1]; sums[e][q] += m < 1 ? Math.max(K - S, 0) : Math.max(S - K, 0); });
+        }
+      }
+    }
+    return exDays.map((d, e) => {
+      const t = d * DAY, F = Fd[d];
+      return { day: d, t, F, points: o.moneyness.map((m, q) => {
+        const K = m * F, call = m >= 1, mc = sums[e][q] / N;
+        const ivMkt = surf.vol(Math.log(m), t), ivMc = impliedVol(mc, F, K, t, call);
+        return { m, K, ivSurface: ivMkt, ivMc, errVolPts: ivMc == null ? null : (ivMc - ivMkt) * 100 };
+      }) };
+    });
+  }
+
+  const API = { price, validate, makeSurface, localVol, schedule, b76, impliedVol, DEFAULT_PRODUCT, DEFAULT_MARGINS, FREQ_DAYS };
+  if (typeof module !== "undefined" && module.exports) module.exports = API;
+  else root.AutocallEngine = API;
+})(typeof self !== "undefined" ? self : this);
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+"use strict";
+
+let MKT;
+try { MKT = JSON.parse(document.getElementById("mkt-data").textContent); } catch (e) { MKT = null; }
+const E = window.AutocallEngine;
+if (!MKT || !E) {
+  document.querySelector(".wrap").textContent = "Page non générée : lancer `python generate_autocall_html.py`.";
+  return;
+}
+
+// Helpers communs des dashboards (DOM sûr, formats fr-FR, plugins et fabriques Chart.js).
+// Injecté DANS l'IIFE de chaque page par les générateurs (scope partagé avec le code de page).
+// ── Helpers DOM (texte toujours via textContent / text nodes) ──────────────
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v;
+    else if (k === "style") e.setAttribute("style", v);
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid == null || kid === false) continue;
+    e.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+  return e;
+}
+function mount(id, ...kids) { const el = document.getElementById(id); el.replaceChildren(...kids.flat(Infinity).filter(Boolean)); return el; }
+const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// ── Formats ────────────────────────────────────────────────────────────────
+const MINUS = "−";
+// Espace insécable normale plutôt que l'espace fine fr-FR (U+202F), illisible en petite taille
+function num(v, d = 0) { return Number(v).toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).replace(/ /g, " "); }
+function usd(v, o = {}) {
+  if (v == null || !isFinite(v)) return "—";
+  const d = o.d ?? 0, a = Math.abs(v);
+  const sign = v < 0 ? MINUS : (o.sign && v > 0 ? "+" : "");
+  if (o.compact && a >= 10000) return sign + num(a / 1000, 1) + " k$";
+  return sign + num(a, d) + " $";
+}
+function pct(v, d = 1, sign = false) {
+  if (v == null || !isFinite(v)) return "—";
+  const s = v < 0 ? MINUS : (sign && v > 0 ? "+" : "");
+  return s + num(Math.abs(v), d) + " %";
+}
+function sgn(v, d = 3, unit = "") {
+  if (v == null || !isFinite(v)) return "—";
+  const s = v < 0 ? MINUS : (v > 0 ? "+" : "");
+  return s + num(Math.abs(v), d) + unit;
+}
+function tone(v) { return v > 0 ? "pos" : v < 0 ? "neg" : ""; }
+function money(v, o = {}) { return h("span", { class: "num " + (o.plain ? "" : tone(v)) }, usd(v, { sign: true, ...o })); }
+const dFmt  = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short" });
+const dtFmt = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const mFmt  = new Intl.DateTimeFormat("fr-FR", { month: "short", year: "2-digit" });
+function fdate(iso) { return iso ? dFmt.format(new Date(iso)) : "—"; }
+function fdt(iso) { return iso ? dtFmt.format(new Date(iso)) : "—"; }
+function fmonth(m) { return mFmt.format(new Date(m + "-01T00:00:00Z")); }
+function ago(hours) {
+  if (hours == null) return "jamais";
+  if (hours < 1) return "il y a " + Math.max(1, Math.round(hours * 60)) + " min";
+  if (hours < 48) return "il y a " + num(hours, hours < 10 ? 1 : 0) + " h";
+  return "il y a " + num(hours / 24, 0) + " j";
+}
+const tzName = (() => { try { return new Intl.DateTimeFormat("fr-FR", { timeZoneName: "short" }).formatToParts(new Date()).find(p => p.type === "timeZoneName").value; } catch (e) { return ""; } })();
+
+const LVL = {
+  good: { icon: "✓", label: "OK" }, warning: { icon: "!", label: "À surveiller" },
+  critical: { icon: "✕", label: "Action" }, idle: { icon: "–", label: "Au repos" },
+  info: { icon: "i", label: "Info" }, serious: { icon: "!", label: "Sérieux" }, na: { icon: "?", label: "n/a" },
+};
+function badge(level, text) { return h("span", { class: "badge lvl-" + level }, h("i", { "aria-hidden": "true" }, LVL[level]?.icon || "•"), text); }
+
+// ── Plugins Chart.js (crosshair, étiquettes de fin, lignes de référence) ───
+const EXTRA = new WeakMap();   // options JS hors du résolveur d'options Chart.js
+const crosshair = {
+  id: "vrpCrosshair",
+  afterDraw(chart) {
+    if (chart.config.type !== "line") return;
+    const act = chart.tooltip && chart.tooltip.getActiveElements();
+    if (!act || !act.length) return;
+    const x = act[0].element.x, { top, bottom } = chart.chartArea, ctx = chart.ctx;
+    ctx.save(); ctx.strokeStyle = css("--axis"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke(); ctx.restore();
+  },
+};
+const refLines = {
+  id: "vrpRefLines",
+  afterDatasetsDraw(chart) {
+    const ex = EXTRA.get(chart.canvas); if (!ex || !ex.refLines) return;
+    const ctx = chart.ctx, a = chart.chartArea, y = chart.scales.y;
+    for (const l of ex.refLines) {
+      const py = y.getPixelForValue(l.value);
+      if (py < a.top - 1 || py > a.bottom + 1) continue;
+      ctx.save(); ctx.strokeStyle = l.color || css("--ink-2"); ctx.lineWidth = 1; ctx.setLineDash(l.dash || []);
+      ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke();
+      if (l.label) {
+        ctx.setLineDash([]); ctx.fillStyle = css("--muted"); ctx.font = "11px system-ui,sans-serif";
+        ctx.textBaseline = "bottom"; ctx.fillText(l.label, a.left + 4, py - 3);
+      }
+      ctx.restore();
+    }
+  },
+};
+const endLabels = {
+  id: "vrpEndLabels",
+  afterDatasetsDraw(chart) {
+    const ex = EXTRA.get(chart.canvas); if (!ex || !ex.endFmt) return;
+    const pts = [];
+    chart.data.datasets.forEach((ds, i) => {
+      if (!ds.vrpEnd) return;
+      const meta = chart.getDatasetMeta(i); if (meta.hidden) return;
+      const val = (p) => (p != null && typeof p === "object") ? p.y : p;
+      let j = ds.data.length - 1; while (j >= 0 && val(ds.data[j]) == null) j--;
+      if (j < 0 || !meta.data[j]) return;
+      pts.push({ x: meta.data[j].x, y: meta.data[j].y, v: val(ds.data[j]) });
+    });
+    pts.sort((a, b) => a.y - b.y);
+    const ctx = chart.ctx;
+    pts.forEach((p, k) => {
+      ctx.save(); ctx.fillStyle = css("--ink-2"); ctx.font = "600 11px system-ui,sans-serif"; ctx.textAlign = "right";
+      const above = k === 0;
+      ctx.textBaseline = above ? "bottom" : "top";
+      ctx.fillText(ex.endFmt(p.v), p.x - 2, above ? p.y - 6 : p.y + 6);
+      ctx.restore();
+    });
+  },
+};
+if (window.Chart) Chart.register(crosshair, refLines, endLabels);
+
+const CHARTS = [];
+function tooltipOpts(fmt, titleFmt) {
+  return {
+    backgroundColor: css("--surface"), borderColor: css("--border"), borderWidth: 1,
+    titleColor: css("--ink-2"), bodyColor: css("--ink"), padding: 10, cornerRadius: 8,
+    titleFont: { size: 11, weight: "500" }, bodyFont: { size: 12, weight: "600" },
+    boxWidth: 12, boxHeight: 2, boxPadding: 6, displayColors: true,
+    callbacks: {
+      title: (items) => items.length ? titleFmt(items[0].chart.scales.x.type === "linear" ? items[0].parsed.x : items[0].label) : "",
+      label: (c) => c.parsed.y == null ? null : "  " + fmt(c.parsed.y) + "   " + c.dataset.label,
+      labelColor: (c) => ({ borderColor: c.dataset.borderColor || c.dataset.backgroundColor, backgroundColor: c.dataset.vrpKey || c.dataset.borderColor || c.dataset.backgroundColor, borderWidth: 0 }),
+    },
+  };
+}
+function axes(yFmt, xFmt, o = {}) {
+  // o.time : axe X linéaire en millisecondes (vraie échelle de temps, les trous restent des trous)
+  const x = o.time
+    ? { type: "linear", grid: { display: false }, border: { color: css("--axis") }, min: o.xmin, max: o.xmax,
+        ticks: { color: css("--muted"), maxRotation: 0, autoSkip: true, maxTicksLimit: o.maxX || 6, font: { size: 11 },
+                 callback: (v) => xFmt(v) } }
+    : { stacked: !!o.stacked, grid: { display: false }, border: { color: css("--axis") },
+        ticks: { color: css("--muted"), maxRotation: 0, autoSkip: true, maxTicksLimit: o.maxX || 6, font: { size: 11 },
+                 callback(v) { return xFmt(this.getLabelForValue(v)); } } };
+  return {
+    x,
+    y: { stacked: !!o.stacked, grid: { color: css("--grid"), drawTicks: false }, border: { display: false },
+         suggestedMin: o.min, suggestedMax: o.max,
+         ticks: { color: css("--muted"), padding: 8, font: { size: 11 }, maxTicksLimit: 6, callback: (v) => yFmt(v) } },
+  };
+}
+const GAP_MS = 6 * 3600 * 1000;   // au-delà : la ligne est coupée (pas d'interpolation d'un trou)
+function lineDs(label, data, color, endLabel, gap) {
+  return { label, data, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0,
+           pointHoverRadius: 4, pointHoverBorderWidth: 2, pointHoverBorderColor: css("--surface"),
+           pointHoverBackgroundColor: color, tension: 0, spanGaps: gap ?? GAP_MS, borderJoinStyle: "round",
+           borderCapStyle: "round", vrpEnd: !!endLabel };
+}
+const xy = (arr, tk, vk) => arr.map(p => ({ x: Date.parse(p[tk]), y: p[vk] == null ? null : p[vk] }));
+function chartCard(id, title, sub, legendItems, build, table) {
+  const box = h("div", { class: "chartbox" });
+  const nodes = [h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, title), sub ? h("div", { class: "sub" }, sub) : null))];
+  if (legendItems && legendItems.length > 1) nodes.push(legend(legendItems));
+  nodes.push(box);
+  if (table) nodes.push(dataTable(table.headers, table.rows));
+  mount(id, nodes);
+  if (!window.Chart) { box.append(h("div", { class: "empty" }, "Graphique indisponible (Chart.js non chargé)")); return; }
+  const r = build(box);
+  if (r === null) box.append(h("div", { class: "empty" }, "Pas encore de données sur cette période"));
+}
+function canvasIn(box, label, extra) {
+  const c = h("canvas", { role: "img", "aria-label": label });
+  box.append(c);
+  EXTRA.set(c, extra || {});
+  return c;
+}
+function legend(items) {
+  return h("div", { class: "legend" }, items.map(it =>
+    h("span", { class: "key" }, h("span", { class: "sw " + (it.kind || "line"), style: "background:" + it.color }), it.name)));
+}
+function dataTable(headers, rows) {
+  return h("details", { class: "dt" }, h("summary", {}, "Voir les données"),
+    h("div", { class: "tscroll" }, h("table", { class: "t" },
+      h("thead", {}, h("tr", {}, headers.map((x, i) => h("th", { class: i ? "r" : "" }, x)))),
+      h("tbody", {}, rows.map(r => h("tr", {}, r.map((x, i) => h("td", { class: i ? "r num" : "" }, x))))))));
+}
+
+
+// ── Calcul dans un Web Worker (l'interface reste fluide) ──────────────────
+let worker = null, jobSeq = 0;
+const pending = new Map();
+try {
+  const src = document.getElementById("engine").textContent +
+    "\nself.onmessage = function (e) { var d = e.data; try { var r = d.kind === 'validate' ? AutocallEngine.validate(d.mkt, d.margins, d.opts)" +
+    " : AutocallEngine.price(d.mkt, d.product, d.margins, d.opts); self.postMessage({ id: d.id, ok: true, r: r }); }" +
+    " catch (err) { self.postMessage({ id: d.id, ok: false, err: String(err) }); } };";
+  worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+  worker.onmessage = (e) => { const p = pending.get(e.data.id); if (p) { pending.delete(e.data.id); e.data.ok ? p.res(e.data.r) : p.rej(e.data.err); } };
+} catch (e) { worker = null; }
+function run(kind, product, margins, opts) {
+  const id = ++jobSeq;
+  return new Promise((res, rej) => {
+    if (worker) { pending.set(id, { res, rej }); worker.postMessage({ id, kind, mkt: MKT, product, margins, opts }); }
+    else setTimeout(() => { try { res(kind === "validate" ? E.validate(MKT, margins, opts) : E.price(MKT, product, margins, opts)); } catch (err) { rej(String(err)); } }, 20);
+  });
+}
+
+// ── Formulaire ─────────────────────────────────────────────────────────────
+const FREQ = [["daily", "Quotidienne"], ["weekly", "Hebdomadaire"], ["monthly", "Mensuelle"], ["quarterly", "Trimestrielle"],
+              ["semiannual", "Semestrielle"], ["annual", "Annuelle"]];
+const FREQ_PER_YEAR = { daily: 365, weekly: 365 / 7, monthly: 12, quarterly: 4, semiannual: 2, annual: 1 };
+const DEFAULTS = {
+  notional: 1000000, maturityMonths: 12, freq: "monthly", firstCallObs: 1, acBarrier: 100, acStepDown: 0, acFloor: 60,
+  guaranteedRate: 0, guaranteedPeriods: 0, condRate: 15, cpnBarrier: 70, memory: true,
+  pdiBarrier: 60, pdiType: "continuous", pdiStrike: 100, solveFor: "conditional", upfront: 2,
+  volShift: 0, skewMult: 1, wingMult: 1, basisShift: 0, rate: Math.round(MKT.usd_rate * 10000) / 100,
+  paths: 20000, seed: 12345,
+};
+const GROUPS = [
+  ["Produit", [
+    { k: "notional", l: "Nominal", u: "$", step: 100000, min: 1000 },
+    { k: "maturityMonths", l: "Maturité", u: "mois", step: 1, min: 1, max: 60 },
+    { k: "freq", l: "Observations (rappel et coupons)", opts: FREQ },
+    { k: "firstCallObs", l: "Rappel possible dès l'observation n°", u: "", step: 1, min: 1, hint: () => "≈ " + callStartText() },
+  ]],
+  ["Rappel anticipé (autocall)", [
+    { k: "acBarrier", l: "Barrière de rappel", u: "%", step: 1, min: 1 },
+    { k: "acStepDown", l: "Dégressivité par observation", u: "pt", step: 0.5, min: 0, hint: () => "barrière abaissée de ce montant à chaque observation (0 = fixe)" },
+    { k: "acFloor", l: "Plancher de la barrière", u: "%", step: 1, min: 1, show: s => s.acStepDown > 0 },
+  ]],
+  ["Coupons", [
+    { k: "guaranteedRate", l: "Coupon garanti", u: "%/an", step: 0.5, min: 0, solved: s => s.solveFor === "guaranteed" },
+    { k: "guaranteedPeriods", l: "… sur les N premières observations", u: "", step: 1, min: 0, hint: () => "0 = toutes ; ensuite le coupon conditionnel prend le relais", show: s => s.guaranteedRate > 0 || s.solveFor === "guaranteed" },
+    { k: "condRate", l: "Coupon conditionnel", u: "%/an", step: 0.5, min: 0, solved: s => s.solveFor === "conditional" },
+    { k: "cpnBarrier", l: "Barrière de coupon", u: "%", step: 1, min: 0 },
+    { k: "memory", l: "Effet mémoire", check: true, hint: () => "un coupon manqué est rattrapé dès qu'une observation repasse la barrière" },
+  ]],
+  ["Barrière de protection (PDI)", [
+    { k: "pdiBarrier", l: "Barrière PDI", u: "%", step: 1, min: 0 },
+    { k: "pdiType", l: "Observation de la barrière", opts: [["continuous", "Continue (chaque jour)"], ["european", "À l'échéance"]] },
+    { k: "pdiStrike", l: "Strike du put", u: "%", step: 1, min: 1, hint: () => "perte à l'échéance = (strike − niveau final) / strike si la barrière a été touchée" },
+  ]],
+  ["Solveur (vendeur)", [
+    { k: "solveFor", l: "Résoudre", opts: [["conditional", "Le coupon conditionnel"], ["guaranteed", "Le coupon garanti"], ["none", "Rien (valoriser)"]] },
+    { k: "upfront", l: "Marge vendeur visée", u: "%", step: 0.25, min: -20, hint: () => "en % du nominal : valeur des flux promis = 100 % − marge" },
+  ]],
+  ["Marges sur le modèle", [
+    { k: "volShift", l: "Décalage de vol", u: "pts", step: 0.5, hint: () => "ajouté à toute la surface de vol implicite" },
+    { k: "skewMult", l: "Facteur de skew", u: "×", step: 0.05, min: 0, hint: () => "× pente du smile (ρ) ; > 1 = puts plus chers que le marché" },
+    { k: "wingMult", l: "Facteur d'ailes", u: "×", step: 0.05, min: 0.1, hint: () => "× courbure du smile (η)" },
+    { k: "basisShift", l: "Décalage de la base", u: "%/an", step: 0.5, hint: () => "décale les forwards (base des futures Deribit ≈ " + num(basisNow(), 1) + " %/an)" },
+    { k: "rate", l: "Taux d'actualisation USD", u: "%", step: 0.25 },
+  ]],
+  ["Simulation", [
+    { k: "paths", l: "Chemins Monte Carlo", opts: [[10000, "10 000"], [20000, "20 000"], [50000, "50 000"], [100000, "100 000"]] },
+    { k: "seed", l: "Graine", u: "", step: 1, min: 1 },
+  ]],
+];
+let S = Object.assign({}, DEFAULTS);
+try { const saved = JSON.parse(localStorage.getItem("ac-form") || "null"); if (saved) S = Object.assign({}, DEFAULTS, saved); } catch (e) {}
+const save = () => { try { localStorage.setItem("ac-form", JSON.stringify(S)); } catch (e) {} };
+
+function basisNow() { const e = MKT.expiries[MKT.expiries.length - 1]; return Math.log(e.F / MKT.spot) / e.t * 100; }
+function periodMonths() { return 12 / FREQ_PER_YEAR[S.freq]; }
+function callStartText() {
+  const d = Math.round(S.firstCallObs * 365 / FREQ_PER_YEAR[S.freq]);
+  return d < 60 ? d + " jours" : num(d / 30.4375, 1) + " mois";
+}
+
+function renderForm() {
+  const body = [h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Paramètres"),
+    h("div", { class: "sub" }, "Vous êtes vendeur : vous recevez le nominal, payez coupons et remboursement")))];
+  GROUPS.forEach(([title, fields]) => {
+    const g = h("div", { class: "fgroup" }, h("h4", {}, title));
+    fields.forEach(f => {
+      if (f.show && !f.show(S)) return;
+      const id = "f-" + f.k;
+      let ctl;
+      if (f.opts) {
+        ctl = h("select", { id, onchange: e => { const v = e.target.value; S[f.k] = typeof DEFAULTS[f.k] === "number" ? Number(v) : v; changed(true); } },
+          f.opts.map(([v, l]) => h("option", { value: v, selected: String(S[f.k]) === String(v) ? "" : null }, l)));
+      } else if (f.check) {
+        ctl = h("input", { id, type: "checkbox", checked: S[f.k] ? "" : null, onchange: e => { S[f.k] = e.target.checked; changed(false); } });
+      } else {
+        ctl = h("input", { id, type: "number", step: f.step, min: f.min, max: f.max, value: S[f.k], inputmode: "decimal",
+          oninput: e => { const v = Number(e.target.value); if (e.target.value !== "" && isFinite(v)) { S[f.k] = v; changed(false); } } });
+      }
+      const solved = f.solved && f.solved(S);
+      g.append(h("div", { class: "field" + (solved ? " solved" : "") },
+        h("label", { for: id }, f.l, solved ? h("span", { class: "muted" }, " · résolu") : null),
+        h("div", { class: "ctl" }, ctl, f.u != null ? h("span", { class: "u" }, f.u) : null),
+        f.hint ? h("div", { class: "hint" }, f.hint()) : null));
+    });
+    body.push(g);
+  });
+  body.push(h("div", { class: "formbar" },
+    h("button", { class: "btn", onclick: () => compute() }, "Recalculer"),
+    h("button", { class: "btn", onclick: () => { S = Object.assign({}, DEFAULTS); save(); renderForm(); compute(); } }, "Valeurs par défaut")));
+  const keep = document.activeElement && document.activeElement.id;
+  mount("form", body);
+  if (keep && document.getElementById(keep)) document.getElementById(keep).focus();
+}
+let timer = null;
+function changed(rerenderForm) {
+  save();
+  if (rerenderForm) renderForm();
+  else document.querySelectorAll(".hint").forEach(() => {});
+  document.getElementById("result").classList.add("stale");
+  clearTimeout(timer); timer = setTimeout(compute, 450);
+}
+
+function toEngine() {
+  const product = {
+    maturityMonths: S.maturityMonths, freq: S.freq, firstCallObs: Math.max(1, Math.round(S.firstCallObs)),
+    acBarrier: S.acBarrier / 100, acStepDown: S.acStepDown / 100, acFloor: S.acStepDown > 0 ? S.acFloor / 100 : 0,
+    guaranteedRate: S.guaranteedRate / 100, guaranteedPeriods: Math.max(0, Math.round(S.guaranteedPeriods)),
+    condRate: S.condRate / 100, cpnBarrier: S.cpnBarrier / 100, memory: !!S.memory,
+    pdiBarrier: S.pdiBarrier / 100, pdiType: S.pdiType, pdiStrike: S.pdiStrike / 100,
+    solveFor: S.solveFor, upfront: S.upfront / 100,
+  };
+  const margins = { volShift: S.volShift, skewMult: S.skewMult, wingMult: S.wingMult, basisShift: S.basisShift, rate: S.rate / 100 };
+  return { product, margins, opts: { paths: S.paths, seed: S.seed } };
+}
+
+// ── Calcul + résultats ─────────────────────────────────────────────────────
+let R = null, RQ = null, busy = 0;
+function compute() {
+  const q = toEngine(), my = ++busy;
+  renderBusy(true);
+  run("price", q.product, q.margins, q.opts).then(r => {
+    if (my !== busy) return;
+    R = r; RQ = q;
+    if (S.solveFor === "conditional") S.condRate = Math.round(r.condRate * 1e4) / 100;
+    if (S.solveFor === "guaranteed") S.guaranteedRate = Math.round(r.guaranteedRate * 1e4) / 100;
+    save(); renderForm(); renderResult(); renderCalls(); renderOutcomes(); renderSched(); renderSens(null); renderSmile();
+  }).catch(err => { if (my === busy) mount("result", h("div", { class: "err" }, "Erreur de calcul : " + err)); });
+}
+function renderBusy(on) {
+  const el = document.getElementById("result");
+  if (on) { el.classList.add("stale"); if (!R) mount("result", h("span", { class: "busy" }, "Simulation en cours…")); }
+}
+const pc = (v, d = 2) => pct(v * 100, d);
+function addDays(n) { return new Date(Date.parse(MKT.as_of) + n * 86400000).toISOString(); }
+
+function renderResult() {
+  const r = R, p = RQ.product, el = document.getElementById("result");
+  el.classList.remove("stale");
+  const perYear = FREQ_PER_YEAR[p.freq], ann = r.parts.annuityCond, annG = r.parts.annuityGuar;
+  let big, side;
+  if (p.solveFor === "conditional") {
+    const se = ann > 1e-9 ? r.se / ann : null;
+    big = h("div", { class: "big num " + (r.condRate < 0 ? "neg" : "") }, pc(r.condRate), h("small", {}, "/an"));
+    side = [h("div", {}, h("b", {}, "Coupon conditionnel équitable"), " · barrière " + pc(p.cpnBarrier, 0) + (p.memory ? " · mémoire" : "")),
+            h("div", {}, "soit " + pc(r.condRate / perYear, 3) + " par observation (" + FREQ.find(f => f[0] === p.freq)[1].toLowerCase() + ")"),
+            se != null ? h("div", { class: "muted" }, "précision Monte Carlo ± " + pc(se, 2) + "/an") : null];
+  } else if (p.solveFor === "guaranteed") {
+    const se = annG > 1e-9 ? r.se / annG : null;
+    big = h("div", { class: "big num " + (r.guaranteedRate < 0 ? "neg" : "") }, pc(r.guaranteedRate), h("small", {}, "/an"));
+    side = [h("div", {}, h("b", {}, "Coupon garanti équitable")), se != null ? h("div", { class: "muted" }, "précision ± " + pc(se, 2) + "/an") : null];
+  } else {
+    big = h("div", { class: "big num" }, pc(r.pv), h("small", {}, "du nominal"));
+    side = [h("div", {}, h("b", {}, "Valeur des flux promis"), " (coupons et remboursement, actualisés)"),
+            h("div", {}, "Marge vendeur : ", money(r.sellerMargin * S.notional), " · " + pc(r.sellerMargin))];
+  }
+  const tiles = [
+    ["Valeur des flux promis", pc(r.pv), "± " + pc(r.se, 2) + " (Monte Carlo)"],
+    ["Marge vendeur", pc(r.sellerMargin), usd(r.sellerMargin * S.notional) + " sur " + usd(S.notional, { compact: true })],
+    ["Rappel anticipé", pc(r.probs.autocall, 1), "durée de vie moyenne " + num(r.expectedLife * 12, 1) + " mois"],
+    ["Barrière PDI touchée", pc(r.probs.ki, 1), p.pdiType === "continuous" ? "observation quotidienne" : "observée à l'échéance"],
+    ["Perte en capital", pc(r.probs.loss, 1), r.probs.loss ? "perte moyenne si perte " + pc(r.probs.lossGivenLoss, 1) : "—"],
+    ["Coupons conditionnels versés", num(r.expectedCoupons, 1), "en moyenne par produit"],
+  ];
+  const total = r.parts.redemption + r.parts.conditional + r.parts.guaranteed + r.sellerMargin;
+  const comp = [["Remboursement (actualisé)", r.parts.redemption, "var(--s1)"], ["Coupons conditionnels", r.parts.conditional, "var(--s3)"],
+                ["Coupons garantis", r.parts.guaranteed, "var(--s4)"], ["Marge vendeur", r.sellerMargin, "var(--s2)"]];
+  const warns = [];
+  const cpn = p.solveFor === "guaranteed" ? r.guaranteedRate : r.condRate;
+  if (p.solveFor !== "none" && cpn < 0) warns.push(["critical", "Coupon négatif : le produit ne finance pas la marge visée. Allonger la période de non-rappel ou la maturité, baisser la barrière PDI, ou réduire la marge."]);
+  if (p.freq === "daily" && p.firstCallObs < 30) warns.push(["warning", "Rappel quotidien dès les premiers jours : le produit est rappelé presque tout de suite (le premier franchissement de " + pc(p.acBarrier, 0) + " suffit)."]);
+  if (r.settings.days / 365 > MKT.expiries[MKT.expiries.length - 1].t + 0.01)
+    warns.push(["info", "Maturité au-delà de la dernière échéance cotée (" + num(MKT.expiries[MKT.expiries.length - 1].t * 12, 1) + " mois) : vol ATM et base prolongées à plat."]);
+  mount("result",
+    h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Résultat"),
+      h("div", { class: "sub" }, r.settings.paths.toLocaleString("fr-FR") + " chemins · " + r.settings.nObs + " observations · " + r.settings.days + " jours · surface du " + fdt(MKT.as_of))),
+      busy && pending.size ? h("span", { class: "busy" }, "calcul…") : null),
+    h("div", { class: "headline" }, big, h("div", { class: "side" }, side)),
+    h("div", { class: "rtiles" }, tiles.map(([l, v, m]) => h("div", { class: "rtile" }, h("div", { class: "l" }, l), h("div", { class: "v num" }, v), h("div", { class: "m" }, m)))),
+    h("div", { class: "decomp", "aria-label": "Décomposition du nominal" },
+      h("div", { class: "sub" }, "Décomposition des 100 % encaissés"),
+      comp.map(([l, v, c]) => h("div", { class: "row" }, h("span", {}, l),
+        h("div", { class: "bar" }, h("span", { style: "width:" + Math.max(0, Math.min(100, v / total * 100)).toFixed(1) + "%;background:" + c })),
+        h("span", { class: "val num " + (v < 0 ? "neg" : "") }, pc(v))))),
+    warns.length ? h("div", { class: "warns" }, warns.map(([lv, t]) => h("div", {}, badge(lv, LVL[lv].label), " ", t))) : null);
+}
+
+// ── Graphiques ─────────────────────────────────────────────────────────────
+function killChart(id) { const i = CHARTS.findIndex(c => c.canvas && c.canvas.closest("#" + id)); if (i >= 0) { try { CHARTS[i].destroy(); } catch (e) {} CHARTS.splice(i, 1); } }
+function barChart(id, title, sub, labels, data, color, yFmt, tipTitle, table) {
+  killChart(id);
+  chartCard(id, title, sub, null, box => {
+    const c = canvasIn(box, title);
+    CHARTS.push(new Chart(c, { type: "bar",
+      data: { labels, datasets: [{ label: title, data, backgroundColor: color, borderRadius: 3, maxBarThickness: 36 }] },
+      options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false },
+        tooltip: tooltipOpts(yFmt, tipTitle) }, scales: axes(yFmt, v => v, { maxX: 8 }) } }));
+  }, table);
+}
+function renderCalls() {
+  const r = R, obs = r.obs.slice(0, -1);
+  let labels, data, sub;
+  if (obs.length > 48) {                                     // trop de dates : agrégées par mois
+    const byM = new Map();
+    obs.forEach(o => { const m = Math.min(Math.ceil(o.day / 30.4375), 999); byM.set(m, (byM.get(m) || 0) + o.callProb); });
+    labels = [...byM.keys()].map(m => "M" + m); data = [...byM.values()].map(v => v * 100); sub = "probabilité de rappel, cumulée par mois";
+  } else {
+    labels = obs.map(o => fdate(addDays(o.day))); data = obs.map(o => o.callProb * 100); sub = "probabilité d'être rappelé à chaque observation";
+  }
+  barChart("calls", "Rappels anticipés", sub + " · échéance : " + pc(r.probs.maturity, 1), labels, data, css("--s1"), v => num(v, 1) + " %", t => t,
+    { headers: ["Date", "Probabilité"], rows: labels.map((l, i) => [l, num(data[i], 2) + " %"]) });
+}
+function renderOutcomes() {
+  const o = R.outcomes;
+  killChart("outcomes");
+  chartCard("outcomes", "Issues du produit", "répartition des chemins simulés", null, box => {
+    const c = canvasIn(box, "Issues du produit");
+    const colors = o.map((x, i) => i === 0 ? css("--s1") : i === 1 ? css("--s3") : css("--s2"));
+    CHARTS.push(new Chart(c, { type: "bar",
+      data: { labels: o.map(x => x.label), datasets: [{ label: "Probabilité", data: o.map(x => x.p * 100), backgroundColor: colors, borderRadius: 3, maxBarThickness: 22 }] },
+      options: { indexAxis: "y", maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: tooltipOpts(v => num(v, 1) + " %", t => t) },
+        scales: { x: { grid: { color: css("--grid") }, border: { display: false }, ticks: { color: css("--muted"), font: { size: 11 }, callback: v => v + " %" } },
+                  y: { grid: { display: false }, border: { color: css("--axis") }, ticks: { color: css("--ink-2"), font: { size: 11 } } } } } }));
+  }, { headers: ["Issue", "Probabilité"], rows: o.map(x => [x.label, num(x.p * 100, 2) + " %"]) });
+}
+function renderSched() {
+  const r = R, p = RQ.product, perYear = FREQ_PER_YEAR[p.freq];
+  let cum = 0;
+  const rows = r.obs.map((o, i) => {
+    cum += o.callProb;
+    const last = i === r.obs.length - 1;
+    return h("tr", {},
+      h("td", { class: "num" }, String(i + 1)), h("td", { class: "num" }, fdate(addDays(o.day))), h("td", { class: "r num" }, num(o.day / 30.4375, 1)),
+      h("td", { class: "r num" }, last ? "échéance" : o.acLevel != null ? pc(o.acLevel, 1) : "—"),
+      h("td", { class: "r num" }, p.guaranteedRate > 0 && (p.guaranteedPeriods === 0 || i < p.guaranteedPeriods) ? pc(R.guaranteedRate * o.alpha, 3) : "—"),
+      h("td", { class: "r num" }, (p.guaranteedPeriods > 0 && p.guaranteedRate > 0 && i < p.guaranteedPeriods) ? "—" : pc(R.condRate * o.alpha, 3)),
+      h("td", { class: "r num" }, pc(o.callProb, 2)), h("td", { class: "r num" }, pc(cum, 1)));
+  });
+  const table = h("div", { class: "tscroll", style: "max-height:360px;overflow:auto" }, h("table", { class: "t" },
+    h("thead", {}, h("tr", {}, ["N°", "Date", "Mois", "Barrière de rappel", "Coupon garanti", "Coupon conditionnel", "Proba. de sortie", "Cumul"].map((x, i) => h("th", { class: i > 2 ? "r" : "" }, x)))),
+    h("tbody", {}, rows)));
+  mount("sched", h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Échéancier"),
+    h("div", { class: "sub" }, r.obs.length + " observations · coupons par période (taux annuel × fraction d'année) · barrière de coupon " + pc(p.cpnBarrier, 0)))),
+    r.obs.length > 24 ? h("details", { class: "dt" }, h("summary", {}, "Afficher les " + r.obs.length + " dates"), table) : table);
+}
+
+// ── Sensibilités du coupon aux marges (même graine : écarts nets du bruit) ───
+let sensRunning = false;
+function renderSens(rows) {
+  const intro = h("div", { class: "sub" }, "Effet de chaque marge sur le résultat, toutes choses égales par ailleurs. En vendeur, être prudent = choisir le sens qui baisse le coupon.");
+  const btn = h("button", { class: "btn", disabled: sensRunning ? "" : null, onclick: computeSens }, sensRunning ? "Calcul…" : "Calculer les sensibilités");
+  let body = h("div", { class: "empty", style: "min-height:60px" }, "6 simulations supplémentaires (quelques secondes)");
+  if (rows) {
+    const unit = RQ.product.solveFor === "none" ? "valeur" : "coupon";
+    body = h("div", { class: "tscroll" }, h("table", { class: "t sensgrid" },
+      h("thead", {}, h("tr", {}, ["Choc", unit === "coupon" ? "Coupon équitable" : "Valeur", "Écart", "Marge prudente pour le vendeur"].map((x, i) => h("th", { class: i ? "r" : "" }, x)))),
+      h("tbody", {}, rows.map(x => h("tr", {}, h("td", {}, x.label), h("td", { class: "r num" }, pc(x.val)), h("td", { class: "r num " + tone(x.diff) }, (x.diff >= 0 ? "+" : "") + num(x.diff * 100, 2) + " pt"),
+        h("td", { class: "r" }, x.hint))))));
+  }
+  mount("sens", h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Sensibilités aux paramètres du modèle"), intro), btn), body);
+}
+async function computeSens() {
+  if (!R || sensRunning) return;
+  sensRunning = true; renderSens(null);
+  const q = toEngine(), key = q.product.solveFor === "guaranteed" ? "guaranteedRate" : q.product.solveFor === "conditional" ? "condRate" : "pv";
+  const base = R[key];
+  const shocks = [["Vol +1 pt", { volShift: q.margins.volShift + 1 }, "vol"], ["Skew × 1,10", { skewMult: q.margins.skewMult * 1.1 }, "skew"],
+                  ["Ailes × 1,10", { wingMult: q.margins.wingMult * 1.1 }, "ailes"], ["Base +1 %/an", { basisShift: q.margins.basisShift + 1 }, "base"],
+                  ["Taux USD +0,5 %", { rate: q.margins.rate + 0.005 }, "taux"], ["Spot +5 % (delta)", null, "spot"]];
+  const rows = [];
+  for (const [label, m, kind] of shocks) {
+    let r;
+    if (kind === "spot") { const mk = Object.assign({}, MKT, { spot: MKT.spot * 1.05 }); r = await new Promise(res => res(E.price(mk, q.product, q.margins, q.opts))); }
+    else r = await run("price", q.product, Object.assign({}, q.margins, m), q.opts);
+    const diff = r[key] - base;
+    const lowerIsPrudent = key !== "pv";     // vendeur : coupon plus bas = prudent ; en valorisation, valeur plus haute = prudent
+    const prudentUp = lowerIsPrudent ? diff < 0 : diff > 0;
+    const hint = kind === "spot" ? (diff >= 0 ? "le coupon monte si le BTC monte" : "le coupon baisse si le BTC monte")
+      : Math.abs(diff) < 1e-5 ? "sans effet" : (prudentUp ? "marge à la hausse (" + kind + " plus haut)" : "marge à la baisse (" + kind + " plus bas)");
+    rows.push({ label, val: r[key], diff, hint });
+  }
+  sensRunning = false; renderSens(rows);
+}
+
+// ── Marché : smile et structure par terme ──────────────────────────────────
+let smileIdx = Math.min(MKT.expiries.length - 1, Math.max(0, MKT.expiries.findIndex(e => e.t * 365 >= 85)));
+function renderSmile() {
+  const e = MKT.expiries[smileIdx];
+  const base = E.makeSurface(MKT, {}), marged = E.makeSurface(MKT, RQ ? RQ.margins : toEngine().margins);
+  const mny = [], fitB = [], fitM = [];
+  const kLo = Math.min(...e.quotes.map(q => q[1])), kHi = Math.max(...e.quotes.map(q => q[1]));
+  for (let i = 0; i <= 60; i++) { const k = kLo + (kHi - kLo) * i / 60; mny.push(Math.exp(k) * 100); fitB.push(base.vol(k, e.t) * 100); fitM.push(marged.vol(k, e.t) * 100); }
+  const anyMargin = RQ && (RQ.margins.volShift || RQ.margins.skewMult !== 1 || RQ.margins.wingMult !== 1);
+  killChart("smile");
+  const sel = h("select", { "aria-label": "Échéance", onchange: ev => { smileIdx = Number(ev.target.value); renderSmile(); } },
+    MKT.expiries.map((x, i) => h("option", { value: i, selected: i === smileIdx ? "" : null }, fdate(x.expiry) + " · " + num(x.t * 365, 0) + " j")));
+  const items = [{ name: "Marché (mark)", color: css("--s1"), kind: "rect" }, { name: "Bid / ask", color: css("--muted"), kind: "rect" }, { name: "Surface SSVI", color: css("--s3") }];
+  if (anyMargin) items.push({ name: "Avec vos marges", color: css("--s2") });
+  chartCard("smile", "Smile de volatilité", "échéance du " + fdate(e.expiry) + " · forward " + usd(e.F) + " · écart du fit " + num(e.rmse_volpts, 2) + " pt", items, box => {
+    box.parentNode.insertBefore(h("div", { class: "selrow", style: "margin-bottom:8px" }, h("span", { class: "muted small" }, "Échéance"), sel), box);
+    const c = canvasIn(box, "Smile");
+    const pts = e.quotes.map(q => ({ x: Math.exp(q[1]) * 100, y: q[2] }));
+    const bid = e.quotes.filter(q => q[3] != null).map(q => ({ x: Math.exp(q[1]) * 100, y: q[3] }));
+    const ask = e.quotes.filter(q => q[4] != null).map(q => ({ x: Math.exp(q[1]) * 100, y: q[4] }));
+    const ds = [
+      { type: "scatter", label: "Marché (mark)", data: pts, backgroundColor: css("--s1"), pointRadius: 3.5 },
+      { type: "scatter", label: "Bid", data: bid, backgroundColor: css("--muted"), pointRadius: 2, pointStyle: "line", borderColor: css("--muted") },
+      { type: "scatter", label: "Ask", data: ask, backgroundColor: css("--muted"), pointRadius: 2, pointStyle: "line", borderColor: css("--muted") },
+      Object.assign(lineDs("Surface SSVI", mny.map((x, i) => ({ x, y: fitB[i] })), css("--s3")), { type: "line" }),
+    ];
+    if (anyMargin) ds.push(Object.assign(lineDs("Avec vos marges", mny.map((x, i) => ({ x, y: fitM[i] })), css("--s2")), { type: "line", borderDash: [6, 4] }));
+    CHARTS.push(new Chart(c, { type: "scatter", data: { datasets: ds },
+      options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false },
+        tooltip: tooltipOpts(v => num(v, 1) + " %", x => "strike " + num(x, 0) + " % du forward") },
+        scales: Object.assign(axes(v => num(v, 0) + " %", v => num(v, 0) + " %", { time: true }), {}) } }));
+  });
+}
+function renderTerm() {
+  killChart("term");
+  const ex = MKT.expiries, surf = E.makeSurface(MKT, {});
+  chartCard("term", "Structure par terme", "vol ATM implicite par échéance (base des futures en tableau)", null, box => {
+    const c = canvasIn(box, "Structure par terme");
+    CHARTS.push(new Chart(c, { type: "line",
+      data: { datasets: [Object.assign(lineDs("Vol ATM", ex.map(e => ({ x: e.t * 365, y: Math.sqrt(e.theta / e.t) * 100 })), css("--s1")), { pointRadius: 3 })] },
+      options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: tooltipOpts(v => num(v, 1) + " %", x => num(x, 0) + " jours") },
+        scales: axes(v => num(v, 0) + " %", v => num(v, 0) + " j", { time: true }) } }));
+  }, { headers: ["Échéance", "Jours", "Forward", "Base %/an", "Vol ATM", "Écart du fit"],
+       rows: ex.map(e => [fdate(e.expiry), num(e.t * 365, 0), usd(e.F), num(Math.log(e.F / MKT.spot) / e.t * 100, 2) + " %",
+                          num(Math.sqrt(e.theta / e.t) * 100, 1) + " %", num(e.rmse_volpts, 2) + " pt"]) });
+}
+
+// ── Contrôle du modèle : vanilles repricées par le Monte Carlo ─────────────
+function renderValid(v, running) {
+  const btn = h("button", { class: "btn", disabled: running ? "" : null, onclick: computeValid }, running ? "Calcul…" : "Contrôler le modèle");
+  let body = h("div", { class: "empty", style: "min-height:60px" },
+    "Reprice les options du marché avec le moteur (vol locale + Monte Carlo) et affiche l'écart en points de vol. Écart attendu : < 1 pt sur les strikes utiles.");
+  if (v) {
+    const ms = v[0].points.map(p => p.m);
+    body = h("div", { class: "tscroll" }, h("table", { class: "t valgrid" },
+      h("thead", {}, h("tr", {}, [h("th", {}, "Échéance")].concat(ms.map(m => h("th", { class: "r" }, num(m * 100, 0) + " %"))))),
+      h("tbody", {}, v.map(e => {
+        const sd = e.points.find(p => p.m === 1).ivSurface * Math.sqrt(e.t);
+        return h("tr", {}, h("td", { class: "num" }, num(e.day, 0) + " j"),
+          e.points.map(p => { const off = e.day < 7 || Math.abs(Math.log(p.m)) > 2.5 * sd;
+            return h("td", { class: "r num " + (off ? "off" : Math.abs(p.errVolPts) > 1 ? "neg" : "") }, p.errVolPts == null ? "—" : (p.errVolPts >= 0 ? "+" : "") + num(p.errVolPts, 2)); }));
+      }))),
+      h("div", { class: "sub", style: "margin-top:6px" }, "Écart Monte Carlo − surface en points de vol, avec vos marges. Grisé : échéance < 7 j ou strike à plus de 2,5 écarts-types (prix minuscule, bruit Monte Carlo)."));
+  }
+  mount("valid", h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Contrôle du modèle"), h("div", { class: "sub" }, "Les vanilles cotées sont-elles bien repricées ?")), btn), body);
+}
+function computeValid() {
+  renderValid(null, true);
+  const q = toEngine();
+  run("validate", null, q.margins, { paths: 30000, seed: 777 }).then(v => renderValid(v, false)).catch(err => mount("valid", h("div", { class: "err" }, String(err))));
+}
+
+// ── Méthodologie, en-tête, pied ────────────────────────────────────────────
+function renderMethod() {
+  const s = MKT.ssvi;
+  mount("method", h("h3", {}, "Méthodologie"),
+    h("p", {}, "Surface de volatilité : SSVI (Gatheral-Jacquier) calibrée chaque heure sur toutes les options BTC de Deribit hors de la monnaie, ρ et η variant avec la maturité. Écart moyen du fit : " + num(s.rmse_volpts, 2) + " point de vol sur " + s.n_quotes + " cotations. Forwards = futures synthétiques Deribit de chaque échéance."),
+    h("p", {}, "Diffusion : volatilité locale de Dupire tirée de la surface (elle reprice les vanilles), Monte Carlo en log-forward avec 4 sous-pas par jour sur le premier mois puis un pas par jour (le BTC cote 7 j/7), variables antithétiques. Les barrières continues sont observées sur les clôtures quotidiennes."),
+    h("p", {}, "Solveur : la valeur du produit est linéaire en chaque taux de coupon. Une seule simulation donne donc exactement le coupon qui égalise la valeur des flux promis à 100 % − marge vendeur. Actualisation au taux USD saisi."),
+    h("p", {}, "Limites : la vol locale fixe la dynamique du smile (elle sous-estime en général la vol forward du skew, ce qui compte pour les barrières lointaines) ; pas de sauts ni de vol stochastique ; au-delà de la dernière échéance cotée, vol ATM et base prolongées à plat. Les marges servent à couvrir ces risques de modèle."));
+}
+function renderTop() {
+  const themeBtn = h("button", { class: "btn", onclick: () => {
+    const dark = document.documentElement.getAttribute("data-theme") === "dark" || (!document.documentElement.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+    const next = dark ? "light" : "dark"; document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("vrp-theme", next); } catch (e) {}
+    if (R) { renderCalls(); renderOutcomes(); } renderSmile(); renderTerm();
+  } }, "◐ Thème");
+  mount("top",
+    h("div", { class: "brand" }, h("h1", {}, "Pricer autocall · BTC"), h("span", { class: "pill" }, "vendeur")),
+    h("div", { class: "botstatus" }, h("span", {}, "Spot ", h("b", {}, usd(MKT.spot)), h("span", { class: "muted" }, " · surface Deribit du " + fdt(MKT.as_of) + (tzName ? " " + tzName : "")))),
+    h("nav", { class: "nav" }, themeBtn, h("a", { class: "btn", href: "v2.html" }, "Dashboard"), h("a", { class: "btn", href: "backtest.html" }, "Backtests")));
+}
+function renderFoot() {
+  mount("foot", h("span", {}, "Surface calibrée le " + fdt(MKT.as_of)), h("span", {}, "Moteur : autocall_engine.js (calcul dans votre navigateur)"),
+    h("span", {}, "Pricing indicatif — modèle, pas une cotation"));
+}
+
+renderTop(); renderForm(); renderSens(null); renderTerm(); renderValid(null, false); renderMethod(); renderFoot();
+mount("result", h("span", { class: "busy" }, "Simulation en cours…"));
+compute();
+})();
+</script>
+</body>
+</html>

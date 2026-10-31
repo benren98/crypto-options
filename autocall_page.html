@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pricer autocall BTC</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M6 22 L12 12 L17 19 L21 9 L26 22' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<!--
+  Pricer d'autocall — template. NE PAS ÉDITER docs/autocall.html : il est régénéré par
+  generate_autocall_html.py (surface SSVI recalibrée sur Deribit + moteur autocall_engine.js).
+-->
+<style>
+/*__COMMON_CSS__*/
+.acgrid { display:grid; grid-template-columns:minmax(300px,390px) minmax(0,1fr); gap:16px; margin-top:16px; align-items:start; }
+@media (max-width:900px) { .acgrid { grid-template-columns:1fr; } }
+.acgrid > div { display:grid; gap:16px; min-width:0; }
+#form { position:sticky; top:12px; max-height:calc(100vh - 24px); overflow:auto; }
+@media (max-width:900px) { #form { position:static; max-height:none; } }
+.fgroup { border-top:1px solid var(--grid); padding-top:10px; margin-top:10px; }
+.fgroup:first-of-type { border-top:0; padding-top:0; margin-top:0; }
+.fgroup h4 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; }
+.field { display:grid; grid-template-columns:minmax(0,1fr) 128px; gap:8px; align-items:center; padding:4px 0; }
+.field label { font-size:13px; color:var(--ink-2); }
+.field .hint { grid-column:1 / -1; font-size:11.5px; color:var(--muted); margin-top:-2px; }
+.field .ctl { display:flex; align-items:center; gap:6px; justify-content:flex-end; }
+.field .ctl .u { font-size:12px; color:var(--muted); min-width:34px; }
+.field input[type=number], .field select { width:100%; font:inherit; font-size:13px; padding:6px 8px; border-radius:8px;
+  border:1px solid var(--border); background:var(--surface-2); color:var(--ink); text-align:right; }
+.field select { text-align:left; }
+.field input[type=checkbox] { width:18px; height:18px; accent-color:var(--s1); }
+.field input:focus-visible, .field select:focus-visible { outline:2px solid var(--s1); outline-offset:1px; }
+.field.solved input { border-style:dashed; color:var(--muted); }
+.formbar { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+.headline { display:flex; flex-wrap:wrap; gap:6px 24px; align-items:flex-end; }
+.headline .big { font-size:46px; font-weight:650; letter-spacing:-.02em; line-height:1; }
+.headline .big small { font-size:18px; font-weight:500; color:var(--muted); margin-left:4px; }
+.headline .side { font-size:13px; color:var(--ink-2); display:grid; gap:2px; padding-bottom:4px; }
+.rtiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr)); gap:10px; margin-top:14px; }
+.rtile { border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:var(--surface-2); min-width:0; }
+.rtile .l { font-size:12px; color:var(--ink-2); }
+.rtile .v { font-size:20px; font-weight:600; margin-top:2px; white-space:nowrap; }
+.rtile .m { font-size:11.5px; color:var(--muted); margin-top:2px; }
+.decomp { margin-top:14px; display:grid; gap:6px; }
+.decomp .row { display:grid; grid-template-columns:minmax(0,190px) minmax(0,1fr) 84px; gap:10px; align-items:center; font-size:13px; }
+.decomp .bar { height:10px; border-radius:5px; background:var(--surface-2); overflow:hidden; }
+.decomp .bar span { display:block; height:100%; border-radius:5px; }
+.decomp .val { text-align:right; font-variant-numeric:tabular-nums; }
+.warns { margin-top:12px; display:grid; gap:6px; }
+.busy { display:inline-flex; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
+.busy::before { content:""; width:10px; height:10px; border-radius:50%; border:2px solid var(--s1); border-right-color:transparent; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .busy::before { animation:none; } }
+.stale { opacity:.55; transition:opacity .2s; }
+.chartbox { position:relative; height:240px; }
+.sensgrid td.num, .valgrid td.num { white-space:nowrap; }
+.valgrid td.off { color:var(--muted); }
+.method p { font-size:13px; color:var(--ink-2); margin:6px 0; line-height:1.5; }
+.method code { font-size:12px; }
+.selrow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.selrow select { font:inherit; font-size:13px; padding:5px 8px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--ink); }
+</style>
+<script>
+  try { var th = localStorage.getItem("vrp-theme"); if (th === "light" || th === "dark") document.documentElement.setAttribute("data-theme", th); } catch (e) {}
+</script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top" id="top"></header>
+  <div class="acgrid">
+    <section class="card" id="form" aria-label="Paramètres du produit"></section>
+    <div>
+      <section class="card" id="result" aria-live="polite"></section>
+      <div class="grid2" style="margin-top:0">
+        <section class="card" id="calls"></section>
+        <section class="card" id="outcomes"></section>
+      </div>
+      <section class="card" id="sched"></section>
+      <section class="card" id="sens"></section>
+    </div>
+  </div>
+  <h2 class="section">Marché et modèle</h2>
+  <div class="grid2">
+    <section class="card" id="smile"></section>
+    <section class="card" id="term"></section>
+  </div>
+  <div style="margin-top:16px"><section class="card" id="valid"></section></div>
+  <div style="margin-top:16px"><section class="card method" id="method"></section></div>
+  <footer id="foot"></footer>
+</div>
+
+<script type="application/json" id="mkt-data">/*__AUTOCALL_DATA__*/null</script>
+<script id="engine">/*__AUTOCALL_ENGINE__*/</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+"use strict";
+
+let MKT;
+try { MKT = JSON.parse(document.getElementById("mkt-data").textContent); } catch (e) { MKT = null; }
+const E = window.AutocallEngine;
+if (!MKT || !E) {
+  document.querySelector(".wrap").textContent = "Page non générée : lancer `python generate_autocall_html.py`.";
+  return;
+}
+
+/*__COMMON_JS__*/
+
+// ── Calcul dans un Web Worker (l'interface reste fluide) ──────────────────
+let worker = null, jobSeq = 0;
+const pending = new Map();
+try {
+  const src = document.getElementById("engine").textContent +
+    "\nself.onmessage = function (e) { var d = e.data; try { var r = d.kind === 'validate' ? AutocallEngine.validate(d.mkt, d.margins, d.opts)" +
+    " : AutocallEngine.price(d.mkt, d.product, d.margins, d.opts); self.postMessage({ id: d.id, ok: true, r: r }); }" +
+    " catch (err) { self.postMessage({ id: d.id, ok: false, err: String(err) }); } };";
+  worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+  worker.onmessage = (e) => { const p = pending.get(e.data.id); if (p) { pending.delete(e.data.id); e.data.ok ? p.res(e.data.r) : p.rej(e.data.err); } };
+} catch (e) { worker = null; }
+function run(kind, product, margins, opts) {
+  const id = ++jobSeq;
+  return new Promise((res, rej) => {
+    if (worker) { pending.set(id, { res, rej }); worker.postMessage({ id, kind, mkt: MKT, product, margins, opts }); }
+    else setTimeout(() => { try { res(kind === "validate" ? E.validate(MKT, margins, opts) : E.price(MKT, product, margins, opts)); } catch (err) { rej(String(err)); } }, 20);
+  });
+}
+
+// ── Formulaire ─────────────────────────────────────────────────────────────
+const FREQ = [["daily", "Quotidienne"], ["weekly", "Hebdomadaire"], ["monthly", "Mensuelle"], ["quarterly", "Trimestrielle"],
+              ["semiannual", "Semestrielle"], ["annual", "Annuelle"]];
+const FREQ_PER_YEAR = { daily: 365, weekly: 365 / 7, monthly: 12, quarterly: 4, semiannual: 2, annual: 1 };
+const DEFAULTS = {
+  notional: 1000000, maturityMonths: 12, freq: "monthly", firstCallObs: 1, acBarrier: 100, acStepDown: 0, acFloor: 60,
+  guaranteedRate: 0, guaranteedPeriods: 0, condRate: 15, cpnBarrier: 70, memory: true,
+  pdiBarrier: 60, pdiType: "continuous", pdiStrike: 100, solveFor: "conditional", upfront: 2,
+  volShift: 0, skewMult: 1, wingMult: 1, basisShift: 0, rate: Math.round(MKT.usd_rate * 10000) / 100,
+  paths: 20000, seed: 12345,
+};
+const GROUPS = [
+  ["Produit", [
+    { k: "notional", l: "Nominal", u: "$", step: 100000, min: 1000 },
+    { k: "maturityMonths", l: "Maturité", u: "mois", step: 1, min: 1, max: 60 },
+    { k: "freq", l: "Observations (rappel et coupons)", opts: FREQ },
+    { k: "firstCallObs", l: "Rappel possible dès l'observation n°", u: "", step: 1, min: 1, hint: () => "≈ " + callStartText() },
+  ]],
+  ["Rappel anticipé (autocall)", [
+    { k: "acBarrier", l: "Barrière de rappel", u: "%", step: 1, min: 1 },
+    { k: "acStepDown", l: "Dégressivité par observation", u: "pt", step: 0.5, min: 0, hint: () => "barrière abaissée de ce montant à chaque observation (0 = fixe)" },
+    { k: "acFloor", l: "Plancher de la barrière", u: "%", step: 1, min: 1, show: s => s.acStepDown > 0 },
+  ]],
+  ["Coupons", [
+    { k: "guaranteedRate", l: "Coupon garanti", u: "%/an", step: 0.5, min: 0, solved: s => s.solveFor === "guaranteed" },
+    { k: "guaranteedPeriods", l: "… sur les N premières observations", u: "", step: 1, min: 0, hint: () => "0 = toutes ; ensuite le coupon conditionnel prend le relais", show: s => s.guaranteedRate > 0 || s.solveFor === "guaranteed" },
+    { k: "condRate", l: "Coupon conditionnel", u: "%/an", step: 0.5, min: 0, solved: s => s.solveFor === "conditional" },
+    { k: "cpnBarrier", l: "Barrière de coupon", u: "%", step: 1, min: 0 },
+    { k: "memory", l: "Effet mémoire", check: true, hint: () => "un coupon manqué est rattrapé dès qu'une observation repasse la barrière" },
+  ]],
+  ["Barrière de protection (PDI)", [
+    { k: "pdiBarrier", l: "Barrière PDI", u: "%", step: 1, min: 0 },
+    { k: "pdiType", l: "Observation de la barrière", opts: [["continuous", "Continue (chaque jour)"], ["european", "À l'échéance"]] },
+    { k: "pdiStrike", l: "Strike du put", u: "%", step: 1, min: 1, hint: () => "perte à l'échéance = (strike − niveau final) / strike si la barrière a été touchée" },
+  ]],
+  ["Solveur (vendeur)", [
+    { k: "solveFor", l: "Résoudre", opts: [["conditional", "Le coupon conditionnel"], ["guaranteed", "Le coupon garanti"], ["none", "Rien (valoriser)"]] },
+    { k: "upfront", l: "Marge vendeur visée", u: "%", step: 0.25, min: -20, hint: () => "en % du nominal : valeur des flux promis = 100 % − marge" },
+  ]],
+  ["Marges sur le modèle", [
+    { k: "volShift", l: "Décalage de vol", u: "pts", step: 0.5, hint: () => "ajouté à toute la surface de vol implicite" },
+    { k: "skewMult", l: "Facteur de skew", u: "×", step: 0.05, min: 0, hint: () => "× pente du smile (ρ) ; > 1 = puts plus chers que le marché" },
+    { k: "wingMult", l: "Facteur d'ailes", u: "×", step: 0.05, min: 0.1, hint: () => "× courbure du smile (η)" },
+    { k: "basisShift", l: "Décalage de la base", u: "%/an", step: 0.5, hint: () => "décale les forwards (base des futures Deribit ≈ " + num(basisNow(), 1) + " %/an)" },
+    { k: "rate", l: "Taux d'actualisation USD", u: "%", step: 0.25 },
+  ]],
+  ["Simulation", [
+    { k: "paths", l: "Chemins Monte Carlo", opts: [[10000, "10 000"], [20000, "20 000"], [50000, "50 000"], [100000, "100 000"]] },
+    { k: "seed", l: "Graine", u: "", step: 1, min: 1 },
+  ]],
+];
+let S = Object.assign({}, DEFAULTS);
+try { const saved = JSON.parse(localStorage.getItem("ac-form") || "null"); if (saved) S = Object.assign({}, DEFAULTS, saved); } catch (e) {}
+const save = () => { try { localStorage.setItem("ac-form", JSON.stringify(S)); } catch (e) {} };
+
+function basisNow() { const e = MKT.expiries[MKT.expiries.length - 1]; return Math.log(e.F / MKT.spot) / e.t * 100; }
+function periodMonths() { return 12 / FREQ_PER_YEAR[S.freq]; }
+function callStartText() {
+  const d = Math.round(S.firstCallObs * 365 / FREQ_PER_YEAR[S.freq]);
+  return d < 60 ? d + " jours" : num(d / 30.4375, 1) + " mois";
+}
+
+function renderForm() {
+  const body = [h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Paramètres"),
+    h("div", { class: "sub" }, "Vous êtes vendeur : vous recevez le nominal, payez coupons et remboursement")))];
+  GROUPS.forEach(([title, fields]) => {
+    const g = h("div", { class: "fgroup" }, h("h4", {}, title));
+    fields.forEach(f => {
+      if (f.show && !f.show(S)) return;
+      const id = "f-" + f.k;
+      let ctl;
+      if (f.opts) {
+        ctl = h("select", { id, onchange: e => { const v = e.target.value; S[f.k] = typeof DEFAULTS[f.k] === "number" ? Number(v) : v; changed(true); } },
+          f.opts.map(([v, l]) => h("option", { value: v, selected: String(S[f.k]) === String(v) ? "" : null }, l)));
+      } else if (f.check) {
+        ctl = h("input", { id, type: "checkbox", checked: S[f.k] ? "" : null, onchange: e => { S[f.k] = e.target.checked; changed(false); } });
+      } else {
+        ctl = h("input", { id, type: "number", step: f.step, min: f.min, max: f.max, value: S[f.k], inputmode: "decimal",
+          oninput: e => { const v = Number(e.target.value); if (e.target.value !== "" && isFinite(v)) { S[f.k] = v; changed(false); } } });
+      }
+      const solved = f.solved && f.solved(S);
+      g.append(h("div", { class: "field" + (solved ? " solved" : "") },
+        h("label", { for: id }, f.l, solved ? h("span", { class: "muted" }, " · résolu") : null),
+        h("div", { class: "ctl" }, ctl, f.u != null ? h("span", { class: "u" }, f.u) : null),
+        f.hint ? h("div", { class: "hint" }, f.hint()) : null));
+    });
+    body.push(g);
+  });
+  body.push(h("div", { class: "formbar" },
+    h("button", { class: "btn", onclick: () => compute() }, "Recalculer"),
+    h("button", { class: "btn", onclick: () => { S = Object.assign({}, DEFAULTS); save(); renderForm(); compute(); } }, "Valeurs par défaut")));
+  const keep = document.activeElement && document.activeElement.id;
+  mount("form", body);
+  if (keep && document.getElementById(keep)) document.getElementById(keep).focus();
+}
+let timer = null;
+function changed(rerenderForm) {
+  save();
+  if (rerenderForm) renderForm();
+  else document.querySelectorAll(".hint").forEach(() => {});
+  document.getElementById("result").classList.add("stale");
+  clearTimeout(timer); timer = setTimeout(compute, 450);
+}
+
+function toEngine() {
+  const product = {
+    maturityMonths: S.maturityMonths, freq: S.freq, firstCallObs: Math.max(1, Math.round(S.firstCallObs)),
+    acBarrier: S.acBarrier / 100, acStepDown: S.acStepDown / 100, acFloor: S.acStepDown > 0 ? S.acFloor / 100 : 0,
+    guaranteedRate: S.guaranteedRate / 100, guaranteedPeriods: Math.max(0, Math.round(S.guaranteedPeriods)),
+    condRate: S.condRate / 100, cpnBarrier: S.cpnBarrier / 100, memory: !!S.memory,
+    pdiBarrier: S.pdiBarrier / 100, pdiType: S.pdiType, pdiStrike: S.pdiStrike / 100,
+    solveFor: S.solveFor, upfront: S.upfront / 100,
+  };
+  const margins = { volShift: S.volShift, skewMult: S.skewMult, wingMult: S.wingMult, basisShift: S.basisShift, rate: S.rate / 100 };
+  return { product, margins, opts: { paths: S.paths, seed: S.seed } };
+}
+
+// ── Calcul + résultats ─────────────────────────────────────────────────────
+let R = null, RQ = null, busy = 0;
+function compute() {
+  const q = toEngine(), my = ++busy;
+  renderBusy(true);
+  run("price", q.product, q.margins, q.opts).then(r => {
+    if (my !== busy) return;
+    R = r; RQ = q;
+    if (S.solveFor === "conditional") S.condRate = Math.round(r.condRate * 1e4) / 100;
+    if (S.solveFor === "guaranteed") S.guaranteedRate = Math.round(r.guaranteedRate * 1e4) / 100;
+    save(); renderForm(); renderResult(); renderCalls(); renderOutcomes(); renderSched(); renderSens(null); renderSmile();
+  }).catch(err => { if (my === busy) mount("result", h("div", { class: "err" }, "Erreur de calcul : " + err)); });
+}
+function renderBusy(on) {
+  const el = document.getElementById("result");
+  if (on) { el.classList.add("stale"); if (!R) mount("result", h("span", { class: "busy" }, "Simulation en cours…")); }
+}
+const pc = (v, d = 2) => pct(v * 100, d);
+function addDays(n) { return new Date(Date.parse(MKT.as_of) + n * 86400000).toISOString(); }
+
+function renderResult() {
+  const r = R, p = RQ.product, el = document.getElementById("result");
+  el.classList.remove("stale");
+  const perYear = FREQ_PER_YEAR[p.freq], ann = r.parts.annuityCond, annG = r.parts.annuityGuar;
+  let big, side;
+  if (p.solveFor === "conditional") {
+    const se = ann > 1e-9 ? r.se / ann : null;
+    big = h("div", { class: "big num " + (r.condRate < 0 ? "neg" : "") }, pc(r.condRate), h("small", {}, "/an"));
+    side = [h("div", {}, h("b", {}, "Coupon conditionnel équitable"), " · barrière " + pc(p.cpnBarrier, 0) + (p.memory ? " · mémoire" : "")),
+            h("div", {}, "soit " + pc(r.condRate / perYear, 3) + " par observation (" + FREQ.find(f => f[0] === p.freq)[1].toLowerCase() + ")"),
+            se != null ? h("div", { class: "muted" }, "précision Monte Carlo ± " + pc(se, 2) + "/an") : null];
+  } else if (p.solveFor === "guaranteed") {
+    const se = annG > 1e-9 ? r.se / annG : null;
+    big = h("div", { class: "big num " + (r.guaranteedRate < 0 ? "neg" : "") }, pc(r.guaranteedRate), h("small", {}, "/an"));
+    side = [h("div", {}, h("b", {}, "Coupon garanti équitable")), se != null ? h("div", { class: "muted" }, "précision ± " + pc(se, 2) + "/an") : null];
+  } else {
+    big = h("div", { class: "big num" }, pc(r.pv), h("small", {}, "du nominal"));
+    side = [h("div", {}, h("b", {}, "Valeur des flux promis"), " (coupons et remboursement, actualisés)"),
+            h("div", {}, "Marge vendeur : ", money(r.sellerMargin * S.notional), " · " + pc(r.sellerMargin))];
+  }
+  const tiles = [
+    ["Valeur des flux promis", pc(r.pv), "± " + pc(r.se, 2) + " (Monte Carlo)"],
+    ["Marge vendeur", pc(r.sellerMargin), usd(r.sellerMargin * S.notional) + " sur " + usd(S.notional, { compact: true })],
+    ["Rappel anticipé", pc(r.probs.autocall, 1), "durée de vie moyenne " + num(r.expectedLife * 12, 1) + " mois"],
+    ["Barrière PDI touchée", pc(r.probs.ki, 1), p.pdiType === "continuous" ? "observation quotidienne" : "observée à l'échéance"],
+    ["Perte en capital", pc(r.probs.loss, 1), r.probs.loss ? "perte moyenne si perte " + pc(r.probs.lossGivenLoss, 1) : "—"],
+    ["Coupons conditionnels versés", num(r.expectedCoupons, 1), "en moyenne par produit"],
+  ];
+  const total = r.parts.redemption + r.parts.conditional + r.parts.guaranteed + r.sellerMargin;
+  const comp = [["Remboursement (actualisé)", r.parts.redemption, "var(--s1)"], ["Coupons conditionnels", r.parts.conditional, "var(--s3)"],
+                ["Coupons garantis", r.parts.guaranteed, "var(--s4)"], ["Marge vendeur", r.sellerMargin, "var(--s2)"]];
+  const warns = [];
+  const cpn = p.solveFor === "guaranteed" ? r.guaranteedRate : r.condRate;
+  if (p.solveFor !== "none" && cpn < 0) warns.push(["critical", "Coupon négatif : le produit ne finance pas la marge visée. Allonger la période de non-rappel ou la maturité, baisser la barrière PDI, ou réduire la marge."]);
+  if (p.freq === "daily" && p.firstCallObs < 30) warns.push(["warning", "Rappel quotidien dès les premiers jours : le produit est rappelé presque tout de suite (le premier franchissement de " + pc(p.acBarrier, 0) + " suffit)."]);
+  if (r.settings.days / 365 > MKT.expiries[MKT.expiries.length - 1].t + 0.01)
+    warns.push(["info", "Maturité au-delà de la dernière échéance cotée (" + num(MKT.expiries[MKT.expiries.length - 1].t * 12, 1) + " mois) : vol ATM et base prolongées à plat."]);
+  mount("result",
+    h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Résultat"),
+      h("div", { class: "sub" }, r.settings.paths.toLocaleString("fr-FR") + " chemins · " + r.settings.nObs + " observations · " + r.settings.days + " jours · surface du " + fdt(MKT.as_of))),
+      busy && pending.size ? h("span", { class: "busy" }, "calcul…") : null),
+    h("div", { class: "headline" }, big, h("div", { class: "side" }, side)),
+    h("div", { class: "rtiles" }, tiles.map(([l, v, m]) => h("div", { class: "rtile" }, h("div", { class: "l" }, l), h("div", { class: "v num" }, v), h("div", { class: "m" }, m)))),
+    h("div", { class: "decomp", "aria-label": "Décomposition du nominal" },
+      h("div", { class: "sub" }, "Décomposition des 100 % encaissés"),
+      comp.map(([l, v, c]) => h("div", { class: "row" }, h("span", {}, l),
+        h("div", { class: "bar" }, h("span", { style: "width:" + Math.max(0, Math.min(100, v / total * 100)).toFixed(1) + "%;background:" + c })),
+        h("span", { class: "val num " + (v < 0 ? "neg" : "") }, pc(v))))),
+    warns.length ? h("div", { class: "warns" }, warns.map(([lv, t]) => h("div", {}, badge(lv, LVL[lv].label), " ", t))) : null);
+}
+
+// ── Graphiques ─────────────────────────────────────────────────────────────
+function killChart(id) { const i = CHARTS.findIndex(c => c.canvas && c.canvas.closest("#" + id)); if (i >= 0) { try { CHARTS[i].destroy(); } catch (e) {} CHARTS.splice(i, 1); } }
+function barChart(id, title, sub, labels, data, color, yFmt, tipTitle, table) {
+  killChart(id);
+  chartCard(id, title, sub, null, box => {
+    const c = canvasIn(box, title);
+    CHARTS.push(new Chart(c, { type: "bar",
+      data: { labels, datasets: [{ label: title, data, backgroundColor: color, borderRadius: 3, maxBarThickness: 36 }] },
+      options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false },
+        tooltip: tooltipOpts(yFmt, tipTitle) }, scales: axes(yFmt, v => v, { maxX: 8 }) } }));
+  }, table);
+}
+function renderCalls() {
+  const r = R, obs = r.obs.slice(0, -1);
+  let labels, data, sub;
+  if (obs.length > 48) {                                     // trop de dates : agrégées par mois
+    const byM = new Map();
+    obs.forEach(o => { const m = Math.min(Math.ceil(o.day / 30.4375), 999); byM.set(m, (byM.get(m) || 0) + o.callProb); });
+    labels = [...byM.keys()].map(m => "M" + m); data = [...byM.values()].map(v => v * 100); sub = "probabilité de rappel, cumulée par mois";
+  } else {
+    labels = obs.map(o => fdate(addDays(o.day))); data = obs.map(o => o.callProb * 100); sub = "probabilité d'être rappelé à chaque observation";
+  }
+  barChart("calls", "Rappels anticipés", sub + " · échéance : " + pc(r.probs.maturity, 1), labels, data, css("--s1"), v => num(v, 1) + " %", t => t,
+    { headers: ["Date", "Probabilité"], rows: labels.map((l, i) => [l, num(data[i], 2) + " %"]) });
+}
+function renderOutcomes() {
+  const o = R.outcomes;
+  killChart("outcomes");
+  chartCard("outcomes", "Issues du produit", "répartition des chemins simulés", null, box => {
+    const c = canvasIn(box, "Issues du produit");
+    const colors = o.map((x, i) => i === 0 ? css("--s1") : i === 1 ? css("--s3") : css("--s2"));
+    CHARTS.push(new Chart(c, { type: "bar",
+      data: { labels: o.map(x => x.label), datasets: [{ label: "Probabilité", data: o.map(x => x.p * 100), backgroundColor: colors, borderRadius: 3, maxBarThickness: 22 }] },
+      options: { indexAxis: "y", maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: tooltipOpts(v => num(v, 1) + " %", t => t) },
+        scales: { x: { grid: { color: css("--grid") }, border: { display: false }, ticks: { color: css("--muted"), font: { size: 11 }, callback: v => v + " %" } },
+                  y: { grid: { display: false }, border: { color: css("--axis") }, ticks: { color: css("--ink-2"), font: { size: 11 } } } } } }));
+  }, { headers: ["Issue", "Probabilité"], rows: o.map(x => [x.label, num(x.p * 100, 2) + " %"]) });
+}
+function renderSched() {
+  const r = R, p = RQ.product, perYear = FREQ_PER_YEAR[p.freq];
+  let cum = 0;
+  const rows = r.obs.map((o, i) => {
+    cum += o.callProb;
+    const last = i === r.obs.length - 1;
+    return h("tr", {},
+      h("td", { class: "num" }, String(i + 1)), h("td", { class: "num" }, fdate(addDays(o.day))), h("td", { class: "r num" }, num(o.day / 30.4375, 1)),
+      h("td", { class: "r num" }, last ? "échéance" : o.acLevel != null ? pc(o.acLevel, 1) : "—"),
+      h("td", { class: "r num" }, p.guaranteedRate > 0 && (p.guaranteedPeriods === 0 || i < p.guaranteedPeriods) ? pc(R.guaranteedRate * o.alpha, 3) : "—"),
+      h("td", { class: "r num" }, (p.guaranteedPeriods > 0 && p.guaranteedRate > 0 && i < p.guaranteedPeriods) ? "—" : pc(R.condRate * o.alpha, 3)),
+      h("td", { class: "r num" }, pc(o.callProb, 2)), h("td", { class: "r num" }, pc(cum, 1)));
+  });
+  const table = h("div", { class: "tscroll", style: "max-height:360px;overflow:auto" }, h("table", { class: "t" },
+    h("thead", {}, h("tr", {}, ["N°", "Date", "Mois", "Barrière de rappel", "Coupon garanti", "Coupon conditionnel", "Proba. de sortie", "Cumul"].map((x, i) => h("th", { class: i > 2 ? "r" : "" }, x)))),
+    h("tbody", {}, rows)));
+  mount("sched", h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Échéancier"),
+    h("div", { class: "sub" }, r.obs.length + " observations · coupons par période (taux annuel × fraction d'année) · barrière de coupon " + pc(p.cpnBarrier, 0)))),
+    r.obs.length > 24 ? h("details", { class: "dt" }, h("summary", {}, "Afficher les " + r.obs.length + " dates"), table) : table);
+}
+
+// ── Sensibilités du coupon aux marges (même graine : écarts nets du bruit) ───
+let sensRunning = false;
+function renderSens(rows) {
+  const intro = h("div", { class: "sub" }, "Effet de chaque marge sur le résultat, toutes choses égales par ailleurs. En vendeur, être prudent = choisir le sens qui baisse le coupon.");
+  const btn = h("button", { class: "btn", disabled: sensRunning ? "" : null, onclick: computeSens }, sensRunning ? "Calcul…" : "Calculer les sensibilités");
+  let body = h("div", { class: "empty", style: "min-height:60px" }, "6 simulations supplémentaires (quelques secondes)");
+  if (rows) {
+    const unit = RQ.product.solveFor === "none" ? "valeur" : "coupon";
+    body = h("div", { class: "tscroll" }, h("table", { class: "t sensgrid" },
+      h("thead", {}, h("tr", {}, ["Choc", unit === "coupon" ? "Coupon équitable" : "Valeur", "Écart", "Marge prudente pour le vendeur"].map((x, i) => h("th", { class: i ? "r" : "" }, x)))),
+      h("tbody", {}, rows.map(x => h("tr", {}, h("td", {}, x.label), h("td", { class: "r num" }, pc(x.val)), h("td", { class: "r num " + tone(x.diff) }, (x.diff >= 0 ? "+" : "") + num(x.diff * 100, 2) + " pt"),
+        h("td", { class: "r" }, x.hint))))));
+  }
+  mount("sens", h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Sensibilités aux paramètres du modèle"), intro), btn), body);
+}
+async function computeSens() {
+  if (!R || sensRunning) return;
+  sensRunning = true; renderSens(null);
+  const q = toEngine(), key = q.product.solveFor === "guaranteed" ? "guaranteedRate" : q.product.solveFor === "conditional" ? "condRate" : "pv";
+  const base = R[key];
+  const shocks = [["Vol +1 pt", { volShift: q.margins.volShift + 1 }, "vol"], ["Skew × 1,10", { skewMult: q.margins.skewMult * 1.1 }, "skew"],
+                  ["Ailes × 1,10", { wingMult: q.margins.wingMult * 1.1 }, "ailes"], ["Base +1 %/an", { basisShift: q.margins.basisShift + 1 }, "base"],
+                  ["Taux USD +0,5 %", { rate: q.margins.rate + 0.005 }, "taux"], ["Spot +5 % (delta)", null, "spot"]];
+  const rows = [];
+  for (const [label, m, kind] of shocks) {
+    let r;
+    if (kind === "spot") { const mk = Object.assign({}, MKT, { spot: MKT.spot * 1.05 }); r = await new Promise(res => res(E.price(mk, q.product, q.margins, q.opts))); }
+    else r = await run("price", q.product, Object.assign({}, q.margins, m), q.opts);
+    const diff = r[key] - base;
+    const lowerIsPrudent = key !== "pv";     // vendeur : coupon plus bas = prudent ; en valorisation, valeur plus haute = prudent
+    const prudentUp = lowerIsPrudent ? diff < 0 : diff > 0;
+    const hint = kind === "spot" ? (diff >= 0 ? "le coupon monte si le BTC monte" : "le coupon baisse si le BTC monte")
+      : Math.abs(diff) < 1e-5 ? "sans effet" : (prudentUp ? "marge à la hausse (" + kind + " plus haut)" : "marge à la baisse (" + kind + " plus bas)");
+    rows.push({ label, val: r[key], diff, hint });
+  }
+  sensRunning = false; renderSens(rows);
+}
+
+// ── Marché : smile et structure par terme ──────────────────────────────────
+let smileIdx = Math.min(MKT.expiries.length - 1, Math.max(0, MKT.expiries.findIndex(e => e.t * 365 >= 85)));
+function renderSmile() {
+  const e = MKT.expiries[smileIdx];
+  const base = E.makeSurface(MKT, {}), marged = E.makeSurface(MKT, RQ ? RQ.margins : toEngine().margins);
+  const mny = [], fitB = [], fitM = [];
+  const kLo = Math.min(...e.quotes.map(q => q[1])), kHi = Math.max(...e.quotes.map(q => q[1]));
+  for (let i = 0; i <= 60; i++) { const k = kLo + (kHi - kLo) * i / 60; mny.push(Math.exp(k) * 100); fitB.push(base.vol(k, e.t) * 100); fitM.push(marged.vol(k, e.t) * 100); }
+  const anyMargin = RQ && (RQ.margins.volShift || RQ.margins.skewMult !== 1 || RQ.margins.wingMult !== 1);
+  killChart("smile");
+  const sel = h("select", { "aria-label": "Échéance", onchange: ev => { smileIdx = Number(ev.target.value); renderSmile(); } },
+    MKT.expiries.map((x, i) => h("option", { value: i, selected: i === smileIdx ? "" : null }, fdate(x.expiry) + " · " + num(x.t * 365, 0) + " j")));
+  const items = [{ name: "Marché (mark)", color: css("--s1"), kind: "rect" }, { name: "Bid / ask", color: css("--muted"), kind: "rect" }, { name: "Surface SSVI", color: css("--s3") }];
+  if (anyMargin) items.push({ name: "Avec vos marges", color: css("--s2") });
+  chartCard("smile", "Smile de volatilité", "échéance du " + fdate(e.expiry) + " · forward " + usd(e.F) + " · écart du fit " + num(e.rmse_volpts, 2) + " pt", items, box => {
+    box.parentNode.insertBefore(h("div", { class: "selrow", style: "margin-bottom:8px" }, h("span", { class: "muted small" }, "Échéance"), sel), box);
+    const c = canvasIn(box, "Smile");
+    const pts = e.quotes.map(q => ({ x: Math.exp(q[1]) * 100, y: q[2] }));
+    const bid = e.quotes.filter(q => q[3] != null).map(q => ({ x: Math.exp(q[1]) * 100, y: q[3] }));
+    const ask = e.quotes.filter(q => q[4] != null).map(q => ({ x: Math.exp(q[1]) * 100, y: q[4] }));
+    const ds = [
+      { type: "scatter", label: "Marché (mark)", data: pts, backgroundColor: css("--s1"), pointRadius: 3.5 },
+      { type: "scatter", label: "Bid", data: bid, backgroundColor: css("--muted"), pointRadius: 2, pointStyle: "line", borderColor: css("--muted") },
+      { type: "scatter", label: "Ask", data: ask, backgroundColor: css("--muted"), pointRadius: 2, pointStyle: "line", borderColor: css("--muted") },
+      Object.assign(lineDs("Surface SSVI", mny.map((x, i) => ({ x, y: fitB[i] })), css("--s3")), { type: "line" }),
+    ];
+    if (anyMargin) ds.push(Object.assign(lineDs("Avec vos marges", mny.map((x, i) => ({ x, y: fitM[i] })), css("--s2")), { type: "line", borderDash: [6, 4] }));
+    CHARTS.push(new Chart(c, { type: "scatter", data: { datasets: ds },
+      options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false },
+        tooltip: tooltipOpts(v => num(v, 1) + " %", x => "strike " + num(x, 0) + " % du forward") },
+        scales: Object.assign(axes(v => num(v, 0) + " %", v => num(v, 0) + " %", { time: true }), {}) } }));
+  });
+}
+function renderTerm() {
+  killChart("term");
+  const ex = MKT.expiries, surf = E.makeSurface(MKT, {});
+  chartCard("term", "Structure par terme", "vol ATM implicite par échéance (base des futures en tableau)", null, box => {
+    const c = canvasIn(box, "Structure par terme");
+    CHARTS.push(new Chart(c, { type: "line",
+      data: { datasets: [Object.assign(lineDs("Vol ATM", ex.map(e => ({ x: e.t * 365, y: Math.sqrt(e.theta / e.t) * 100 })), css("--s1")), { pointRadius: 3 })] },
+      options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: tooltipOpts(v => num(v, 1) + " %", x => num(x, 0) + " jours") },
+        scales: axes(v => num(v, 0) + " %", v => num(v, 0) + " j", { time: true }) } }));
+  }, { headers: ["Échéance", "Jours", "Forward", "Base %/an", "Vol ATM", "Écart du fit"],
+       rows: ex.map(e => [fdate(e.expiry), num(e.t * 365, 0), usd(e.F), num(Math.log(e.F / MKT.spot) / e.t * 100, 2) + " %",
+                          num(Math.sqrt(e.theta / e.t) * 100, 1) + " %", num(e.rmse_volpts, 2) + " pt"]) });
+}
+
+// ── Contrôle du modèle : vanilles repricées par le Monte Carlo ─────────────
+function renderValid(v, running) {
+  const btn = h("button", { class: "btn", disabled: running ? "" : null, onclick: computeValid }, running ? "Calcul…" : "Contrôler le modèle");
+  let body = h("div", { class: "empty", style: "min-height:60px" },
+    "Reprice les options du marché avec le moteur (vol locale + Monte Carlo) et affiche l'écart en points de vol. Écart attendu : < 1 pt sur les strikes utiles.");
+  if (v) {
+    const ms = v[0].points.map(p => p.m);
+    body = h("div", { class: "tscroll" }, h("table", { class: "t valgrid" },
+      h("thead", {}, h("tr", {}, [h("th", {}, "Échéance")].concat(ms.map(m => h("th", { class: "r" }, num(m * 100, 0) + " %"))))),
+      h("tbody", {}, v.map(e => {
+        const sd = e.points.find(p => p.m === 1).ivSurface * Math.sqrt(e.t);
+        return h("tr", {}, h("td", { class: "num" }, num(e.day, 0) + " j"),
+          e.points.map(p => { const off = e.day < 7 || Math.abs(Math.log(p.m)) > 2.5 * sd;
+            return h("td", { class: "r num " + (off ? "off" : Math.abs(p.errVolPts) > 1 ? "neg" : "") }, p.errVolPts == null ? "—" : (p.errVolPts >= 0 ? "+" : "") + num(p.errVolPts, 2)); }));
+      }))),
+      h("div", { class: "sub", style: "margin-top:6px" }, "Écart Monte Carlo − surface en points de vol, avec vos marges. Grisé : échéance < 7 j ou strike à plus de 2,5 écarts-types (prix minuscule, bruit Monte Carlo)."));
+  }
+  mount("valid", h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Contrôle du modèle"), h("div", { class: "sub" }, "Les vanilles cotées sont-elles bien repricées ?")), btn), body);
+}
+function computeValid() {
+  renderValid(null, true);
+  const q = toEngine();
+  run("validate", null, q.margins, { paths: 30000, seed: 777 }).then(v => renderValid(v, false)).catch(err => mount("valid", h("div", { class: "err" }, String(err))));
+}
+
+// ── Méthodologie, en-tête, pied ────────────────────────────────────────────
+function renderMethod() {
+  const s = MKT.ssvi;
+  mount("method", h("h3", {}, "Méthodologie"),
+    h("p", {}, "Surface de volatilité : SSVI (Gatheral-Jacquier) calibrée chaque heure sur toutes les options BTC de Deribit hors de la monnaie, ρ et η variant avec la maturité. Écart moyen du fit : " + num(s.rmse_volpts, 2) + " point de vol sur " + s.n_quotes + " cotations. Forwards = futures synthétiques Deribit de chaque échéance."),
+    h("p", {}, "Diffusion : volatilité locale de Dupire tirée de la surface (elle reprice les vanilles), Monte Carlo en log-forward avec 4 sous-pas par jour sur le premier mois puis un pas par jour (le BTC cote 7 j/7), variables antithétiques. Les barrières continues sont observées sur les clôtures quotidiennes."),
+    h("p", {}, "Solveur : la valeur du produit est linéaire en chaque taux de coupon. Une seule simulation donne donc exactement le coupon qui égalise la valeur des flux promis à 100 % − marge vendeur. Actualisation au taux USD saisi."),
+    h("p", {}, "Limites : la vol locale fixe la dynamique du smile (elle sous-estime en général la vol forward du skew, ce qui compte pour les barrières lointaines) ; pas de sauts ni de vol stochastique ; au-delà de la dernière échéance cotée, vol ATM et base prolongées à plat. Les marges servent à couvrir ces risques de modèle."));
+}
+function renderTop() {
+  const themeBtn = h("button", { class: "btn", onclick: () => {
+    const dark = document.documentElement.getAttribute("data-theme") === "dark" || (!document.documentElement.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+    const next = dark ? "light" : "dark"; document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("vrp-theme", next); } catch (e) {}
+    if (R) { renderCalls(); renderOutcomes(); } renderSmile(); renderTerm();
+  } }, "◐ Thème");
+  mount("top",
+    h("div", { class: "brand" }, h("h1", {}, "Pricer autocall · BTC"), h("span", { class: "pill" }, "vendeur")),
+    h("div", { class: "botstatus" }, h("span", {}, "Spot ", h("b", {}, usd(MKT.spot)), h("span", { class: "muted" }, " · surface Deribit du " + fdt(MKT.as_of) + (tzName ? " " + tzName : "")))),
+    h("nav", { class: "nav" }, themeBtn, h("a", { class: "btn", href: "v2.html" }, "Dashboard"), h("a", { class: "btn", href: "backtest.html" }, "Backtests")));
+}
+function renderFoot() {
+  mount("foot", h("span", {}, "Surface calibrée le " + fdt(MKT.as_of)), h("span", {}, "Moteur : autocall_engine.js (calcul dans votre navigateur)"),
+    h("span", {}, "Pricing indicatif — modèle, pas une cotation"));
+}
+
+renderTop(); renderForm(); renderSens(null); renderTerm(); renderValid(null, false); renderMethod(); renderFoot();
+mount("result", h("span", { class: "busy" }, "Simulation en cours…"));
+compute();
+})();
+</script>
+</body>
+</html>
