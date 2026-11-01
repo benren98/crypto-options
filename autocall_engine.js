@@ -151,6 +151,8 @@
     condRate: 0.20, cpnBarrier: 0.70, memory: true,
     pdiBarrier: 0.60, pdiType: "continuous", pdiStrike: 1.00,
     solveFor: "conditional", upfront: 0.02,                     // marge du vendeur, en % du nominal
+    refLevel: 0,                                                // niveau initial du produit (0 = spot actuel) :
+                                                                //   ≠ spot pour valoriser un produit déjà émis (delta)
   };
   function schedule(p) {
     const D = Math.max(1, Math.round(p.maturityMonths * 365 / 12)), per = FREQ_DAYS[p.freq] || FREQ_DAYS.monthly;
@@ -175,7 +177,7 @@
     const acLevel = days.map((_, i) => Math.max(p.acFloor, p.acBarrier - p.acStepDown * Math.max(0, i + 1 - p.firstCallObs)));
     const gN = p.guaranteedPeriods > 0 ? p.guaranteedPeriods : nObs;          // périodes à coupon garanti
     const condFrom = p.guaranteedPeriods > 0 && p.guaranteedRate > 0 ? p.guaranteedPeriods : 0;
-    const S0 = surf.S0, off = stepPlan(D);
+    const S0 = p.refLevel > 0 ? p.refLevel : surf.S0, off = stepPlan(D);   // barrières en % de ce niveau
 
     const N = o.paths - (o.paths % 2), normal = rng(o.seed);
     const A = new Float64Array(N), Bc = new Float64Array(N), Bg = new Float64Array(N);

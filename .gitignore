@@ -21,3 +21,4 @@ __pycache__/
 .DS_Store
 Thumbs.db
 archive/designs/*/preview.html
+autocall_market.json

@@ -283,7 +283,7 @@ function renderResult() {
   }
   const tiles = [
     ["Valeur des flux promis", pc(r.pv), "± " + pc(r.se, 2) + " (Monte Carlo)"],
-    ["Marge vendeur", pc(r.sellerMargin), usd(r.sellerMargin * S.notional) + " sur " + usd(S.notional, { compact: true })],
+    ["Marge vendeur", pc(r.sellerMargin), usd(r.sellerMargin * S.notional) + " sur " + usd(S.notional)],
     ["Rappel anticipé", pc(r.probs.autocall, 1), "durée de vie moyenne " + num(r.expectedLife * 12, 1) + " mois"],
     ["Barrière PDI touchée", pc(r.probs.ki, 1), p.pdiType === "continuous" ? "observation quotidienne" : "observée à l'échéance"],
     ["Perte en capital", pc(r.probs.loss, 1), r.probs.loss ? "perte moyenne si perte " + pc(r.probs.lossGivenLoss, 1) : "—"],
@@ -372,7 +372,7 @@ function renderSched() {
 }
 
 // ── Sensibilités du coupon aux marges (même graine : écarts nets du bruit) ───
-let sensRunning = false;
+let sensRunning = false, delta = null;
 function renderSens(rows) {
   const intro = h("div", { class: "sub" }, "Effet de chaque marge sur le résultat, toutes choses égales par ailleurs. En vendeur, être prudent = choisir le sens qui baisse le coupon.");
   const btn = h("button", { class: "btn", disabled: sensRunning ? "" : null, onclick: computeSens }, sensRunning ? "Calcul…" : "Calculer les sensibilités");
@@ -382,30 +382,38 @@ function renderSens(rows) {
     body = h("div", { class: "tscroll" }, h("table", { class: "t sensgrid" },
       h("thead", {}, h("tr", {}, ["Choc", unit === "coupon" ? "Coupon équitable" : "Valeur", "Écart", "Marge prudente pour le vendeur"].map((x, i) => h("th", { class: i ? "r" : "" }, x)))),
       h("tbody", {}, rows.map(x => h("tr", {}, h("td", {}, x.label), h("td", { class: "r num" }, pc(x.val)), h("td", { class: "r num " + tone(x.diff) }, (x.diff >= 0 ? "+" : "") + num(x.diff * 100, 2) + " pt"),
-        h("td", { class: "r" }, x.hint))))));
+        h("td", { class: "r" }, x.hint))))),
+      delta ? h("div", { class: "callout" }, h("b", {}, "Delta du vendeur (produit émis) : "),
+        "si le BTC monte de 1 %, la valeur des flux promis varie de " + (delta.dPV >= 0 ? "+" : "") + num(delta.dPV * 100, 3) + " pt du nominal, soit ",
+        money(-delta.dPV * S.notional), " pour vous. Couverture : " + (delta.hedge >= 0 ? "acheter " : "vendre ") + num(Math.abs(delta.hedge), 3) + " BTC (perp) pour être neutre.") : null);
   }
   mount("sens", h("div", { class: "cardhead" }, h("div", {}, h("h3", {}, "Sensibilités aux paramètres du modèle"), intro), btn), body);
 }
 async function computeSens() {
   if (!R || sensRunning) return;
-  sensRunning = true; renderSens(null);
+  sensRunning = true; delta = null; renderSens(null);
   const q = toEngine(), key = q.product.solveFor === "guaranteed" ? "guaranteedRate" : q.product.solveFor === "conditional" ? "condRate" : "pv";
   const base = R[key];
   const shocks = [["Vol +1 pt", { volShift: q.margins.volShift + 1 }, "vol"], ["Skew × 1,10", { skewMult: q.margins.skewMult * 1.1 }, "skew"],
                   ["Ailes × 1,10", { wingMult: q.margins.wingMult * 1.1 }, "ailes"], ["Base +1 %/an", { basisShift: q.margins.basisShift + 1 }, "base"],
-                  ["Taux USD +0,5 %", { rate: q.margins.rate + 0.005 }, "taux"], ["Spot +5 % (delta)", null, "spot"]];
+                  ["Taux USD +0,5 %", { rate: q.margins.rate + 0.005 }, "taux"]];
   const rows = [];
   for (const [label, m, kind] of shocks) {
-    let r;
-    if (kind === "spot") { const mk = Object.assign({}, MKT, { spot: MKT.spot * 1.05 }); r = await new Promise(res => res(E.price(mk, q.product, q.margins, q.opts))); }
-    else r = await run("price", q.product, Object.assign({}, q.margins, m), q.opts);
+    const r = await run("price", q.product, Object.assign({}, q.margins, m), q.opts);
     const diff = r[key] - base;
     const lowerIsPrudent = key !== "pv";     // vendeur : coupon plus bas = prudent ; en valorisation, valeur plus haute = prudent
     const prudentUp = lowerIsPrudent ? diff < 0 : diff > 0;
-    const hint = kind === "spot" ? (diff >= 0 ? "le coupon monte si le BTC monte" : "le coupon baisse si le BTC monte")
-      : Math.abs(diff) < 1e-5 ? "sans effet" : (prudentUp ? "marge à la hausse (" + kind + " plus haut)" : "marge à la baisse (" + kind + " plus bas)");
+    const hint = Math.abs(diff) < 1e-5 ? "sans effet" : (prudentUp ? "marge à la hausse (" + kind + " plus haut)" : "marge à la baisse (" + kind + " plus bas)");
     rows.push({ label, val: r[key], diff, hint });
   }
+  // Delta du vendeur sur un produit déjà émis : spot ET forwards +1 %, barrières figées au niveau initial,
+  // coupons figés à leur valeur actuelle → variation de la valeur des flux promis (le vendeur en est court).
+  const fixed = Object.assign({}, q.product, { solveFor: "none", refLevel: MKT.spot, condRate: R.condRate, guaranteedRate: R.guaranteedRate });
+  const up = Object.assign({}, MKT, { spot: MKT.spot * 1.01, expiries: MKT.expiries.map(e => Object.assign({}, e, { F: e.F * 1.01 })) });
+  const r0 = await run("price", fixed, q.margins, q.opts);
+  const r1 = await new Promise((res, rej) => { try { res(E.price(up, fixed, q.margins, q.opts)); } catch (e) { rej(e); } });
+  const dPV = r1.pv - r0.pv;
+  delta = { dPV, hedge: dPV * S.notional / (0.01 * MKT.spot) };   // BTC à acheter (> 0) pour neutraliser le delta vendeur
   sensRunning = false; renderSens(rows);
 }
 

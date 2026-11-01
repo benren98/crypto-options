@@ -52,6 +52,11 @@ dans `positions.json` + un Gist GitHub.
   (ne jamais éditer `docs/*.html`, ils sont régénérés). Tester un autre
   état : `python generate_dashboard.py --data-dir <dossier> --now "2026-08-29 23:50:00"` (ex. fichiers
   extraits d'un ancien commit avec `git show <sha>:positions.json`).
+- Pricer d'autocall BTC (vendeur) : `python generate_autocall_html.py` → `docs/autocall.html` (régénéré
+  chaque heure par le workflow). `autocall_market.py` calibre une surface SSVI sur toute la chaîne
+  Deribit (→ `autocall_market.json`, non versionné) ; `autocall_engine.js` = moteur Monte Carlo en vol
+  locale (Dupire), exécuté dans le navigateur (Web Worker). Contrôles : `node tools/autocall_check.js`
+  (zéro-coupon, PDI en vol plate, vanilles repricées < 1 pt de vol, solveur exact, temps de calcul).
 - Collecte surfaces de vol : `vol_surface_logger.py` (horaire) → `vol_surface.jsonl` ;
   fit `fit_vol_model.py` → `vol_model_fit.json` (≥15 jours).
 - Vérifier l'impact LIVE d'un changement de scoring : `greeks_hedge.fetch_scored_candidates(...)`
