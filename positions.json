@@ -229,44 +229,6 @@
       "entry_sizing_btc": 0.5
     },
     {
-      "instrument_name": "BTC-6NOV26-75000-P",
-      "strike": 75000.0,
-      "expiry_dt": "2026-11-06 08:00:00+00:00",
-      "tte_at_entry": 12.42,
-      "delta_at_entry": -0.18219182102728393,
-      "gamma_at_entry": 4.1100041246561135e-05,
-      "vega_at_entry": 39.20865166556756,
-      "theta_at_entry": -68.46784632686392,
-      "iv_at_entry": 42.88744880217078,
-      "entry_price": 0.008,
-      "entry_mark_price": 0.00824087,
-      "entry_price_usd": 641.99,
-      "entry_spot": 80248.61,
-      "contracts": 0.3,
-      "entry_ts": "2026-10-24 21:53:53 UTC",
-      "hedge_qty": -0.05466,
-      "hedge_entry_spot": 80248.61,
-      "hedge_avg_entry": 80255.7,
-      "hedge_rebalances": 1,
-      "hedge_history": [
-        {
-          "ts": "2026-10-24 21:53:53 UTC",
-          "side": "SELL",
-          "qty": -0.05466,
-          "spot": 80248.61,
-          "perp_price": 80255.7,
-          "qty_before": 0.0,
-          "qty_after": -0.05466,
-          "vwap_before": 0.0,
-          "vwap_after": 80255.7,
-          "drift": 0.18219,
-          "note": "hedge initial (perp mark $80255.70 vs index $80248.61)"
-        }
-      ],
-      "entry_score": 0.501,
-      "entry_sizing_btc": 0.3
-    },
-    {
       "instrument_name": "BTC-6NOV26-70000-P",
       "strike": 70000.0,
       "expiry_dt": "2026-11-06 08:00:00+00:00",
@@ -458,9 +420,9 @@
     }
   ],
   "hedge": {
-    "qty": 0.0,
-    "avg_entry": 80252.54,
-    "rebalances": 117,
+    "qty": -0.08635,
+    "avg_entry": 75888.87,
+    "rebalances": 118,
     "realized_pnl_usd": -3553.02,
     "history": [
       {
@@ -2179,6 +2141,21 @@
         "realized_cumul_usd": -3553.02,
         "delta_net_after_pct": 0.0,
         "note": "rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
+      },
+      {
+        "ts": "2026-11-05 17:39:24 UTC",
+        "side": "SELL",
+        "qty": -0.08635,
+        "spot": 75888.87,
+        "qty_before": 0.0,
+        "qty_after": -0.08635,
+        "vwap_before": 80252.54,
+        "vwap_after": 75888.87,
+        "drift": -0.08635,
+        "realized_pnl_usd": 0.0,
+        "realized_cumul_usd": -3553.02,
+        "delta_net_after_pct": 0.0,
+        "note": "short augment\u00e9 \u2014 VWAP recalcul\u00e9"
       }
     ]
   },
@@ -7218,6 +7195,53 @@
       "exit_reason": "expiration",
       "pnl_btc": 0.00057,
       "pnl_usd": 46.69
+    },
+    {
+      "instrument_name": "BTC-6NOV26-75000-P",
+      "strike": 75000.0,
+      "expiry_dt": "2026-11-06 08:00:00+00:00",
+      "tte_at_entry": 12.42,
+      "delta_at_entry": -0.18219182102728393,
+      "gamma_at_entry": 4.1100041246561135e-05,
+      "vega_at_entry": 39.20865166556756,
+      "theta_at_entry": -68.46784632686392,
+      "iv_at_entry": 42.88744880217078,
+      "entry_price": 0.008,
+      "entry_mark_price": 0.00824087,
+      "entry_price_usd": 641.99,
+      "entry_spot": 80248.61,
+      "contracts": 0.3,
+      "entry_ts": "2026-10-24 21:53:53 UTC",
+      "hedge_qty": -0.05466,
+      "hedge_entry_spot": 80248.61,
+      "hedge_avg_entry": 80255.7,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-10-24 21:53:53 UTC",
+          "side": "SELL",
+          "qty": -0.05466,
+          "spot": 80248.61,
+          "perp_price": 80255.7,
+          "qty_before": 0.0,
+          "qty_after": -0.05466,
+          "vwap_before": 0.0,
+          "vwap_after": 80255.7,
+          "drift": 0.18219,
+          "note": "hedge initial (perp mark $80255.70 vs index $80248.61)"
+        }
+      ],
+      "entry_score": 0.501,
+      "entry_sizing_btc": 0.3,
+      "exit_price": 0.0033,
+      "exit_spot": 75888.87,
+      "exit_ts": "2026-11-05 17:39:23 UTC",
+      "exit_reason": "roll",
+      "tte_at_exit": 0.598,
+      "gamma_at_exit": 16.3814,
+      "roll_reason": "TTE 0.60j \u2264 1.0j ET gamma 16.38pts > seuil 6.0pts \u2014 ATM danger",
+      "pnl_btc": 0.00141,
+      "pnl_usd": 117.47
     }
   ],
   "last_updated": "2026-08-17 15:16:38 UTC",
