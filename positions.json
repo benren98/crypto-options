@@ -151,6 +151,44 @@
       ],
       "entry_score": 0.522,
       "entry_sizing_btc": 0.3
+    },
+    {
+      "instrument_name": "BTC-12NOV26-71000-P",
+      "strike": 71000.0,
+      "expiry_dt": "2026-11-12 08:00:00+00:00",
+      "tte_at_entry": 3.78,
+      "delta_at_entry": -0.08739665403470132,
+      "gamma_at_entry": 3.9995235326978464e-05,
+      "vega_at_entry": 12.300523516974387,
+      "theta_at_entry": -83.54926361312481,
+      "iv_at_entry": 51.01046171546086,
+      "entry_price": 0.0021,
+      "entry_mark_price": 0.00214809,
+      "entry_price_usd": 159.78,
+      "entry_spot": 76086.59,
+      "contracts": 0.4,
+      "entry_ts": "2026-11-08 13:21:06 UTC",
+      "hedge_qty": -0.03496,
+      "hedge_entry_spot": 76086.59,
+      "hedge_avg_entry": 76089.03,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-11-08 13:21:06 UTC",
+          "side": "SELL",
+          "qty": -0.03496,
+          "spot": 76086.59,
+          "perp_price": 76089.03,
+          "qty_before": 0.0,
+          "qty_after": -0.03496,
+          "vwap_before": 0.0,
+          "vwap_after": 76089.03,
+          "drift": 0.0874,
+          "note": "hedge initial (perp mark $76089.03 vs index $76086.59)"
+        }
+      ],
+      "entry_score": 0.547,
+      "entry_sizing_btc": 0.4
     }
   ],
   "hedge": {
