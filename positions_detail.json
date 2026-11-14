@@ -1,1 +1,46 @@
-[]
+[
+  {
+    "instrument": "BTC-20NOV26-60000-P",
+    "tte_days": 5.7585,
+    "days_held": 0.3122,
+    "entry_spot": 67240.02,
+    "entry_price_btc": 0.0026,
+    "current_price_btc": 0.0032,
+    "current_ask_btc": 0.0034,
+    "current_bid_btc": 0.003,
+    "current_iv_pct": 64.65,
+    "entry_iv_pct": 62.21238602291128,
+    "iv_change": 2.44,
+    "pnl_option_btc": -0.000234,
+    "pnl_option_usd": -15.68,
+    "pnl_pct_of_premium": -22.42,
+    "theta_theory_usd": 7.88,
+    "theta_daily_now_usd": 28.74,
+    "vrp_capture_pct": -199.0,
+    "live_delta": -0.03303,
+    "live_gamma": 1.2e-05,
+    "live_vega": 5.1208
+  },
+  {
+    "instrument": "BTC-16NOV26-64000-P",
+    "tte_days": 1.7584,
+    "days_held": 0.3121,
+    "entry_spot": 67240.02,
+    "entry_price_btc": 0.0025,
+    "current_price_btc": 0.0029,
+    "current_ask_btc": 0.0032,
+    "current_bid_btc": 0.0027,
+    "current_iv_pct": 59.35,
+    "entry_iv_pct": 56.35729083717869,
+    "iv_change": 2.99,
+    "pnl_option_btc": -0.000155,
+    "pnl_option_usd": -10.34,
+    "pnl_pct_of_premium": -15.38,
+    "theta_theory_usd": 17.22,
+    "theta_daily_now_usd": 69.03,
+    "vrp_capture_pct": -60.0,
+    "live_delta": -0.05516,
+    "live_gamma": 3.2e-05,
+    "live_vega": 4.0903
+  }
+]
