@@ -1128,6 +1128,24 @@ _cb_move_3d  = _ctx_mc.get("cb_move_3d")
 _cb_move_1d  = _ctx_mc.get("cb_move_1d")
 _cb_dvol_3d  = _ctx_mc.get("cb_dvol_3d")
 
+def _reentry_html() -> str:
+    """Conditions de re-entrée du CB (HV5 < HV10 et |move 3j| < seuil), affichées sous le spot."""
+    hv5, hv10 = _ctx_mc.get("cb_hv_5d"), _ctx_mc.get("hv_10d")
+    if hv5 is None or hv10 is None:
+        return ""
+    hv5, hv10 = float(hv5), float(hv10)
+    import re as _re
+    _m = _re.search(r"^CB_REENTRY_MOVE_PCT\s*=\s*([0-9.]+)", (Path(__file__).parent / "greeks_hedge.py").read_text(encoding="utf-8"), _re.M)
+    thr = float(_m.group(1)) if _m else 4.0
+    ok_hv = hv5 < hv10
+    out = [f'<span class="chip-delta {"ok" if ok_hv else "warn"}">{"✓" if ok_hv else "✗"} HV5 {hv5:.1f}% {"&lt;" if ok_hv else "&gt;"} HV10 {hv10:.1f}%</span>']
+    if _cb_move_3d is not None:
+        mv = abs(float(_cb_move_3d)); ok_mv = mv < thr
+        out.append(f'<span class="chip-delta {"ok" if ok_mv else "warn"}">{"✓" if ok_mv else "✗"} |move 3j| {mv:.1f}% {"&lt;" if ok_mv else "&gt;"} {thr:g}%</span>')
+    head = "re-entrée CB" + (" (risk-off)" if _cb_risk_off else "")
+    return f'<span class="chip-delta neu" style="border-top:1px solid #21262d;padding-top:2px;margin-top:2px">{head}</span>' + "".join(out)
+
+
 def _cb_chip() -> str:
     if _cb_risk_off:
         info = pos_raw.get("risk_off_info", {})
@@ -1282,6 +1300,7 @@ else:
     {_spot_delta_html}
     {_move4h_html}
     {_move1d_html}
+    {_reentry_html()}
   </div>
   <div class="chip" title="Latent = MtM des positions ouvertes (option latente + hedge flottant). Réalisé = options clôturées + rebalancements hedge déjà encaissés. Total = somme.">
     <span class="chip-label">PnL ouvert (latent)</span>

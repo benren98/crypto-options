@@ -834,7 +834,7 @@ class Model:
         params = {k: self.p(k) for k in ("ENTRY_SCORE_MIN", "DVOL_MIN", "MAX_PORTFOLIO_BTC", "RANK_FLOOR",
                                           "SIZE_CONVEXITY", "MIN_PREMIUM_USD", "CB_T1_MOVE_1D_PCT",
                                           "CB_T1_MOVE_3D_PCT", "CB_T1_KEEP", "CB_T1_RESTORE_MOVE_PCT",
-                                          "CB_MOVE_3D_PCT", "CB_DVOL_3D_PTS", "SCORE_W_IVHV",
+                                          "CB_MOVE_3D_PCT", "CB_DVOL_3D_PTS", "CB_REENTRY_MOVE_PCT", "SCORE_W_IVHV",
                                           "SCORE_W_YIELD", "SCORE_W_SKEW")}
         return {
             "meta": {"generated_at": iso(self.now), "bot_ts": iso(bot_ts),

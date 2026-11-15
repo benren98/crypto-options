@@ -82,7 +82,7 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
 <h1>📊 VRP Monitor — 0 position(s) ouverte(s)
   <a href="backtest.html" style="float:right;font-size:0.6em;font-weight:500;color:#58a6ff;text-decoration:none;border:1px solid #30363d;border-radius:6px;padding:5px 12px;background:#161b22">📊 Backtests &amp; Skew →</a>
   <a href="v2.html" style="float:right;margin-right:8px;font-size:0.6em;font-weight:500;color:#58a6ff;text-decoration:none;border:1px solid #30363d;border-radius:6px;padding:5px 12px;background:#161b22">✨ Dashboard v2 →</a></h1>
-<div class="subtitle">Données : 2026-11-14 14:09 EST · Généré : 2026-11-15 04:55 EST · ↻ auto-refresh 5min</div>
+<div class="subtitle">Données : 2026-11-14 14:09 EST · Généré : 2026-11-15 10:45 EST · ↻ auto-refresh 5min</div>
 
 <div class="header-bar">
   <div class="chip">
@@ -90,13 +90,14 @@ footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 28p
     <span class="chip-value">$65,616</span>
     <span class="chip-delta pos">+770$ (+1.19%) vs snapshot préc.</span>
     
-    
+    <span class="chip-delta neg">1j -1.89% (-1,264$)</span>
+    <span class="chip-delta neu" style="border-top:1px solid #21262d;padding-top:2px;margin-top:2px">re-entrée CB (risk-off)</span><span class="chip-delta warn">✗ HV5 77.8% &gt; HV10 54.5%</span><span class="chip-delta warn">✗ |move 3j| 10.9% &gt; 4%</span>
   </div>
   <div class="chip" title="Latent = MtM des positions ouvertes (option latente + hedge flottant). Réalisé = options clôturées + rebalancements hedge déjà encaissés. Total = somme.">
     <span class="chip-label">PnL ouvert (latent)</span>
     <span class="chip-value pos">+0$</span>
     <span class="chip-delta neg">-369$ vs snapshot préc.</span>
-    
+    <span class="chip-delta neg">-182$ sur 1j</span>
     <span class="chip-delta pos">Réalisé cumulé +2,618$</span>
     <span class="chip-delta pos" style="border-top:1px solid #21262d;padding-top:2px;margin-top:2px">Total stratégie <b>+2,618$</b></span>
   </div>
@@ -1919,5 +1920,5 @@ new Chart(document.getElementById("chartVol"), {
 });
 </script>
 
-<footer>VRP Monitor · Généré le 2026-11-15 04:55 EST · GitHub Actions · Auto-refresh 5 min</footer>
+<footer>VRP Monitor · Généré le 2026-11-15 10:45 EST · GitHub Actions · Auto-refresh 5 min</footer>
 </body></html>

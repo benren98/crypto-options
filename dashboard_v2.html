@@ -187,6 +187,19 @@ function meterEl(fill, color, ticks) {
   return m;
 }
 function sevColor(frac) { return frac >= 1 ? "var(--critical)" : frac >= 0.7 ? "var(--warning)" : "var(--s1)"; }
+// Conditions de re-entrée du circuit breaker (HV5 < HV10 et |move 3 j| < seuil) : affichées en permanence
+// sous le spot pour voir à quelle distance on est, mises en avant quand le CB est en risk-off.
+function reentryLines() {
+  const mk = D.market, thr = D.meta.params.CB_REENTRY_MOVE_PCT ?? 4;
+  if (mk.hv5 == null || mk.hv10 == null) return null;
+  const okHv = mk.hv5 < mk.hv10, mv = mk.move_3d == null ? null : Math.abs(mk.move_3d), okMv = mv != null && mv < thr;
+  const off = D.cb && D.cb.state === "risk_off";
+  const line = (ok, txt) => h("div", {}, h("span", { class: ok ? "pos" : off ? "neg" : "" }, ok ? "✓ " : "✗ "), txt);
+  return [h("div", { style: "margin-top:4px;padding-top:4px;border-top:1px solid var(--grid)" },
+      h("b", { class: "ink2" }, "Re-entrée CB"), off ? [" ", badge("critical", "risk-off")] : h("span", { class: "muted" }, " (si fermeture)")),
+    line(okHv, "HV5 " + num(mk.hv5, 1) + " % " + (okHv ? "<" : ">") + " HV10 " + num(mk.hv10, 1) + " %"),
+    mv != null ? line(okMv, "|move 3 j| " + num(mv, 1) + " % " + (okMv ? "<" : ">") + " " + num(thr, 0) + " %") : null];
+}
 function renderKpis() {
   const p = D.performance, t = p.totals, mk = D.market, b = D.book.totals, cb = D.cb;
   const tiles = [];
@@ -203,7 +216,8 @@ function renderKpis() {
   const mv1 = mk.move_1d, mv3 = mk.move_3d;
   tiles.push(h("div", { class: "tile" }, h("div", { class: "label" }, "Spot BTC"),
     h("div", { class: "value" }, usd(mk.spot)),
-    h("div", { class: "meta" }, h("div", {}, "24 h ", h("span", { class: "num " + tone(mv1) }, pct(mv1, 1, true)), " · 3 j ", h("span", { class: "num " + tone(mv3) }, pct(mv3, 1, true))))));
+    h("div", { class: "meta" }, h("div", {}, "24 h ", h("span", { class: "num " + tone(mv1) }, pct(mv1, 1, true)), " · 3 j ", h("span", { class: "num " + tone(mv3) }, pct(mv3, 1, true))),
+      reentryLines())));
 
   const ivhv = mk.iv_hv;
   const vrpLvl = ivhv == null ? "na" : ivhv < 1.1 ? "warning" : ivhv < 1.35 ? "good" : "good";
