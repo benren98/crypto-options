@@ -75,12 +75,50 @@
       ],
       "entry_score": 0.486,
       "entry_sizing_btc": 0.3
+    },
+    {
+      "instrument_name": "BTC-22NOV26-60000-P",
+      "strike": 60000.0,
+      "expiry_dt": "2026-11-22 08:00:00+00:00",
+      "tte_at_entry": 3.89,
+      "delta_at_entry": -0.09658888499391505,
+      "gamma_at_entry": 4.929247397152857e-05,
+      "vega_at_entry": 11.346243180271836,
+      "theta_at_entry": -76.41828169327422,
+      "iv_at_entry": 51.72229312093535,
+      "entry_price": 0.0024,
+      "entry_mark_price": 0.00250754,
+      "entry_price_usd": 154.19,
+      "entry_spot": 64246.1,
+      "contracts": 0.3,
+      "entry_ts": "2026-11-18 10:44:45 UTC",
+      "hedge_qty": -0.02898,
+      "hedge_entry_spot": 64246.1,
+      "hedge_avg_entry": 64256.35,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-11-18 10:44:45 UTC",
+          "side": "SELL",
+          "qty": -0.02898,
+          "spot": 64246.1,
+          "perp_price": 64256.35,
+          "qty_before": 0.0,
+          "qty_after": -0.02898,
+          "vwap_before": 0.0,
+          "vwap_after": 64256.35,
+          "drift": 0.09659,
+          "note": "hedge initial (perp mark $64256.35 vs index $64246.10)"
+        }
+      ],
+      "entry_score": 0.469,
+      "entry_sizing_btc": 0.3
     }
   ],
   "hedge": {
-    "qty": 0.0,
-    "avg_entry": 64415.26,
-    "rebalances": 128,
+    "qty": -0.06662,
+    "avg_entry": 64246.1,
+    "rebalances": 129,
     "realized_pnl_usd": -3276.84,
     "history": [
       {
@@ -1976,6 +2014,21 @@
         "realized_cumul_usd": -3276.84,
         "delta_net_after_pct": 0.0,
         "note": "rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
+      },
+      {
+        "ts": "2026-11-18 10:44:45 UTC",
+        "side": "SELL",
+        "qty": -0.06662,
+        "spot": 64246.1,
+        "qty_before": 0.0,
+        "qty_after": -0.06662,
+        "vwap_before": 64415.26,
+        "vwap_after": 64246.1,
+        "drift": -0.06662,
+        "realized_pnl_usd": 0.0,
+        "realized_cumul_usd": -3276.84,
+        "delta_net_after_pct": 0.0,
+        "note": "hedge net apr\u00e8s entr\u00e9e (BTC-22NOV26-60000-P) \u00b7 short augment\u00e9 \u2014 VWAP recalcul\u00e9"
       }
     ]
   },
