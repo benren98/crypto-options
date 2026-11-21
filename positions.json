@@ -303,13 +303,51 @@
       ],
       "entry_score": 0.691,
       "entry_sizing_btc": 0.6
+    },
+    {
+      "instrument_name": "BTC-4DEC26-50000-P",
+      "strike": 50000.0,
+      "expiry_dt": "2026-12-04 08:00:00+00:00",
+      "tte_at_entry": 12.57,
+      "delta_at_entry": -0.09725340100379165,
+      "gamma_at_entry": 1.919264479901871e-05,
+      "vega_at_entry": 19.15277684070629,
+      "theta_at_entry": -61.27031217376901,
+      "iv_at_entry": 79.54940259251207,
+      "entry_price": 0.007,
+      "entry_mark_price": 0.00728098,
+      "entry_price_usd": 419.95,
+      "entry_spot": 59993.36,
+      "contracts": 0.5,
+      "entry_ts": "2026-11-21 18:15:32 UTC",
+      "hedge_qty": -0.04863,
+      "hedge_entry_spot": 59993.36,
+      "hedge_avg_entry": 60008.99,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-11-21 18:15:32 UTC",
+          "side": "SELL",
+          "qty": -0.04863,
+          "spot": 59993.36,
+          "perp_price": 60008.99,
+          "qty_before": 0.0,
+          "qty_after": -0.04863,
+          "vwap_before": 0.0,
+          "vwap_after": 60008.99,
+          "drift": 0.09725,
+          "note": "hedge initial (perp mark $60008.99 vs index $59993.36)"
+        }
+      ],
+      "entry_score": 0.604,
+      "entry_sizing_btc": 0.5
     }
   ],
   "hedge": {
-    "qty": -0.59701,
+    "qty": -0.4004,
     "avg_entry": 60144.53,
-    "rebalances": 137,
-    "realized_pnl_usd": -2662.73,
+    "rebalances": 138,
+    "realized_pnl_usd": -2633.01,
     "history": [
       {
         "ts": "2026-06-07 03:32:05 UTC",
@@ -2339,6 +2377,21 @@
         "realized_cumul_usd": -2662.73,
         "delta_net_after_pct": 0.0,
         "note": "hedge net apr\u00e8s entr\u00e9e (BTC-4DEC26-45000-P, BTC-25NOV26-51000-P) \u00b7 rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
+      },
+      {
+        "ts": "2026-11-21 18:15:32 UTC",
+        "side": "BUY",
+        "qty": 0.19661,
+        "spot": 59993.36,
+        "qty_before": -0.59701,
+        "qty_after": -0.4004,
+        "vwap_before": 60144.53,
+        "vwap_after": 60144.53,
+        "drift": 0.19661,
+        "realized_pnl_usd": 29.72,
+        "realized_cumul_usd": -2633.01,
+        "delta_net_after_pct": -0.0,
+        "note": "hedge net apr\u00e8s entr\u00e9e (BTC-4DEC26-50000-P) \u00b7 rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
       }
     ]
   },
