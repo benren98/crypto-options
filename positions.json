@@ -115,44 +115,6 @@
       "entry_sizing_btc": 0.6
     },
     {
-      "instrument_name": "BTC-24NOV26-53000-P",
-      "strike": 53000.0,
-      "expiry_dt": "2026-11-24 08:00:00+00:00",
-      "tte_at_entry": 3.66,
-      "delta_at_entry": -0.07523724433490375,
-      "gamma_at_entry": 3.0044884967286076e-05,
-      "vega_at_entry": 8.420072141101222,
-      "theta_at_entry": -91.51892526963366,
-      "iv_at_entry": 79.05772835566056,
-      "entry_price": 0.0027,
-      "entry_mark_price": 0.00285575,
-      "entry_price_usd": 160.62,
-      "entry_spot": 59489.69,
-      "contracts": 0.5,
-      "entry_ts": "2026-11-20 16:07:48 UTC",
-      "hedge_qty": -0.03762,
-      "hedge_entry_spot": 59489.69,
-      "hedge_avg_entry": 59250.55,
-      "hedge_rebalances": 1,
-      "hedge_history": [
-        {
-          "ts": "2026-11-20 16:07:48 UTC",
-          "side": "SELL",
-          "qty": -0.03762,
-          "spot": 59489.69,
-          "perp_price": 59250.55,
-          "qty_before": 0.0,
-          "qty_after": -0.03762,
-          "vwap_before": 0.0,
-          "vwap_after": 59250.55,
-          "drift": 0.07524,
-          "note": "hedge initial (perp mark $59250.55 vs index $59489.69)"
-        }
-      ],
-      "entry_score": 0.664,
-      "entry_sizing_btc": 0.5
-    },
-    {
       "instrument_name": "BTC-4DEC26-50000-P",
       "strike": 50000.0,
       "expiry_dt": "2026-12-04 08:00:00+00:00",
@@ -417,12 +379,50 @@
       ],
       "entry_score": 0.586,
       "entry_sizing_btc": 0.3
+    },
+    {
+      "instrument_name": "BTC-4DEC26-50000-P",
+      "strike": 50000.0,
+      "expiry_dt": "2026-12-04 08:00:00+00:00",
+      "tte_at_entry": 9.67,
+      "delta_at_entry": -0.06928364568740197,
+      "gamma_at_entry": 1.748084662937699e-05,
+      "vega_at_entry": 12.985638786158452,
+      "theta_at_entry": -52.47314302907814,
+      "iv_at_entry": 77.25596629198752,
+      "entry_price": 0.0039,
+      "entry_mark_price": 0.00409728,
+      "entry_price_usd": 233.38,
+      "entry_spot": 59841.68,
+      "contracts": 0.5,
+      "entry_ts": "2026-11-24 15:51:43 UTC",
+      "hedge_qty": -0.03464,
+      "hedge_entry_spot": 59841.68,
+      "hedge_avg_entry": 59855.25,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-11-24 15:51:43 UTC",
+          "side": "SELL",
+          "qty": -0.03464,
+          "spot": 59841.68,
+          "perp_price": 59855.25,
+          "qty_before": 0.0,
+          "qty_after": -0.03464,
+          "vwap_before": 0.0,
+          "vwap_after": 59855.25,
+          "drift": 0.06928,
+          "note": "hedge initial (perp mark $59855.25 vs index $59841.68)"
+        }
+      ],
+      "entry_score": 0.657,
+      "entry_sizing_btc": 0.5
     }
   ],
   "hedge": {
-    "qty": -0.15647,
-    "avg_entry": 60023.23,
-    "rebalances": 141,
+    "qty": -0.26073,
+    "avg_entry": 59950.63,
+    "rebalances": 142,
     "realized_pnl_usd": -2954.18,
     "history": [
       {
@@ -2513,6 +2513,21 @@
         "realized_cumul_usd": -2954.18,
         "delta_net_after_pct": 0.0,
         "note": "rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
+      },
+      {
+        "ts": "2026-11-24 15:51:44 UTC",
+        "side": "SELL",
+        "qty": -0.10426,
+        "spot": 59841.68,
+        "qty_before": -0.15647,
+        "qty_after": -0.26073,
+        "vwap_before": 60023.23,
+        "vwap_after": 59950.63,
+        "drift": -0.10426,
+        "realized_pnl_usd": 0.0,
+        "realized_cumul_usd": -2954.18,
+        "delta_net_after_pct": 0.0,
+        "note": "hedge net apr\u00e8s entr\u00e9e (BTC-4DEC26-50000-P) \u00b7 short augment\u00e9 \u2014 VWAP recalcul\u00e9"
       }
     ]
   },
@@ -8735,6 +8750,51 @@
       "roll_reason": "TTE 0.83j \u2264 1.0j ET gamma 7.18pts > seuil 6.0pts \u2014 ATM danger",
       "pnl_btc": 0.0,
       "pnl_usd": 1.7
+    },
+    {
+      "instrument_name": "BTC-24NOV26-53000-P",
+      "strike": 53000.0,
+      "expiry_dt": "2026-11-24 08:00:00+00:00",
+      "tte_at_entry": 3.66,
+      "delta_at_entry": -0.07523724433490375,
+      "gamma_at_entry": 3.0044884967286076e-05,
+      "vega_at_entry": 8.420072141101222,
+      "theta_at_entry": -91.51892526963366,
+      "iv_at_entry": 79.05772835566056,
+      "entry_price": 0.0027,
+      "entry_mark_price": 0.00285575,
+      "entry_price_usd": 160.62,
+      "entry_spot": 59489.69,
+      "contracts": 0.5,
+      "entry_ts": "2026-11-20 16:07:48 UTC",
+      "hedge_qty": -0.03762,
+      "hedge_entry_spot": 59489.69,
+      "hedge_avg_entry": 59250.55,
+      "hedge_rebalances": 1,
+      "hedge_history": [
+        {
+          "ts": "2026-11-20 16:07:48 UTC",
+          "side": "SELL",
+          "qty": -0.03762,
+          "spot": 59489.69,
+          "perp_price": 59250.55,
+          "qty_before": 0.0,
+          "qty_after": -0.03762,
+          "vwap_before": 0.0,
+          "vwap_after": 59250.55,
+          "drift": 0.07524,
+          "note": "hedge initial (perp mark $59250.55 vs index $59489.69)"
+        }
+      ],
+      "entry_score": 0.664,
+      "entry_sizing_btc": 0.5,
+      "exit_price": 0.0,
+      "exit_spot": 60370.78,
+      "exit_ts": "2026-11-24 15:51:40 UTC",
+      "tte_at_exit": 0.0,
+      "exit_reason": "expiration",
+      "pnl_btc": 0.00135,
+      "pnl_usd": 80.31
     }
   ],
   "last_updated": "2026-08-17 15:16:38 UTC",
