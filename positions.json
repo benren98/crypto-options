@@ -420,10 +420,10 @@
     }
   ],
   "hedge": {
-    "qty": -0.26073,
+    "qty": -0.16496,
     "avg_entry": 59950.63,
-    "rebalances": 142,
-    "realized_pnl_usd": -2954.18,
+    "rebalances": 143,
+    "realized_pnl_usd": -2943.96,
     "history": [
       {
         "ts": "2026-06-07 03:32:05 UTC",
@@ -2528,6 +2528,21 @@
         "realized_cumul_usd": -2954.18,
         "delta_net_after_pct": 0.0,
         "note": "hedge net apr\u00e8s entr\u00e9e (BTC-4DEC26-50000-P) \u00b7 short augment\u00e9 \u2014 VWAP recalcul\u00e9"
+      },
+      {
+        "ts": "2026-11-25 19:14:02 UTC",
+        "side": "BUY",
+        "qty": 0.09577,
+        "spot": 59843.91,
+        "qty_before": -0.26073,
+        "qty_after": -0.16496,
+        "vwap_before": 59950.63,
+        "vwap_after": 59950.63,
+        "drift": 0.09577,
+        "realized_pnl_usd": 10.22,
+        "realized_cumul_usd": -2943.96,
+        "delta_net_after_pct": -0.0,
+        "note": "rachat partiel \u2014 VWAP entr\u00e9e inchang\u00e9"
       }
     ]
   },
